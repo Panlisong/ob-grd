@@ -1,10 +1,9 @@
-/* Copyright (c) 2021 Xie Meiyi(xiemeiyi@hust.edu.cn) and OceanBase and/or its affiliates. All rights reserved.
-miniob is licensed under Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-         http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+/* Copyright (c) 2021 Xie Meiyi(xiemeiyi@hust.edu.cn) and OceanBase and/or its
+affiliates. All rights reserved. miniob is licensed under Mulan PSL v2. You can
+use this software according to the terms and conditions of the Mulan PSL v2. You
+may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2 THIS
+SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
@@ -12,17 +11,18 @@ See the Mulan PSL v2 for more details. */
 // Created by Longda on 2021/4/13.
 //
 
-#include <mutex>
 #include "sql/parser/parse.h"
-#include "rc.h"
 #include "common/log/log.h"
+#include "rc.h"
+#include <mutex>
 
 RC parse(char *st, Query *sqln);
 
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
-void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const char *attribute_name) {
+void relation_attr_init(RelAttr *relation_attr, const char *relation_name,
+                        const char *attribute_name) {
   if (relation_name != nullptr) {
     relation_attr->relation_name = strdup(relation_name);
   } else {
@@ -58,9 +58,9 @@ void value_destroy(Value *value) {
   value->data = nullptr;
 }
 
-void condition_init(Condition *condition, CompOp comp, 
-                    int left_is_attr, RelAttr *left_attr, Value *left_value,
-                    int right_is_attr, RelAttr *right_attr, Value *right_value) {
+void condition_init(Condition *condition, CompOp comp, int left_is_attr,
+                    RelAttr *left_attr, Value *left_value, int right_is_attr,
+                    RelAttr *right_attr, Value *right_value) {
   condition->comp = comp;
   condition->left_is_attr = left_is_attr;
   if (left_is_attr) {
@@ -89,7 +89,8 @@ void condition_destroy(Condition *condition) {
   }
 }
 
-void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length) {
+void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type,
+                    size_t length) {
   attr_info->name = strdup(name);
   attr_info->type = type;
   attr_info->length = length;
@@ -107,8 +108,10 @@ void selects_append_relation(Selects *selects, const char *relation_name) {
   selects->relations[selects->relation_num++] = strdup(relation_name);
 }
 
-void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num) {
-  assert(condition_num <= sizeof(selects->conditions)/sizeof(selects->conditions[0]));
+void selects_append_conditions(Selects *selects, Condition conditions[],
+                               size_t condition_num) {
+  assert(condition_num <=
+         sizeof(selects->conditions) / sizeof(selects->conditions[0]));
   for (size_t i = 0; i < condition_num; i++) {
     selects->conditions[i] = conditions[i];
   }
@@ -133,8 +136,9 @@ void selects_destroy(Selects *selects) {
   selects->condition_num = 0;
 }
 
-void inserts_init(Inserts *inserts, const char *relation_name, Value values[], size_t value_num) {
-  assert(value_num <= sizeof(inserts->values)/sizeof(inserts->values[0]));
+void inserts_init(Inserts *inserts, const char *relation_name, Value values[],
+                  size_t value_num) {
+  assert(value_num <= sizeof(inserts->values) / sizeof(inserts->values[0]));
 
   inserts->relation_name = strdup(relation_name);
   for (size_t i = 0; i < value_num; i++) {
@@ -156,8 +160,10 @@ void deletes_init_relation(Deletes *deletes, const char *relation_name) {
   deletes->relation_name = strdup(relation_name);
 }
 
-void deletes_set_conditions(Deletes *deletes, Condition conditions[], size_t condition_num) {
-  assert(condition_num <= sizeof(deletes->conditions)/sizeof(deletes->conditions[0]));
+void deletes_set_conditions(Deletes *deletes, Condition conditions[],
+                            size_t condition_num) {
+  assert(condition_num <=
+         sizeof(deletes->conditions) / sizeof(deletes->conditions[0]));
   for (size_t i = 0; i < condition_num; i++) {
     deletes->conditions[i] = conditions[i];
   }
@@ -172,13 +178,15 @@ void deletes_destroy(Deletes *deletes) {
   deletes->relation_name = nullptr;
 }
 
-void updates_init(Updates *updates, const char *relation_name, const char *attribute_name,
-                  Value *value, Condition conditions[], size_t condition_num) {
+void updates_init(Updates *updates, const char *relation_name,
+                  const char *attribute_name, Value *value,
+                  Condition conditions[], size_t condition_num) {
   updates->relation_name = strdup(relation_name);
   updates->attribute_name = strdup(attribute_name);
   updates->value = *value;
 
-  assert(condition_num <= sizeof(updates->conditions)/sizeof(updates->conditions[0]));
+  assert(condition_num <=
+         sizeof(updates->conditions) / sizeof(updates->conditions[0]));
   for (size_t i = 0; i < condition_num; i++) {
     updates->conditions[i] = conditions[i];
   }
@@ -199,10 +207,12 @@ void updates_destroy(Updates *updates) {
   updates->condition_num = 0;
 }
 
-void create_table_append_attribute(CreateTable *create_table, AttrInfo *attr_info) {
+void create_table_append_attribute(CreateTable *create_table,
+                                   AttrInfo *attr_info) {
   create_table->attributes[create_table->attribute_count++] = *attr_info;
 }
-void create_table_init_name(CreateTable *create_table, const char *relation_name) {
+void create_table_init_name(CreateTable *create_table,
+                            const char *relation_name) {
   create_table->relation_name = strdup(relation_name);
 }
 void create_table_destroy(CreateTable *create_table) {
@@ -222,7 +232,7 @@ void drop_table_destroy(DropTable *drop_table) {
   drop_table->relation_name = nullptr;
 }
 
-void create_index_init(CreateIndex *create_index, const char *index_name, 
+void create_index_init(CreateIndex *create_index, const char *index_name,
                        const char *relation_name, const char *attr_name) {
   create_index->index_name = strdup(index_name);
   create_index->relation_name = strdup(relation_name);
@@ -255,7 +265,8 @@ void desc_table_destroy(DescTable *desc_table) {
   desc_table->relation_name = nullptr;
 }
 
-void load_data_init(LoadData *load_data, const char *relation_name, const char *file_name) {
+void load_data_init(LoadData *load_data, const char *relation_name,
+                    const char *file_name) {
   load_data->relation_name = strdup(relation_name);
 
   if (file_name[0] == '\'' || file_name[0] == '\"') {
@@ -294,60 +305,49 @@ Query *query_create() {
 
 void query_reset(Query *query) {
   switch (query->flag) {
-    case SCF_SELECT: {
-      selects_destroy(&query->sstr.selection);
-    }
-    break;
-    case SCF_INSERT: {
-      inserts_destroy(&query->sstr.insertion);
-    }
-    break;
-    case SCF_DELETE: {
-      deletes_destroy(&query->sstr.deletion);
-    }
-    break;
-    case SCF_UPDATE: {
-      updates_destroy(&query->sstr.update);
-    }
-    break;
-    case SCF_CREATE_TABLE: {
-      create_table_destroy(&query->sstr.create_table);
-    }
-    break;
-    case SCF_DROP_TABLE: {
-      drop_table_destroy(&query->sstr.drop_table);
-    }
-    break;
-    case SCF_CREATE_INDEX: {
-      create_index_destroy(&query->sstr.create_index);
-    }
-    break;
-    case SCF_DROP_INDEX: {
-      drop_index_destroy(&query->sstr.drop_index);
-    }
-    break;
-    case SCF_SYNC: {
+  case SCF_SELECT: {
+    selects_destroy(&query->sstr.selection);
+  } break;
+  case SCF_INSERT: {
+    inserts_destroy(&query->sstr.insertion);
+  } break;
+  case SCF_DELETE: {
+    deletes_destroy(&query->sstr.deletion);
+  } break;
+  case SCF_UPDATE: {
+    updates_destroy(&query->sstr.update);
+  } break;
+  case SCF_CREATE_TABLE: {
+    create_table_destroy(&query->sstr.create_table);
+  } break;
+  case SCF_DROP_TABLE: {
+    drop_table_destroy(&query->sstr.drop_table);
+  } break;
+  case SCF_CREATE_INDEX: {
+    create_index_destroy(&query->sstr.create_index);
+  } break;
+  case SCF_DROP_INDEX: {
+    drop_index_destroy(&query->sstr.drop_index);
+  } break;
+  case SCF_SYNC: {
 
-    }
-    break;
-    case SCF_SHOW_TABLES:
+  } break;
+  case SCF_SHOW_TABLES:
     break;
 
-    case SCF_DESC_TABLE: {
-      desc_table_destroy(&query->sstr.desc_table);
-    }
-    break;
+  case SCF_DESC_TABLE: {
+    desc_table_destroy(&query->sstr.desc_table);
+  } break;
 
-    case SCF_LOAD_DATA: {
-      load_data_destroy(&query->sstr.load_data);
-    }
-    break;
-    case SCF_BEGIN:
-    case SCF_COMMIT:
-    case SCF_ROLLBACK:
-    case SCF_HELP:
-    case SCF_EXIT:
-    case SCF_ERROR:
+  case SCF_LOAD_DATA: {
+    load_data_destroy(&query->sstr.load_data);
+  } break;
+  case SCF_BEGIN:
+  case SCF_COMMIT:
+  case SCF_ROLLBACK:
+  case SCF_HELP:
+  case SCF_EXIT:
+  case SCF_ERROR:
     break;
   }
 }
@@ -362,7 +362,7 @@ void query_destroy(Query *query) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-extern "C" int sql_parse(const char *st, Query  *sqls);
+extern "C" int sql_parse(const char *st, Query *sqls);
 
 RC parse(const char *st, Query *sqln) {
   sql_parse(st, sqln);

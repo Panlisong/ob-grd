@@ -1,10 +1,9 @@
-/* Copyright (c) 2021 Xie Meiyi(xiemeiyi@hust.edu.cn) and OceanBase and/or its affiliates. All rights reserved.
-miniob is licensed under Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-         http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+/* Copyright (c) 2021 Xie Meiyi(xiemeiyi@hust.edu.cn) and OceanBase and/or its
+affiliates. All rights reserved. miniob is licensed under Mulan PSL v2. You can
+use this software according to the terms and conditions of the Mulan PSL v2. You
+may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2 THIS
+SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
@@ -69,9 +68,7 @@ enum RCSchema {
   INDEX_NAME_ILLEGAL,
 };
 
-enum RCSQL { 
-  SQL_SELECT = 1 
-};
+enum RCSQL { SQL_SELECT = 1 };
 
 enum RCIOError {
   READ = 1,
@@ -129,11 +126,7 @@ enum RCCantOpen {
   SYMLINK,
 };
 
-enum RCCorrupt { 
-  CORRUPT_VIRT = 1, 
-  CORRUPT_SEQUENCE, 
-  CORRUPT_INDEX 
-};
+enum RCCorrupt { CORRUPT_VIRT = 1, CORRUPT_SEQUENCE, CORRUPT_INDEX };
 
 enum RCReadonly {
   RO_RECOVERY = 1,
@@ -176,37 +169,37 @@ enum RC {
 
   SUCCESS = 0, /* Successful result */
   /* beginning-of-error-codes */
-  GENERIC_ERROR, /* Generic error */
-  INVALID_ARGUMENT,/* Invalid argument */
-  SQL_SYNTAX,    /* SQL Syntax error */
-  BUFFERPOOL,    /* Buffer pool error*/
-  RECORD,        /* Record error */
-  INTERNAL,      /* Internal logic error in SQLite */
-  PERM,          /* Access permission denied */
-  ABORT,         /* Callback routine requested an abort */
-  BUSY,          /* The database file is locked */
-  LOCKED,        /* A table in the database is locked */
-  NOMEM,         /* A malloc() failed */
-  READONLY,      /* Attempt to write a readonly database */
-  INTERRUPT,     /* Operation terminated by interrupt()*/
-  IOERR,         /* Some kind of disk I/O error occurred */
-  CORRUPT,       /* The database disk image is malformed */
-  NOTFOUND,      /* Unknown opcode in file_control() */
-  FULL,          /* Insertion failed because database is full */
-  CANTOPEN,      /* Unable to open the database file */
-  PROTOCOL,      /* Database lock protocol error */
-  EMPTY,         /* Internal use only */
-  SCHEMA,        /* The database schema error */
-  TOOBIG,        /* String or BLOB exceeds size limit */
-  CONSTRAINT,    /* Abort due to constraint violation */
-  MISMATCH,      /* Data type mismatch */
-  MISUSE,        /* Library used incorrectly */
-  NOLFS,         /* Uses OS features not supported on host */
-  AUTH,          /* Authorization denied */
-  FORMAT,        /* Not used */
-  RANGE,         /* 2nd parameter to bind out of range */
-  NOTADB,        /* File opened that is not a database file */
-  NOTICE = 100,  /* Notifications from log() */
+  GENERIC_ERROR,    /* Generic error */
+  INVALID_ARGUMENT, /* Invalid argument */
+  SQL_SYNTAX,       /* SQL Syntax error */
+  BUFFERPOOL,       /* Buffer pool error*/
+  RECORD,           /* Record error */
+  INTERNAL,         /* Internal logic error in SQLite */
+  PERM,             /* Access permission denied */
+  ABORT,            /* Callback routine requested an abort */
+  BUSY,             /* The database file is locked */
+  LOCKED,           /* A table in the database is locked */
+  NOMEM,            /* A malloc() failed */
+  READONLY,         /* Attempt to write a readonly database */
+  INTERRUPT,        /* Operation terminated by interrupt()*/
+  IOERR,            /* Some kind of disk I/O error occurred */
+  CORRUPT,          /* The database disk image is malformed */
+  NOTFOUND,         /* Unknown opcode in file_control() */
+  FULL,             /* Insertion failed because database is full */
+  CANTOPEN,         /* Unable to open the database file */
+  PROTOCOL,         /* Database lock protocol error */
+  EMPTY,            /* Internal use only */
+  SCHEMA,           /* The database schema error */
+  TOOBIG,           /* String or BLOB exceeds size limit */
+  CONSTRAINT,       /* Abort due to constraint violation */
+  MISMATCH,         /* Data type mismatch */
+  MISUSE,           /* Library used incorrectly */
+  NOLFS,            /* Uses OS features not supported on host */
+  AUTH,             /* Authorization denied */
+  FORMAT,           /* Not used */
+  RANGE,            /* 2nd parameter to bind out of range */
+  NOTADB,           /* File opened that is not a database file */
+  NOTICE = 100,     /* Notifications from log() */
 
   /* buffer pool part */
   BUFFERPOOL_EXIST = (BUFFERPOOL | (RCBufferPool::BP_EXIST << 8)),
@@ -217,11 +210,14 @@ enum RC {
   BUFFERPOOL_OPEN = (BUFFERPOOL | (RCBufferPool::BP_OPEN << 8)),
   BUFFERPOOL_NOBUF = (BUFFERPOOL | (RCBufferPool::BP_NOBUF << 8)),
   BUFFERPOOL_EOF = (BUFFERPOOL | (RCBufferPool::BP_EOF << 8)),
-  BUFFERPOOL_INVALID_PAGE_NUM = (BUFFERPOOL | (RCBufferPool::BP_INVALIDPAGENUM << 8)),
+  BUFFERPOOL_INVALID_PAGE_NUM =
+      (BUFFERPOOL | (RCBufferPool::BP_INVALIDPAGENUM << 8)),
   BUFFERPOOL_NOTINBUF = (BUFFERPOOL | (RCBufferPool::BP_NOTINBUF << 8)),
   BUFFERPOOL_PAGE_PINNED = (BUFFERPOOL | (RCBufferPool::BP_PAGE_PINNED << 8)),
-  BUFFERPOOL_OPEN_TOO_MANY_FILES = (BUFFERPOOL | (RCBufferPool::BP_OPEN_TOO_MANY_FILES << 8)),
-  BUFFERPOOL_ILLEGAL_FILE_ID = (BUFFERPOOL | (RCBufferPool::BP_ILLEGAL_FILE_ID << 8)),
+  BUFFERPOOL_OPEN_TOO_MANY_FILES =
+      (BUFFERPOOL | (RCBufferPool::BP_OPEN_TOO_MANY_FILES << 8)),
+  BUFFERPOOL_ILLEGAL_FILE_ID =
+      (BUFFERPOOL | (RCBufferPool::BP_ILLEGAL_FILE_ID << 8)),
 
   /* record part */
   RECORD_CLOSED = (RECORD | (RCRecord::RD_CLOSED << 8)),
@@ -242,7 +238,7 @@ enum RC {
   /* schema part */
   SCHEMA_DB_EXIST = (SCHEMA | (RCSchema::DB_EXIST << 8)),
   SCHEMA_DB_NOT_EXIST = (SCHEMA | (RCSchema::DB_NOT_EXIST << 8)),
-  SCHEMA_DB_NOT_OPENED = (SCHEMA | (RCSchema::DB_NOT_OPENED<< 8)),
+  SCHEMA_DB_NOT_OPENED = (SCHEMA | (RCSchema::DB_NOT_OPENED << 8)),
   SCHEMA_TABLE_NOT_EXIST = (SCHEMA | (RCSchema::TABLE_NOT_EXIST << 8)),
   SCHEMA_TABLE_EXIST = (SCHEMA | (RCSchema::TABLE_EXIST << 8)),
   SCHEMA_TABLE_NAME_ILLEGAL = (SCHEMA | (RCSchema::TABLE_NAME_ILLEGAL << 8)),

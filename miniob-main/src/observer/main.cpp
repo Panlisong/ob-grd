@@ -1,10 +1,9 @@
-/* Copyright (c) 2021 Xie Meiyi(xiemeiyi@hust.edu.cn) and OceanBase and/or its affiliates. All rights reserved.
-miniob is licensed under Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-         http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+/* Copyright (c) 2021 Xie Meiyi(xiemeiyi@hust.edu.cn) and OceanBase and/or its
+affiliates. All rights reserved. miniob is licensed under Mulan PSL v2. You can
+use this software according to the terms and conditions of the Mulan PSL v2. You
+may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2 THIS
+SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
@@ -15,14 +14,13 @@ See the Mulan PSL v2 for more details. */
  *      Author: Longda Feng
  */
 
-
+#include <iostream>
 #include <netinet/in.h>
 #include <unistd.h>
-#include <iostream>
 
-#include "init.h"
 #include "common/os/process.h"
 #include "common/os/signal.h"
+#include "init.h"
 #include "net/server.h"
 #include "net/server_param.h"
 
@@ -34,9 +32,12 @@ static Server *g_server = nullptr;
 
 void usage() {
   std::cout << "Useage " << std::endl;
-  std::cout << "-p: server port. if not specified, the item in the config file will be used" << std::endl;
+  std::cout << "-p: server port. if not specified, the item in the config file "
+               "will be used"
+            << std::endl;
   std::cout << "-f: path of config file." << std::endl;
-  std::cout << "-s: use unix socket and the argument is socket address" << std::endl;
+  std::cout << "-s: use unix socket and the argument is socket address"
+            << std::endl;
   exit(0);
 }
 
@@ -79,8 +80,7 @@ void parse_parameter(int argc, char **argv) {
 }
 
 Server *init_server() {
-  std::map<std::string, std::string> net_section =
-      get_properties()->get(NET);
+  std::map<std::string, std::string> net_section = get_properties()->get(NET);
 
   ProcessParam *process_param = the_process_param();
 
@@ -88,7 +88,8 @@ Server *init_server() {
   long max_connection_num = MAX_CONNECTION_NUM_DEFAULT;
   int port = PORT_DEFAULT;
 
-  std::map<std::string, std::string>::iterator it = net_section.find(CLIENT_ADDRESS);
+  std::map<std::string, std::string>::iterator it =
+      net_section.find(CLIENT_ADDRESS);
   if (it != net_section.end()) {
     std::string str = it->second;
     str_to_val(str, listen_addr);
