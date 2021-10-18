@@ -1,0 +1,9 @@
+[submodule "miniob-main/deps/libevent"]
+	path = miniob-main/deps/libevent
+	url = https://github.com/libevent/libevent
+[submodule "miniob-main/deps/googletest"]
+	path = miniob-main/deps/googletest
+	url = https://github.com/google/googletest
+[submodule "miniob-main/deps/jsoncpp"]
+	path = miniob-main/deps/jsoncpp
+	url = https://github.com/open-source-parsers/jsoncpp.git
