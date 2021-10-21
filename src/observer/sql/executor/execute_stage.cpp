@@ -34,6 +34,8 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
+void end_trx_if_need(Session *session, Trx *trx, bool all_right);
+
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
                              const char *table_name,
                              SelectExeNode &select_node);
@@ -128,16 +130,56 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
     do_select(current_db, sql, exe_event->sql_event()->session_event());
     exe_event->done_immediate();
   } break;
+  case SCF_INSERT: {
+    do_insert(current_db, sql, exe_event->sql_event()->session_event());
+    exe_event->done_immediate();
+  } break;
+  case SCF_UPDATE: {
+    do_update(current_db, sql, exe_event->sql_event()->session_event());
+    exe_event->done_immediate();
+  } break;
+  case SCF_DELETE: {
+    do_delete(current_db, sql, exe_event->sql_event()->session_event());
+    exe_event->done_immediate();
+  } break;
+  case SCF_CREATE_TABLE: {
+    do_create_table(current_db, sql);
+    exe_event->done_immediate();
+  } break;
+  case SCF_SHOW_TABLES: {
+    std::string response;
+    do_show_tables(current_db, response);
+    session_event->set_response(response.c_str());
+    exe_event->done_immediate();
+  } break;
+  case SCF_DESC_TABLE: {
+    do_desc_table(current_db, sql, exe_event->sql_event()->session_event());
+    exe_event->done_immediate();
+  } break;
+  case SCF_DROP_TABLE: {
+    RC rc = do_drop_table(current_db, sql);
+    const char *table_name = sql->sstr.drop_table.relation_name;
+    char response[100];
 
-  case SCF_INSERT:
-  case SCF_UPDATE:
-  case SCF_DELETE:
-  case SCF_CREATE_TABLE:
-  case SCF_SHOW_TABLES:
-  case SCF_DESC_TABLE:
-  case SCF_DROP_TABLE:
-  case SCF_CREATE_INDEX:
-  case SCF_DROP_INDEX:
+    if (rc == RC::SUCCESS) {
+      snprintf(response, 100, "drop table %s success\n", table_name);
+    } else if (rc == RC::SCHEMA_TABLE_NOT_EXIST) {
+      snprintf(response, 100, "table %s not exists\n", table_name);
+    } else {
+      snprintf(response, 100, "drop table %s failed but drop it at last\n",
+               table_name);
+    }
+    session_event->set_response(response);
+    exe_event->done_immediate();
+  } break;
+  case SCF_CREATE_INDEX: {
+    do_create_index(current_db, sql, exe_event->sql_event()->session_event());
+    exe_event->done_immediate();
+  } break;
+  case SCF_DROP_INDEX: {
+    do_drop_index(current_db, sql, exe_event->sql_event()->session_event());
+    exe_event->done_immediate();
+  } break;
   case SCF_LOAD_DATA: {
     StorageEvent *storage_event = new (std::nothrow) StorageEvent(exe_event);
     if (storage_event == nullptr) {
@@ -145,7 +187,6 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
       event->done_immediate();
       return;
     }
-
     default_storage_stage_->handle_event(storage_event);
   } break;
   case SCF_SYNC: {
@@ -356,4 +397,84 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
 
   return select_node.init(trx, table, std::move(schema),
                           std::move(condition_filters));
+}
+
+RC ExecuteStage::do_insert(const char *db, Query *sql,
+                           SessionEvent *session_event) {
+  Inserts insert = sql->sstr.insertion;
+  Session *session = session_event->get_client()->session;
+  Trx *trx = session->current_trx();
+  RC rc = DefaultHandler::get_default().insert_record(
+      trx, db, insert.relation_name, insert.value_num, insert.values);
+  end_trx_if_need(session, trx, rc == RC::SUCCESS);
+  return rc;
+}
+
+RC ExecuteStage::do_update(const char *db, Query *sql,
+                           SessionEvent *session_event) {
+  Updates update = sql->sstr.update;
+  Session *session = session_event->get_client()->session;
+  Trx *trx = session->current_trx();
+  int updated_count;
+  RC rc = DefaultHandler::get_default().update_record(
+      trx, db, update.relation_name, update.attribute_name, &update.value,
+      update.condition_num, update.conditions, &updated_count);
+  end_trx_if_need(session, trx, rc == RC::SUCCESS);
+  return rc;
+}
+
+RC ExecuteStage::do_delete(const char *db, Query *sql,
+                           SessionEvent *session_event) {
+  Deletes deletion = sql->sstr.deletion;
+  Session *session = session_event->get_client()->session;
+  Trx *trx = session->current_trx();
+  int deleted_count;
+  RC rc = DefaultHandler::get_default().delete_record(
+      trx, db, deletion.relation_name, deletion.condition_num,
+      deletion.conditions, &deleted_count);
+  end_trx_if_need(session, trx, rc == RC::SUCCESS);
+  return rc;
+}
+
+RC ExecuteStage::do_create_table(const char *db, Query *sql) {
+  CreateTable create_table = sql->sstr.create_table;
+  return DefaultHandler::get_default().create_table(
+      db, create_table.relation_name, create_table.attribute_count,
+      create_table.attributes);
+}
+
+RC ExecuteStage::do_show_tables(const char *db, std::string &result) {
+  return DefaultHandler::get_default().show_tables(db, result);
+}
+
+RC ExecuteStage::do_desc_table(const char *db, Query *sql,
+                               SessionEvent *session_event) {}
+
+RC ExecuteStage::do_drop_table(const char *db, Query *sql) {
+  DropTable drop_table = sql->sstr.drop_table;
+  return DefaultHandler::get_default().drop_table(db, drop_table.relation_name);
+}
+
+RC ExecuteStage::do_create_index(const char *db, Query *sql,
+                                 SessionEvent *session_event) {
+  CreateIndex create_index = sql->sstr.create_index;
+  Session *session = session_event->get_client()->session;
+  Trx *trx = session->current_trx();
+  RC rc = DefaultHandler::get_default().create_index(
+      trx, db, create_index.relation_name, create_index.index_name,
+      create_index.attribute_name);
+  end_trx_if_need(session, trx, rc == RC::SUCCESS);
+  return rc;
+}
+
+RC ExecuteStage::do_drop_index(const char *db, Query *sql,
+                               SessionEvent *session_event) {
+  DropIndex drop_index = sql->sstr.drop_index;
+  Session *session = session_event->get_client()->session;
+  Trx *trx = session->current_trx();
+  // TODO: drop_index relation_name
+  RC rc = DefaultHandler::get_default().drop_index(trx, db, "",
+                                                   drop_index.index_name);
+  end_trx_if_need(session, trx, rc == RC::SUCCESS);
+  return rc;
 }

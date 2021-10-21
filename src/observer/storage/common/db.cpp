@@ -72,6 +72,28 @@ RC Db::create_table(const char *table_name, int attribute_count,
   return RC::SUCCESS;
 }
 
+RC Db::drop_table(const char *table_name) {
+  if (opened_tables_.count(table_name) == 0) {
+    LOG_INFO("Drop table not exists");
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  std::string table_file_path =
+      table_meta_file(path_.c_str(), table_name); // 文件路径可以移到Table模块
+
+  Table *table = opened_tables_[table_name];
+
+  RC rc = table->clear();
+
+  opened_tables_.erase(table_name);
+  if (rc == SUCCESS) {
+    LOG_INFO("Drop table success. table name=%s", table_name);
+  } else {
+    LOG_INFO("Drop table failed. table name=%s", table_name);
+  }
+  return rc;
+}
+
 Table *Db::find_table(const char *table_name) const {
   std::unordered_map<std::string, Table *>::const_iterator iter =
       opened_tables_.find(table_name);
@@ -79,6 +101,18 @@ Table *Db::find_table(const char *table_name) const {
     return iter->second;
   }
   return nullptr;
+}
+
+std::string Db::show_tables() {
+  std::vector<std::string> all_table_names;
+  all_tables(all_table_names);
+
+  std::string result = "all tables:\n";
+  for (auto table_name : all_table_names) {
+    result += table_name + "\n";
+  }
+
+  return result;
 }
 
 RC Db::open_all_tables() {

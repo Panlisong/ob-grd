@@ -38,6 +38,15 @@ protected:
 
   void handle_request(common::StageEvent *event);
   RC do_select(const char *db, Query *sql, SessionEvent *session_event);
+  RC do_insert(const char *db, Query *sql, SessionEvent *session_event);
+  RC do_update(const char *db, Query *sql, SessionEvent *session_event);
+  RC do_delete(const char *db, Query *sql, SessionEvent *session_event);
+  RC do_create_table(const char *db, Query *sql);
+  RC do_show_tables(const char *db, std::string &result);
+  RC do_desc_table(const char *db, Query *sql, SessionEvent *session_event);
+  RC do_drop_table(const char *db, Query *sql);
+  RC do_create_index(const char *db, Query *sql, SessionEvent *session_event);
+  RC do_drop_index(const char *db, Query *sql, SessionEvent *session_event);
 
 protected:
 private:

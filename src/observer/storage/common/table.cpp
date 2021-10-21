@@ -114,6 +114,32 @@ RC Table::create(const char *path, const char *name, const char *base_dir,
   return rc;
 }
 
+RC Table::clear() {
+  RC rc = RC::SUCCESS;
+  std::string table_meta_path = table_meta_file(base_dir_.c_str(), name());
+  if (remove(table_meta_path.c_str()) != 0) {
+    LOG_ERROR("Delete table %s meta failed", name());
+    rc = RC::IOERR_DELETE;
+  }
+
+  std::string table_data_path = table_data_file(base_dir_.c_str(), name());
+  if (remove(table_data_path.c_str()) != 0) {
+    LOG_ERROR("Delete table %s data failed", name());
+    rc = RC::IOERR_DELETE;
+  }
+
+  for (auto index : indexes_) {
+    const char *index_name = index->index_meta().name();
+    std::string index_path =
+        index_data_file(base_dir_.c_str(), name(), index_name);
+    if (remove(index_path.c_str()) != 0) {
+      LOG_ERROR("Delete table %s index %s error", name(), index_name);
+      rc = RC::IOERR_DELETE;
+    }
+  }
+  return rc;
+}
+
 RC Table::open(const char *meta_file, const char *base_dir) {
   // 加载元数据文件
   std::fstream fs;
