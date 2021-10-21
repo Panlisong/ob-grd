@@ -43,6 +43,8 @@ public:
   RC create(const char *path, const char *name, const char *base_dir,
             int attribute_count, const AttrInfo attributes[]);
 
+  RC clear();
+
   /**
    * 打开一个表
    * @param meta_file 保存表元数据的文件完整路径
@@ -73,6 +75,8 @@ public:
   RC commit_delete(Trx *trx, const RID &rid);
   RC rollback_insert(Trx *trx, const RID &rid);
   RC rollback_delete(Trx *trx, const RID &rid);
+  RC commit_update(Trx *trx, const RID &rid);
+  RC rollback_update(Trx *trx, const RID &rid);
 
 private:
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context,
@@ -85,6 +89,7 @@ private:
 
   RC insert_record(Trx *trx, Record *record);
   RC delete_record(Trx *trx, Record *record);
+  RC update_record(Trx *trx, Record *record);
 
 private:
   friend class RecordUpdater;

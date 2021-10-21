@@ -119,8 +119,22 @@ RC DefaultHandler::create_table(const char *dbname, const char *relation_name,
   return db->create_table(relation_name, attribute_count, attributes);
 }
 
+RC DefaultHandler::show_tables(const char *dbname, std::string &result) {
+  Db *db = find_db(dbname);
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
+  }
+  std::string all_tables = db->show_tables();
+  result = all_tables;
+  return RC::SUCCESS;
+}
+
 RC DefaultHandler::drop_table(const char *dbname, const char *relation_name) {
-  return RC::GENERIC_ERROR;
+  Db *db = find_db(dbname);
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
+  }
+  return db->drop_table(relation_name);
 }
 
 RC DefaultHandler::create_index(Trx *trx, const char *dbname,

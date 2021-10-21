@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 
 #include <algorithm>
 #include <limits.h>
+#include <list>
 #include <string.h>
 
 #include "common/lang/string.h"
@@ -114,6 +115,32 @@ RC Table::create(const char *path, const char *name, const char *base_dir,
   return rc;
 }
 
+RC Table::clear() {
+  RC rc = RC::SUCCESS;
+  std::string table_meta_path = table_meta_file(base_dir_.c_str(), name());
+  if (remove(table_meta_path.c_str()) != 0) {
+    LOG_ERROR("Delete table %s meta failed", name());
+    rc = RC::IOERR_DELETE;
+  }
+
+  std::string table_data_path = table_data_file(base_dir_.c_str(), name());
+  if (remove(table_data_path.c_str()) != 0) {
+    LOG_ERROR("Delete table %s data failed", name());
+    rc = RC::IOERR_DELETE;
+  }
+
+  for (auto index : indexes_) {
+    const char *index_name = index->index_meta().name();
+    std::string index_path =
+        index_data_file(base_dir_.c_str(), name(), index_name);
+    if (remove(index_path.c_str()) != 0) {
+      LOG_ERROR("Delete table %s index %s error", name(), index_name);
+      rc = RC::IOERR_DELETE;
+    }
+  }
+  return rc;
+}
+
 RC Table::open(const char *meta_file, const char *base_dir) {
   // 加载元数据文件
   std::fstream fs;
@@ -172,7 +199,6 @@ RC Table::commit_insert(Trx *trx, const RID &rid) {
 }
 
 RC Table::rollback_insert(Trx *trx, const RID &rid) {
-
   Record record;
   RC rc = record_handler_->get_record(&rid, &record);
   if (rc != RC::SUCCESS) {
@@ -238,6 +264,7 @@ RC Table::insert_record(Trx *trx, Record *record) {
   }
   return rc;
 }
+
 RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
   if (value_num <= 0 || nullptr == values) {
     LOG_ERROR("Invalid argument. value num=%d, values=%p", value_num, values);
@@ -337,6 +364,7 @@ private:
   void (*record_reader_)(const char *, void *);
   void *context_;
 };
+
 static RC scan_record_reader_adapter(Record *record, void *context) {
   RecordReaderScanAdapter &adapter = *(RecordReaderScanAdapter *)context;
   adapter.consume(record);
@@ -555,10 +583,137 @@ RC Table::create_index(Trx *trx, const char *index_name,
   return rc;
 }
 
+class RecordUpdater {
+public:
+  RecordUpdater(Table &table, Trx *trx) : table_(table), trx_(trx) {}
+
+  RC update_record(Record *record) {
+    RC rc = RC::SUCCESS;
+    old_records.push_back(*record);
+    rc = table_.update_record(trx_, record);
+    if (rc == RC::SUCCESS) {
+      updated_count_++;
+    }
+
+    return rc;
+  }
+
+  RC rollback_update() {
+    RC rc = RC::SUCCESS;
+    RC return_rc = RC::SUCCESS;
+    while (!old_records.empty()) {
+      Record old_record = old_records.back();
+      old_records.pop_back();
+      return_rc = table_.update_record(trx_, &old_record);
+      if (return_rc != RC::SUCCESS) {
+        LOG_PANIC("Failed to rollback record data when update records failed. "
+                  "table name=%s, rc=%d:%s",
+                  table_.name(), return_rc, strrc(return_rc));
+        rc = return_rc;
+      }
+    }
+    updated_count_ = 0;
+
+    return rc;
+  }
+
+  int updated_count() const { return updated_count_; }
+
+private:
+  Table &table_;
+  Trx *trx_;
+  int updated_count_ = 0;
+  std::list<Record> old_records;
+};
+
+static RC record_reader_update_adapter(Record *record, void *context) {
+  RecordUpdater &record_updater = *(RecordUpdater *)context;
+  return record_updater.update_record(record);
+}
+
 RC Table::update_record(Trx *trx, const char *attribute_name,
                         const Value *value, int condition_num,
                         const Condition conditions[], int *updated_count) {
-  return RC::GENERIC_ERROR;
+  if (condition_num <= 0 || conditions == nullptr) {
+    LOG_ERROR("Invalid argument, condition_num=%d, conditions=%p",
+              condition_num, conditions);
+    return RC::INVALID_ARGUMENT;
+  }
+
+  RC rc;
+  CompositeConditionFilter *filter = new CompositeConditionFilter();
+  Table &table = *this;
+  rc = filter->init(table, conditions, condition_num);
+
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Update record failed, table name=%s", table_meta_.name());
+    delete filter;
+    return rc;
+  }
+
+  RecordUpdater updater(*this, trx);
+  rc = scan_record(trx, filter, -1, &updater, record_reader_update_adapter);
+  if (rc != RC::SUCCESS) {
+    updater.rollback_update();
+  }
+  if (updated_count != nullptr) {
+    *updated_count = updater.updated_count();
+  }
+
+  delete filter;
+  return rc;
+}
+
+RC Table::update_record(Trx *trx, Record *record) {
+  RC rc = RC::SUCCESS;
+
+  if (trx != nullptr) {
+    trx->init_trx_info(this, *record);
+  }
+  rc = record_handler_->update_record(record);
+
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Update record failed, table name=%s, rc=%d:%s",
+              table_meta_.name(), rc, strrc(rc));
+    return rc;
+  }
+
+ if (trx != nullptr) {
+    rc = trx->insert_record(this, record);
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to log operation(update) to trx");
+
+      RC rc2 = record_handler_->delete_record(&record->rid);
+      if (rc2 != RC::SUCCESS) {
+        LOG_PANIC("Failed to rollback record data when update entries "
+                  "failed. table name=%s, rc=%d:%s",
+                  name(), rc2, strrc(rc2));
+      }
+      return rc;
+    }
+  }
+
+  // TODO
+  // insert -> update
+  rc = insert_entry_of_indexes(record->data, record->rid);
+  if (rc != RC::SUCCESS) {
+    RC rc2 = delete_entry_of_indexes(record->data, record->rid, true);
+    if (rc2 != RC::SUCCESS) {
+      LOG_PANIC("Failed to rollback index data when insert index entries "
+                "failed. table name=%s, rc=%d:%s",
+                name(), rc2, strrc(rc2));
+    }
+    rc2 = record_handler_->delete_record(&record->rid);
+    if (rc2 != RC::SUCCESS) {
+      LOG_PANIC("Failed to rollback record data when insert index entries "
+                "failed. table name=%s, rc=%d:%s",
+                name(), rc2, strrc(rc2));
+    }
+    return rc;
+  }
+  return rc;
+
+  return rc;
 }
 
 class RecordDeleter {
@@ -668,6 +823,23 @@ RC Table::delete_entry_of_indexes(const char *record, const RID &rid,
     }
   }
   return rc;
+}
+
+RC Table::commit_update(Trx *trx, const RID &rid) {
+  Record record;
+  RC rc = record_handler_->get_record(&rid, &record);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+  return trx->commit_insert(this, record);
+}
+
+RC Table::rollback_update(Trx *trx, const RID &rid) {
+  Record record;
+  RC rc = record_handler_->get_record(&rid, &record);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
 }
 
 Index *Table::find_index(const char *index_name) const {

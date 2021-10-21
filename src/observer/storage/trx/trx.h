@@ -47,6 +47,7 @@ private:
   PageNum page_num_;
   SlotNum slot_num_;
 };
+
 class OperationHasher {
 public:
   size_t operator()(const Operation &op) const {
@@ -80,6 +81,7 @@ public:
 public:
   RC insert_record(Table *table, Record *record);
   RC delete_record(Table *table, Record *record);
+  RC update_record(Table *table, Record *record);
 
   RC commit();
   RC rollback();

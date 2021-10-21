@@ -73,6 +73,17 @@ RC Trx::delete_record(Table *table, Record *record) {
   return rc;
 }
 
+RC Trx::update_record(Table *table, Record *record) {
+  RC rc = RC::SUCCESS;
+  start_if_not_started();
+  Operation *old_oper = find_operation(table, record->rid);
+  if (old_oper != nullptr) {
+    return RC::GENERIC_ERROR;
+  }
+  insert_operation(table, Operation::Type::UPDATE, record->rid);
+  return rc;
+}
+
 void Trx::set_record_trx_id(Table *table, Record &record, int32_t trx_id,
                             bool deleted) const {
   const FieldMeta *trx_field = table->table_meta().trx_field();
@@ -113,7 +124,6 @@ void Trx::insert_operation(Table *table, Operation::Type type, const RID &rid) {
 }
 
 void Trx::delete_operation(Table *table, const RID &rid) {
-
   std::unordered_map<Table *, OperationSet>::iterator table_operations_iter =
       operations_.find(table);
   if (table_operations_iter == operations_.end()) {
@@ -149,6 +159,13 @@ RC Trx::commit() {
         if (rc != RC::SUCCESS) {
           // handle rc
           LOG_ERROR("Failed to commit delete operation. rid=%d.%d, rc=%d:%s",
+                    rid.page_num, rid.slot_num, rc, strrc(rc));
+        }
+      } break;
+      case Operation::Type::UNDEFINED: {
+        // rc= table->commit_update(this,rid);
+        if (rc != RC::SUCCESS) {
+          LOG_ERROR("Failed to commit update operation. rid=%d.%d, rc=%d:%s",
                     rid.page_num, rid.slot_num, rc, strrc(rc));
         }
       } break;
@@ -189,6 +206,13 @@ RC Trx::rollback() {
         if (rc != RC::SUCCESS) {
           // handle rc
           LOG_ERROR("Failed to rollback delete operation. rid=%d.%d, rc=%d:%s",
+                    rid.page_num, rid.slot_num, rc, strrc(rc));
+        }
+      } break;
+      case Operation::Type::UPDATE: {
+        // rc = table->rollback_update(this,rid);
+        if (rc != RC::SUCCESS) {
+          LOG_ERROR("Failed to rollback update operation. rid=%d.%d, rc=%d:%s",
                     rid.page_num, rid.slot_num, rc, strrc(rc));
         }
       } break;
