@@ -214,7 +214,11 @@ void TupleRecordConverter::add_record(const char *record) {
       tuple.add(s, strlen(s));
     } break;
     case DATES: {
-      const char *s = record + field_meta->offset(); // 现在当做Cstring来处理
+      time_t value = *(time_t *)(record + field_meta->offset());
+      tm *tp = gmtime(&value);
+      char s[20];
+      std::snprintf(s, sizeof(s), "%04d-%02d-%02d", tp->tm_year, tp->tm_mon,
+                    tp->tm_mday + 1);
       tuple.add(s, strlen(s));
     } break;
     default: {
