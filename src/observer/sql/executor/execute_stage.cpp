@@ -159,16 +159,14 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   case SCF_DROP_TABLE: {
     RC rc = do_drop_table(current_db, sql);
     const char *table_name = sql->sstr.drop_table.relation_name;
-    char response[100];
+    char response[25];
 
     if (rc == RC::SUCCESS) {
-      snprintf(response, 100, "drop table %s success\n", table_name);
-    } else if (rc == RC::SCHEMA_TABLE_NOT_EXIST) {
-      snprintf(response, 100, "table %s not exists\n", table_name);
+      snprintf(response, 25, "SUCCESS\n");
     } else {
-      snprintf(response, 100, "drop table %s failed but drop it at last\n",
-               table_name);
+      snprintf(response, 25, "FAILURE\n");
     }
+
     session_event->set_response(response);
     exe_event->done_immediate();
   } break;
