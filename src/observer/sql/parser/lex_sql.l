@@ -28,6 +28,7 @@ DIGIT            [0-9]+
 ID               [A-Za-z_]+[A-Za-z0-9_]*
 DOT              \.
 QUOTE            [\'\"]
+DELI			 [\-\\/\.]
 %x STR
 
 %%
@@ -67,6 +68,7 @@ QUOTE            [\'\"]
 [Rr][Oo][Ll][Ll][Bb][Aa][Cc][Kk]         RETURN_TOKEN(TRX_ROLLBACK);
 [Ii][Nn][Tt]					                   RETURN_TOKEN(INT_T);
 [Cc][Hh][Aa][Rr]				                 RETURN_TOKEN(STRING_T);
+(?i:date)										 RETURN_TOKEN(DATE_T);
 [Ff][Ll][Oo][Aa][Tt]			               RETURN_TOKEN(FLOAT_T);
 [Ll][Oo][Aa][Dd]			                   RETURN_TOKEN(LOAD);
 [Dd][Aa][Tt][Aa]	                       RETURN_TOKEN(DATA);
@@ -82,6 +84,31 @@ QUOTE            [\'\"]
 "<"                                      RETURN_TOKEN(LT);
 ">="                                     RETURN_TOKEN(GE);
 ">"                                      RETURN_TOKEN(GT);
+{QUOTE}([0-9]{4}){DELI}(0?[1-9]|1[0-2]){DELI}(0?[1-9]|[12][0-9]|3[0-1]){QUOTE}	{
+	/* parse date */;
+	int i = 1, j = 0;
+	int date[3];	// date[0]:year, date[1]:month, date[2]:day
+	memset(date, 0, sizeof date);
+	while (j < 3 && i < yyleng) {
+		while (i < yyleng && (yytext[i] <= '9' && yytext[i] >= '0')) {
+			date[j] = date[j] * 10 + (yytext[i] - '0');
+			i++;
+		}
+		if (i < yyleng) {
+			yytext[i] = '-';
+		}
+		i++, j++;
+	}
+
+	/* format date: YYYY-MM-DD */	
+	char tmp[20];
+	memset(tmp, 0, sizeof tmp);
+	sprintf(tmp, "%04d-%02d-%02d", date[0], date[1], date[2]);
+	yylval->string = strdup(tmp);
+
+	/* WARNNING: date string may be invalid */
+	RETURN_TOKEN(DATE);
+}
 {QUOTE}[\40\42\47A-Za-z0-9_/\.\-]*{QUOTE}	     yylval->string=strdup(yytext); RETURN_TOKEN(SSS);
 
 .						                             printf("Unknown character [%c]\n",yytext[0]); return yytext[0];

@@ -52,6 +52,24 @@ void value_init_string(Value *value, const char *v) {
   value->type = CHARS;
   value->data = strdup(v);
 }
+int check_date(Date *date) {
+  int day_max[13] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  bool leap = false;
+  if (date->year % 100) {
+    leap = (date->year % 4) == 0;
+  } else {
+    leap = (date->year % 400) == 0;
+  }
+  if (leap) {
+    day_max[2] = 29;
+  }
+  // check day
+  return date->day <= day_max[date->month];
+}
+void value_init_date(Value *value, const char *v) {
+  value->type = DATES;
+  value->data = strdup(v);
+}
 void value_destroy(Value *value) {
   value->type = UNDEFINED;
   free(value->data);
