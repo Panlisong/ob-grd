@@ -82,6 +82,7 @@ ParserContext *get_context(yyscan_t scanner)
         TRX_ROLLBACK
         INT_T
         STRING_T
+		DATE_T
         FLOAT_T
         HELP
         EXIT
@@ -118,6 +119,7 @@ ParserContext *get_context(yyscan_t scanner)
 %token <string> ID
 %token <string> PATH
 %token <string> SSS
+%token <string> DATE
 %token <string> STAR
 %token <string> STRING_V
 //非终结符
@@ -252,7 +254,11 @@ attr_def:
     |ID_get type
 		{
 			AttrInfo attribute;
-			attr_info_init(&attribute, CONTEXT->id, $2, 4);
+			if ($2 == DATES) {
+				attr_info_init(&attribute, CONTEXT->id, $2, 10);
+			} else {
+				attr_info_init(&attribute, CONTEXT->id, $2, 4);
+			}
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name=(char*)malloc(sizeof(char));
 			// strcpy(CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name, CONTEXT->id); 
@@ -268,6 +274,7 @@ type:
 	INT_T { $$=INTS; }
        | STRING_T { $$=CHARS; }
        | FLOAT_T { $$=FLOATS; }
+	   | DATE_T { $$=DATES; }
        ;
 ID_get:
 	ID 
@@ -312,6 +319,18 @@ value:
 			$1 = substr($1,1,strlen($1)-2);
   		value_init_string(&CONTEXT->values[CONTEXT->value_length++], $1);
 		}
+	|DATE {
+		Date date;
+		if (sscanf($1, "%d-%d-%d", &date.year, &date.month, &date.day) != -1) {
+			// check date
+			if (!check_date(&date)) {
+				CONTEXT->ssql->sstr.errors = "invalid day num";
+				yyerror(scanner, $1);
+				YYERROR;
+			}
+			value_init_date(&CONTEXT->values[CONTEXT->value_length++], $1);
+		}
+	}
     ;
     
 delete:		/*  delete 语句的语法解析树*/
