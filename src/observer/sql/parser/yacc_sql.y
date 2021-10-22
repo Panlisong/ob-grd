@@ -254,11 +254,7 @@ attr_def:
     |ID_get type
 		{
 			AttrInfo attribute;
-			if ($2 == DATES) {
-				attr_info_init(&attribute, CONTEXT->id, $2, 10);
-			} else {
-				attr_info_init(&attribute, CONTEXT->id, $2, 4);
-			}
+			attr_info_init(&attribute, CONTEXT->id, $2, $2 == DATES ? 8 : 4);
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name=(char*)malloc(sizeof(char));
 			// strcpy(CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name, CONTEXT->id); 
@@ -320,15 +316,18 @@ value:
   		value_init_string(&CONTEXT->values[CONTEXT->value_length++], $1);
 		}
 	|DATE {
-		Date date;
-		if (sscanf($1, "%d-%d-%d", &date.year, &date.month, &date.day) != -1) {
+		int year = 0, month = 0, day = 0;
+		if (sscanf($1, "%d-%d-%d", &year, &month, &day) != -1) {
 			// check date
-			if (!check_date(&date)) {
+			if (!check_date(year, month, day)) {
 				CONTEXT->ssql->sstr.errors = "invalid day num";
 				yyerror(scanner, $1);
 				YYERROR;
 			}
-			value_init_date(&CONTEXT->values[CONTEXT->value_length++], $1);
+			struct tm t;
+			memset(&t, 0, sizeof(struct tm));
+			t.tm_year = year, t.tm_mon = month, t.tm_mday = day;
+			value_init_date(&CONTEXT->values[CONTEXT->value_length++], mktime(&t));
 		}
 	}
     ;

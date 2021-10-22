@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_PARSER_PARSE_DEFS_H__
 
 #include <stddef.h>
+#include <time.h>
 
 #define MAX_NUM 20
 #define MAX_REL_NAME 20
@@ -46,12 +47,6 @@ typedef struct _Value {
   AttrType type; // type of value
   void *data;    // value
 } Value;
-
-typedef struct _Date {
-  int year;
-  int month;
-  int day;
-} Date;
 
 typedef struct _Condition {
   int left_is_attr;  // TRUE if left-hand side is an attribute
@@ -190,8 +185,8 @@ void relation_attr_destroy(RelAttr *relation_attr);
 void value_init_integer(Value *value, int v);
 void value_init_float(Value *value, float v);
 void value_init_string(Value *value, const char *v);
-void value_init_date(Value *value, const char *v);
-int check_date(Date *date);
+void value_init_date(Value *value, time_t v);
+int check_date(int year, int month, int day);
 void value_destroy(Value *value);
 
 void condition_init(Condition *condition, CompOp comp, int left_is_attr,
