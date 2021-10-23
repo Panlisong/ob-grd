@@ -43,7 +43,7 @@ void yyerror(yyscan_t scanner, const char *str)
   context->from_length = 0;
   context->select_length = 0;
   context->value_length = 0;
-  context->ssql->sstr.insertion.value_num = 0;
+  context->ssql->sstr.insertion.tuple_num = 0;
   printf("parse sql failed. error=%s", str);
 }
 
@@ -82,6 +82,7 @@ ParserContext *get_context(yyscan_t scanner)
         TRX_ROLLBACK
         INT_T
         STRING_T
+		DATE_T
         FLOAT_T
         HELP
         EXIT
@@ -118,6 +119,7 @@ ParserContext *get_context(yyscan_t scanner)
 %token <string> ID
 %token <string> PATH
 %token <string> SSS
+%token <string> DATE
 %token <string> STAR
 %token <string> STRING_V
 //非终结符
@@ -252,7 +254,7 @@ attr_def:
     |ID_get type
 		{
 			AttrInfo attribute;
-			attr_info_init(&attribute, CONTEXT->id, $2, 4);
+			attr_info_init(&attribute, CONTEXT->id, $2, $2 == DATES ? 8 : 4);
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name=(char*)malloc(sizeof(char));
 			// strcpy(CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name, CONTEXT->id); 
@@ -268,6 +270,7 @@ type:
 	INT_T { $$=INTS; }
        | STRING_T { $$=CHARS; }
        | FLOAT_T { $$=FLOATS; }
+	   | DATE_T { $$=DATES; }
        ;
 ID_get:
 	ID 
@@ -279,21 +282,25 @@ ID_get:
 
 	
 insert:				/*insert   语句的语法解析树*/
-    INSERT INTO ID VALUES LBRACE value value_list RBRACE SEMICOLON 
-		{
-			// CONTEXT->values[CONTEXT->value_length++] = *$6;
+	INSERT INTO ID VALUES tuple tuple_list SEMICOLON
+	{
+		CONTEXT->ssql->flag=SCF_INSERT;
+		inserts_init(&CONTEXT->ssql->sstr.insertion, $3);
+	}
 
-			CONTEXT->ssql->flag=SCF_INSERT;//"insert";
-			// CONTEXT->ssql->sstr.insertion.relation_name = $3;
-			// CONTEXT->ssql->sstr.insertion.value_num = CONTEXT->value_length;
-			// for(i = 0; i < CONTEXT->value_length; i++){
-			// 	CONTEXT->ssql->sstr.insertion.values[i] = CONTEXT->values[i];
-      // }
-			inserts_init(&CONTEXT->ssql->sstr.insertion, $3, CONTEXT->values, CONTEXT->value_length);
+tuple_list:
+	/* empty */
+	| COMMA tuple tuple_list
+	{	/* do nothing here */	}
 
-      //临时变量清零
-      CONTEXT->value_length=0;
-    }
+tuple: 
+	LBRACE value value_list RBRACE
+	{
+		// 由于tuple这种语法[形如(v1, v2, ..., vn)]只在insert中使用
+		insert_tuple_init(&CONTEXT->ssql->sstr.insertion, CONTEXT->values, CONTEXT->value_length);
+		// 清空CONTEXT临时变量
+		CONTEXT->value_length = 0;
+	}
 
 value_list:
     /* empty */
@@ -312,6 +319,21 @@ value:
 			$1 = substr($1,1,strlen($1)-2);
   		value_init_string(&CONTEXT->values[CONTEXT->value_length++], $1);
 		}
+	|DATE {
+		int year = 0, month = 0, day = 0;
+		if (sscanf($1, "%d-%d-%d", &year, &month, &day) != -1) {
+			// check date
+			if (!check_date(year, month, day)) {
+				CONTEXT->ssql->sstr.errors = "invalid day num";
+				yyerror(scanner, $1);
+				YYERROR;
+			}
+			struct tm t;
+			memset(&t, 0, sizeof(struct tm));
+			t.tm_year = year, t.tm_mon = month, t.tm_mday = day;
+			value_init_date(&CONTEXT->values[CONTEXT->value_length++], mktime(&t));
+		}
+	}
     ;
     
 delete:		/*  delete 语句的语法解析树*/

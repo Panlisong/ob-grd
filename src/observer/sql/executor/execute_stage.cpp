@@ -125,17 +125,25 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   }
   exe_event->push_callback(cb);
 
+  RC rc;
+  char response[25];
   switch (sql->flag) {
   case SCF_SELECT: { // select
     do_select(current_db, sql, exe_event->sql_event()->session_event());
     exe_event->done_immediate();
   } break;
   case SCF_INSERT: {
-    do_insert(current_db, sql, exe_event->sql_event()->session_event());
+    rc = do_insert(current_db, sql, exe_event->sql_event()->session_event());
+    snprintf(response, sizeof response,
+             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
+    session_event->set_response(response);
     exe_event->done_immediate();
   } break;
   case SCF_UPDATE: {
-    do_update(current_db, sql, exe_event->sql_event()->session_event());
+    rc = do_update(current_db, sql, exe_event->sql_event()->session_event());
+    snprintf(response, sizeof response,
+             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
+    session_event->set_response(response);
     exe_event->done_immediate();
   } break;
   case SCF_DELETE: {
@@ -143,7 +151,10 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
     exe_event->done_immediate();
   } break;
   case SCF_CREATE_TABLE: {
-    do_create_table(current_db, sql);
+    rc = do_create_table(current_db, sql);
+    snprintf(response, sizeof response,
+             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILUR\n");
+    session_event->set_response(response);
     exe_event->done_immediate();
   } break;
   case SCF_SHOW_TABLES: {
@@ -159,16 +170,8 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   case SCF_DROP_TABLE: {
     RC rc = do_drop_table(current_db, sql);
     const char *table_name = sql->sstr.drop_table.relation_name;
-    char response[100];
-
-    if (rc == RC::SUCCESS) {
-      snprintf(response, 100, "drop table %s success\n", table_name);
-    } else if (rc == RC::SCHEMA_TABLE_NOT_EXIST) {
-      snprintf(response, 100, "table %s not exists\n", table_name);
-    } else {
-      snprintf(response, 100, "drop table %s failed but drop it at last\n",
-               table_name);
-    }
+    snprintf(response, sizeof response,
+             rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
     session_event->set_response(response);
     exe_event->done_immediate();
   } break;
@@ -401,11 +404,20 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
 
 RC ExecuteStage::do_insert(const char *db, Query *sql,
                            SessionEvent *session_event) {
-  Inserts insert = sql->sstr.insertion;
+  const Inserts &insert = sql->sstr.insertion;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
-  RC rc = DefaultHandler::get_default().insert_record(
-      trx, db, insert.relation_name, insert.value_num, insert.values);
+  // 遍历Inserts中的所有Tuples
+  RC rc = RC::SUCCESS;
+  for (size_t i = 0; i < insert.tuple_num; i++) {
+    const Tuples &tuple = insert.tuples[i];
+    rc = DefaultHandler::get_default().insert_record(
+        trx, db, insert.relation_name, tuple.value_num, tuple.values);
+    if (rc != RC::SUCCESS) {
+      end_trx_if_need(session, trx, false);
+      return rc;
+    }
+  }
   end_trx_if_need(session, trx, rc == RC::SUCCESS);
   return rc;
 }
