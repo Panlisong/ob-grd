@@ -43,7 +43,7 @@ void yyerror(yyscan_t scanner, const char *str)
   context->from_length = 0;
   context->select_length = 0;
   context->value_length = 0;
-  context->ssql->sstr.insertion.value_num = 0;
+  context->ssql->sstr.insertion.tuple_num = 0;
   printf("parse sql failed. error=%s", str);
 }
 
@@ -282,21 +282,25 @@ ID_get:
 
 	
 insert:				/*insert   语句的语法解析树*/
-    INSERT INTO ID VALUES LBRACE value value_list RBRACE SEMICOLON 
-		{
-			// CONTEXT->values[CONTEXT->value_length++] = *$6;
+	INSERT INTO ID VALUES tuple tuple_list SEMICOLON
+	{
+		CONTEXT->ssql->flag=SCF_INSERT;
+		inserts_init(&CONTEXT->ssql->sstr.insertion, $3);
+	}
 
-			CONTEXT->ssql->flag=SCF_INSERT;//"insert";
-			// CONTEXT->ssql->sstr.insertion.relation_name = $3;
-			// CONTEXT->ssql->sstr.insertion.value_num = CONTEXT->value_length;
-			// for(i = 0; i < CONTEXT->value_length; i++){
-			// 	CONTEXT->ssql->sstr.insertion.values[i] = CONTEXT->values[i];
-      // }
-			inserts_init(&CONTEXT->ssql->sstr.insertion, $3, CONTEXT->values, CONTEXT->value_length);
+tuple_list:
+	/* empty */
+	| COMMA tuple tuple_list
+	{	/* do nothing here */	}
 
-      //临时变量清零
-      CONTEXT->value_length=0;
-    }
+tuple: 
+	LBRACE value value_list RBRACE
+	{
+		// 由于tuple这种语法[形如(v1, v2, ..., vn)]只在insert中使用
+		insert_tuple_init(&CONTEXT->ssql->sstr.insertion, CONTEXT->values, CONTEXT->value_length);
+		// 清空CONTEXT临时变量
+		CONTEXT->value_length = 0;
+	}
 
 value_list:
     /* empty */

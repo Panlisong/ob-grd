@@ -401,11 +401,20 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
 
 RC ExecuteStage::do_insert(const char *db, Query *sql,
                            SessionEvent *session_event) {
-  Inserts insert = sql->sstr.insertion;
+  const Inserts &insert = sql->sstr.insertion;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
-  RC rc = DefaultHandler::get_default().insert_record(
-      trx, db, insert.relation_name, insert.value_num, insert.values);
+  // 遍历Inserts中的所有Tuples
+  RC rc = RC::SUCCESS;
+  for (size_t i = 0; i < insert.tuple_num; i++) {
+    const Tuples &tuple = insert.tuples[i];
+    rc = DefaultHandler::get_default().insert_record(
+        trx, db, insert.relation_name, tuple.value_num, tuple.values);
+    if (rc != RC::SUCCESS) {
+      end_trx_if_need(session, trx, false);
+      return rc;
+    }
+  }
   end_trx_if_need(session, trx, rc == RC::SUCCESS);
   return rc;
 }
