@@ -348,7 +348,7 @@ RC insert_record_from_file(Table *table, std::vector<std::string> &file_values,
   }
 
   if (RC::SUCCESS == rc) {
-    rc = table->insert_record(nullptr, field_num, record_values.data());
+    // rc = table->insert_record(nullptr, field_num, record_values.data());
     if (rc != RC::SUCCESS) {
       errmsg << "insert failed.";
     }

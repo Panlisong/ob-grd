@@ -21,7 +21,7 @@ public:
 
 public:
   TrxEvent(Table *table, TrxEvent::Type type, Record *old_record,
-            Record *new_record) {
+           Record *new_record) {
     table_ = table;
     type_ = type;
     old_record_ = old_record;
@@ -34,13 +34,13 @@ public:
   const char *get_table_name() { return table_->name(); }
 
   RC commit_insert();
-	RC rollback_insert();
+  RC rollback_insert();
 
   RC commit_delete();
-	RC rollback_delete();
+  RC rollback_delete();
 
   RC commit_update();
-	RC rollback_update();
+  RC rollback_update();
 
 private:
   Table *table_;
@@ -53,13 +53,16 @@ class Trx {
 public:
   Trx();
   ~Trx();
+  static const char *trx_field_name();
+  static AttrType trx_field_type();
+  static int trx_field_len();
 
 public:
   void begin();
   void pending(Table *table, TrxEvent::Type type, Record *old_record,
                Record *new_record);
   RC commit();
-	void rollback();
+  void rollback();
 
 private:
   static int32_t next_trx_id();
@@ -67,7 +70,7 @@ private:
 private:
   int32_t trx_id_ = 0;
   std::list<TrxEvent *> trx_events_;
-	std::list<TrxEvent *>::reference trx_event_;
+  std::list<TrxEvent *>::reference trx_event_;
 };
 
 #endif // __OBSERVER_STORAGE_TRX_TRX_H_

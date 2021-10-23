@@ -208,9 +208,9 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   } break;
   case SCF_ROLLBACK: {
     Trx *trx = session_event->get_client()->session->current_trx();
-    RC rc = trx->rollback();
+    trx->rollback();
     session_event->get_client()->session->set_trx_multi_operation_mode(false);
-    session_event->set_response(strrc(rc));
+    session_event->set_response(strrc(RC::SUCCESS));
     exe_event->done_immediate();
   } break;
   case SCF_HELP: {

@@ -6,6 +6,16 @@
 #include "storage/common/table.h"
 #include "storage/trx/trx.h"
 
+Trx::Trx() : trx_event_(trx_events_.front()) {}
+
+Trx::~Trx() {}
+
+const char *Trx::trx_field_name() { return "__trx"; }
+
+AttrType Trx::trx_field_type() { return INTS; }
+
+int Trx::trx_field_len() { return sizeof(int32_t); }
+
 int32_t Trx::next_trx_id() {
   static std::atomic<int32_t> trx_id;
   return ++trx_id;
@@ -77,7 +87,7 @@ void Trx::rollback() {
   }
 
   trx_events_.clear();
-	trx_event_=nullptr;
+  trx_event_ = nullptr;
   trx_id_ = 0;
 }
 
@@ -88,3 +98,7 @@ RC TrxEvent::rollback_insert() { return table_->rollback_insert(new_record_); }
 RC TrxEvent::commit_delete() { return table_->commit_delete(old_record_); }
 
 RC TrxEvent::rollback_delete() { return table_->rollback_delete(old_record_); }
+
+RC TrxEvent::commit_update() { return RC::SUCCESS; }
+
+RC TrxEvent::rollback_update() { return RC::SUCCESS; }

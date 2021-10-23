@@ -221,11 +221,6 @@ RC Table::open(const char *meta_file, const char *base_dir) {
 
 RC Table::insert_records(Trx *trx, int inserted_count, int value_num[],
                          const Value *values[]) {
-  if (trx == nullptr) {
-    trx = new Trx();
-  }
-
-  trx->begin();
   RC rc = RC::SUCCESS;
 
   for (int i = 0; i < inserted_count; i++) {
@@ -233,12 +228,6 @@ RC Table::insert_records(Trx *trx, int inserted_count, int value_num[],
     if (rc != RC::SUCCESS) {
       break;
     }
-  }
-
-  if (rc != RC::SUCCESS) {
-    trx->rollback();
-  } else {
-    rc = trx->commit();
   }
 
   return rc;

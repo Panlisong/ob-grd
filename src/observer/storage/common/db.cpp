@@ -102,18 +102,6 @@ Table *Db::find_table(const char *table_name) const {
   return nullptr;
 }
 
-std::string Db::show_tables() {
-  std::vector<std::string> all_table_names;
-  all_tables(all_table_names);
-
-  std::string result = "all tables:\n";
-  for (auto table_name : all_table_names) {
-    result += table_name + "\n";
-  }
-
-  return result;
-}
-
 RC Db::open_all_tables() {
   std::vector<std::string> table_meta_files;
   int ret = common::list_file(path_.c_str(), TABLE_META_FILE_PATTERN,
@@ -169,5 +157,47 @@ RC Db::sync() {
     }
   }
   LOG_INFO("Sync db over. db=%s", name_.c_str());
+  return rc;
+}
+
+std::string Db::show_tables() {
+  std::vector<std::string> all_table_names;
+  all_tables(all_table_names);
+
+  std::string result = "all tables:\n";
+  for (auto table_name : all_table_names) {
+    result += table_name + "\n";
+  }
+
+  return result;
+}
+
+RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,
+                      int value_num[], const Value *values[]) {
+  bool need_commit = false;
+  if (trx == nullptr) {
+    // one command.
+    trx = new Trx();
+    trx->begin();
+    need_commit = true;
+  }
+
+  Table *table = opened_tables_[table_name];
+  if (table == nullptr) {
+    if (need_commit) {
+      trx->commit();
+    }
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  RC rc = table->insert_records(trx, inserted_count, value_num, values);
+
+  if (need_commit && rc == RC::SUCCESS) {
+    trx->commit();
+  }
+  if (need_commit && rc != RC::SUCCESS) {
+    trx->rollback();
+  }
+
   return rc;
 }

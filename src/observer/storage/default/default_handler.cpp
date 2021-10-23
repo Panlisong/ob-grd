@@ -158,12 +158,15 @@ RC DefaultHandler::drop_index(Trx *trx, const char *dbname,
 RC DefaultHandler::insert_record(Trx *trx, const char *dbname,
                                  const char *relation_name, int value_num,
                                  const Value *values) {
-  Table *table = find_table(dbname, relation_name);
-  if (nullptr == table) {
-    return RC::SCHEMA_TABLE_NOT_EXIST;
+  Db *db = find_db(dbname);
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
   }
 
-  return table->insert_record(trx, value_num, values);
+	printf("%d\n",value_num);
+
+  // return table->insert_record(trx, value_num, values);
+  return RC::SUCCESS;
 }
 RC DefaultHandler::delete_record(Trx *trx, const char *dbname,
                                  const char *relation_name, int condition_num,
@@ -179,7 +182,8 @@ RC DefaultHandler::delete_record(Trx *trx, const char *dbname,
   if (rc != RC::SUCCESS) {
     return rc;
   }
-  return table->delete_record(trx, &condition_filter, deleted_count);
+  // return table->delete_record(trx, &condition_filter, deleted_count);
+  return RC::SUCCESS;
 }
 
 RC DefaultHandler::update_record(Trx *trx, const char *dbname,

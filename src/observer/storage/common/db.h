@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "rc.h"
 #include "sql/parser/parse_defs.h"
+#include "storage/trx/trx.h"
 
 class Table;
 
@@ -36,14 +37,16 @@ public:
   RC drop_table(const char *table_name);
 
   Table *find_table(const char *table_name) const;
-
-  std::string show_tables();
-
   const char *name() const;
 
   void all_tables(std::vector<std::string> &table_names) const;
 
   RC sync();
+
+  std::string show_tables();
+  RC insert_records(Trx *trx, const char *table_name, int inserted_count,
+                    int value_num[], const Value *values[]);
+
 
 private:
   RC open_all_tables();
