@@ -77,6 +77,12 @@ void value_destroy(Value *value) {
   value->data = nullptr;
 }
 
+void tuple_destory(Tuples *tuple) {
+  for (size_t i = 0; i < tuple->value_num; i++) {
+    value_destroy(&tuple->values[i]);
+  }
+}
+
 void condition_init(Condition *condition, CompOp comp, int left_is_attr,
                     RelAttr *left_attr, Value *left_value, int right_is_attr,
                     RelAttr *right_attr, Value *right_value) {
@@ -155,24 +161,26 @@ void selects_destroy(Selects *selects) {
   selects->condition_num = 0;
 }
 
-void inserts_init(Inserts *inserts, const char *relation_name, Value values[],
-                  size_t value_num) {
-  assert(value_num <= sizeof(inserts->values) / sizeof(inserts->values[0]));
-
-  inserts->relation_name = strdup(relation_name);
+void insert_tuple_init(Inserts *inserts, Value values[], size_t value_num) {
+  Tuples *tuple = &inserts->tuples[inserts->tuple_num++];
+  assert(value_num <= sizeof(tuple->values) / sizeof(tuple->values[0]));
   for (size_t i = 0; i < value_num; i++) {
-    inserts->values[i] = values[i];
+    tuple->values[i] = values[i];
   }
-  inserts->value_num = value_num;
+  tuple->value_num = value_num;
+}
+
+void inserts_init(Inserts *inserts, const char *relation_name) {
+  inserts->relation_name = strdup(relation_name);
 }
 void inserts_destroy(Inserts *inserts) {
   free(inserts->relation_name);
   inserts->relation_name = nullptr;
 
-  for (size_t i = 0; i < inserts->value_num; i++) {
-    value_destroy(&inserts->values[i]);
+  for (size_t i = 0; i < inserts->tuple_num; i++) {
+    tuple_destory(&inserts->tuples[i]);
   }
-  inserts->value_num = 0;
+  inserts->tuple_num = 0;
 }
 
 void deletes_init_relation(Deletes *deletes, const char *relation_name) {
