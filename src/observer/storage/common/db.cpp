@@ -73,7 +73,7 @@ RC Db::create_table(const char *table_name, int attribute_count,
 
 RC Db::drop_table(const char *table_name) {
   if (opened_tables_.count(table_name) == 0) {
-    LOG_INFO("Drop table not exists");
+    LOG_ERROR("Drop table not exists");
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 

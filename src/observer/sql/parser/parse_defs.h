@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_PARSER_PARSE_DEFS_H__
 
 #include <stddef.h>
+#include <time.h>
 
 #define MAX_NUM 20
 #define MAX_REL_NAME 20
@@ -39,7 +40,7 @@ typedef enum {
 } CompOp;
 
 //属性值类型
-typedef enum { UNDEFINED, CHARS, INTS, FLOATS } AttrType;
+typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES } AttrType;
 
 //属性值
 typedef struct _Value {
@@ -70,11 +71,16 @@ typedef struct {
   Condition conditions[MAX_NUM]; // conditions in Where clause
 } Selects;
 
-// struct of insert
 typedef struct {
-  char *relation_name;   // Relation to insert into
   size_t value_num;      // Length of values
   Value values[MAX_NUM]; // values to insert
+} Tuples;
+
+// struct of insert
+typedef struct {
+  char *relation_name;    // Relation to insert into
+  size_t tuple_num;       // Length of tuple list
+  Tuples tuples[MAX_NUM]; // tuples to insert
 } Inserts;
 
 // struct of delete
@@ -184,7 +190,10 @@ void relation_attr_destroy(RelAttr *relation_attr);
 void value_init_integer(Value *value, int v);
 void value_init_float(Value *value, float v);
 void value_init_string(Value *value, const char *v);
+void value_init_date(Value *value, time_t v);
+int check_date(int year, int month, int day);
 void value_destroy(Value *value);
+void tuple_destory(Tuples *tuple);
 
 void condition_init(Condition *condition, CompOp comp, int left_is_attr,
                     RelAttr *left_attr, Value *left_value, int right_is_attr,
@@ -202,8 +211,8 @@ void selects_append_conditions(Selects *selects, Condition conditions[],
                                size_t condition_num);
 void selects_destroy(Selects *selects);
 
-void inserts_init(Inserts *inserts, const char *relation_name, Value values[],
-                  size_t value_num);
+void insert_tuple_init(Inserts *inserts, Value values[], size_t value_num);
+void inserts_init(Inserts *inserts, const char *relation_name);
 void inserts_destroy(Inserts *inserts);
 
 void deletes_init_relation(Deletes *deletes, const char *relation_name);

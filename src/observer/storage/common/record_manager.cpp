@@ -367,6 +367,7 @@ RC RecordFileHandler::insert_record(const char *data, int record_size,
 
   bool page_found = false;
   for (int i = 0; i < page_count; i++) {
+    // TODO：current_page_num更新逻辑有误
     current_page_num =
         (current_page_num + i) % page_count; // 从当前打开的页面开始查找
     if (current_page_num == 0) {

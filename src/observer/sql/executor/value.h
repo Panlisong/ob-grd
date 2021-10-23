@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_EXECUTOR_VALUE_H_
 
 #include <string.h>
+#include <time.h>
 
 #include <ostream>
 #include <string>

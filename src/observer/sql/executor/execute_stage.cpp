@@ -406,6 +406,7 @@ RC ExecuteStage::do_insert(const char *db, Query *sql,
   Trx *trx = session->current_trx();
   RC rc = DefaultHandler::get_default().insert_record(
       trx, db, insert.relation_name, insert.value_num, insert.values);
+
   end_trx_if_need(session, trx, rc == RC::SUCCESS);
   return rc;
 }

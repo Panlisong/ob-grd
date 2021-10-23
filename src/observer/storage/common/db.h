@@ -37,6 +37,7 @@ public:
   RC drop_table(const char *table_name);
 
   Table *find_table(const char *table_name) const;
+
   const char *name() const;
 
   void all_tables(std::vector<std::string> &table_names) const;
@@ -46,7 +47,6 @@ public:
   std::string show_tables();
   RC insert_records(Trx *trx, const char *table_name, int inserted_count,
                     int value_num[], const Value *values[]);
-
 
 private:
   RC open_all_tables();
