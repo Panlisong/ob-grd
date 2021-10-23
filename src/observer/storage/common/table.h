@@ -32,6 +32,10 @@ public:
   Table();
   ~Table();
 
+  const char *name() const;
+
+  const TableMeta &table_meta() const;
+
   /**
    * 创建一个表
    * @param path 元数据保存的文件(完整路径)
@@ -42,9 +46,12 @@ public:
    */
   RC create(const char *path, const char *name, const char *base_dir,
             int attribute_count, const AttrInfo attributes[]);
-
   RC clear();
 
+private:
+  RC init_record_handler(const char *base_dir);
+
+public:
   /**
    * 打开一个表
    * @param meta_file 保存表元数据的文件完整路径
@@ -52,11 +59,10 @@ public:
    */
   RC open(const char *meta_file, const char *base_dir);
 
-  RC insert_record(Trx *trx, int value_num, const Value *values);
   RC update_record(Trx *trx, const char *attribute_name, const Value *value,
                    int condition_num, const Condition conditions[],
                    int *updated_count);
-  RC delete_record(Trx *trx, ConditionFilter *filter, int *deleted_count);
+  RC delete_records(Trx *trx, ConditionFilter *filter, int *deleted_count);
 
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context,
                  void (*record_reader)(const char *data, void *context));
@@ -64,17 +70,22 @@ public:
   RC create_index(Trx *trx, const char *index_name, const char *attribute_name);
 
 public:
-  const char *name() const;
+  RC insert_records(Trx *trx, int inserted_count, int value_num[],
+                    const Value *values[]);
+  RC commit_insert(Record *new_record);
+  RC rollback_insert(Record *new_record);
 
-  const TableMeta &table_meta() const;
 
+private:
+  RC insert_record(Trx *trx, int value_num, const Value *values);
+
+public:
   RC sync();
 
 public:
-  RC commit_insert(Trx *trx, const RID &rid);
-  RC commit_delete(Trx *trx, const RID &rid);
-  RC rollback_insert(Trx *trx, const RID &rid);
-  RC rollback_delete(Trx *trx, const RID &rid);
+  RC commit_delete(Record *old_record);
+  RC rollback_delete(Record *old_record);
+
   RC commit_update(Trx *trx, const RID &rid);
   RC rollback_update(Trx *trx, const RID &rid);
 
@@ -84,11 +95,11 @@ private:
   RC scan_record_by_index(Trx *trx, IndexScanner *scanner,
                           ConditionFilter *filter, int limit, void *context,
                           RC (*record_reader)(Record *record, void *context));
+
   IndexScanner *find_index_for_scan(const ConditionFilter *filter);
   IndexScanner *find_index_for_scan(const DefaultConditionFilter &filter);
 
-  RC insert_record(Trx *trx, Record *record);
-  RC delete_record(Trx *trx, Record *record);
+private:
   RC update_record(Trx *trx, Record *record);
 
 private:
@@ -100,7 +111,6 @@ private:
                              bool error_on_not_exists);
 
 private:
-  RC init_record_handler(const char *base_dir);
   RC make_record(int value_num, const Value *values, char *&record_out);
 
 private:
