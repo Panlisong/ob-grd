@@ -264,6 +264,12 @@ static RC schema_add_field(const char *db, const char *table_name,
     LOG_WARN("No such table [%s] in db [%s]", table_name, db);
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
+
+  if (strcmp(field_name, "*") == 0) {
+    TupleSchema::from_table(table, schema);
+    return RC::SUCCESS;
+  }
+
   const FieldMeta *field_meta = table->table_meta().field(field_name);
   if (nullptr == field_meta) {
     LOG_WARN("No such field. %s.%s", table->name(), field_name);

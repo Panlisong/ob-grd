@@ -330,7 +330,8 @@ value:
 			}
 			struct tm t;
 			memset(&t, 0, sizeof(struct tm));
-			t.tm_year = year, t.tm_mon = month, t.tm_mday = day;
+			t.tm_year = year - 1900, t.tm_mon = month - 1, t.tm_mday = day;
+			t.tm_hour = 12;		// 防止0点有一天的换算偏差
 			value_init_date(&CONTEXT->values[CONTEXT->value_length++], mktime(&t));
 		}
 	}
@@ -386,7 +387,12 @@ select_attr:
 			relation_attr_init(&attr, NULL, $1);
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
-  	| ID DOT ID attr_list {
+  	| ID DOT STAR attr_list {
+		  	RelAttr attr;
+			relation_attr_init(&attr, $1, "*");
+			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
+	   }
+	| ID DOT ID attr_list {
 			RelAttr attr;
 			relation_attr_init(&attr, $1, $3);
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
