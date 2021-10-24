@@ -92,8 +92,8 @@ public:
     tm *tp = gmtime(&value_);
     char s[20];
     memset(s, 0, sizeof s);
-    std::snprintf(s, sizeof(s), "%04d-%02d-%02d", tp->tm_year, tp->tm_mon,
-                  tp->tm_mday + 1);
+    std::snprintf(s, sizeof(s), "%04d-%02d-%02d", tp->tm_year + 1900,
+                  tp->tm_mon + 1, tp->tm_mday);
     os << s;
   }
 
