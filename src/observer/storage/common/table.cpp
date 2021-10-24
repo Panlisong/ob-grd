@@ -581,19 +581,72 @@ RC Table::create_index(Trx *trx, const char *index_name,
 
   return rc;
 }
-struct UpdateContext {
-  int offset;
-  int size;
-  const Value *value;
-  RecordFileHandler *record_handler;
+class RecordUpdater {
+public:
+  RecordUpdater(Table &table, Trx *trx) : table_(table), trx_(trx) {}
+
+  RC update_record(Record *record) {
+    RC rc = RC::SUCCESS;
+    memcpy(record->data + offset_, value_->data, size_);
+    rc = table_.update_record(trx_, record);
+    if (rc == RC::SUCCESS) {
+      updated_count_++;
+    }
+    return rc;
+  }
+
+  void set_update_info(const Value *v, int offset, int len) {
+    value_ = v;
+    offset_ = offset;
+    size_ = len;
+  }
+
+  int updated_count() const { return updated_count_; }
+
+private:
+  Table &table_;
+  Trx *trx_;
+  const Value *value_;
+  int offset_;
+  int size_;
+  int updated_count_ = 0;
 };
 
-static RC scan_record_updater(Record *rec, void *context) {
-  UpdateContext *ct = (UpdateContext *)context;
-  RecordFileHandler *record_handler = ct->record_handler;
-  memcpy(rec->data + ct->offset, ct->value->data, ct->size);
-  return record_handler->update_record(rec);
+static RC record_reader_update_adapter(Record *record, void *context) {
+  RecordUpdater &record_updater = *(RecordUpdater *)context;
+  return record_updater.update_record(record);
 }
+
+RC Table::update_record(Trx *trx, Record *record) {
+  RC rc = RC::SUCCESS;
+  if (trx != nullptr) {
+    // 需要实现trx update
+    // rc = trx->update_record(this, record);
+  }
+  // 当更新search key时需要更新
+  // rc = update_entry_of_indexes(record->data, record->rid);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to update indexes of record (rid=%d.%d). rc=%d:%s",
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+    return rc;
+  }
+  rc = record_handler_->update_record(record);
+
+  return rc;
+}
+
+// RC Table::update_entry_of_indexes(const char *record, const RID &rid) {
+//   RC rc = RC::SUCCESS;
+//   for (Index *index : indexes_) {
+//     rc = index->update_entry(record, &rid);
+//     if (rc != RC::SUCCESS) {
+//       if (rc != RC::RECORD_INVALID_KEY || !error_on_not_exists) {
+//         break;
+//       }
+//     }
+//   }
+//   return rc;
+// }
 
 bool Table::match_table(const char *relation_name, const char *attribute_name) {
   if (nullptr == relation_name || 0 == strcmp(name(), relation_name)) {
@@ -611,12 +664,13 @@ bool Table::match_table(const char *relation_name, const char *attribute_name) {
 RC Table::update_record(Trx *trx, const char *attribute_name,
                         const Value *value, int condition_num,
                         const Condition conditions[], int *updated_count) {
+  RC rc;
   // 生成ConditionFilter
   std::vector<DefaultConditionFilter *> condition_filters;
   for (size_t i = 0; i < condition_num; i++) {
     const Condition &cond = conditions[i];
     // 检查条件是否合法
-    RC rc = RC::SUCCESS;
+    rc = RC::SUCCESS;
     bool no_error = true;
     if (cond.left_is_attr == 1) {
       no_error = match_table(cond.left_attr.relation_name,
@@ -651,9 +705,13 @@ RC Table::update_record(Trx *trx, const char *attribute_name,
     LOG_WARN("No such field. %s.%s", name(), attribute_name);
     return RC::SCHEMA_FIELD_MISSING;
   }
-  UpdateContext context = {field_meta->offset(), field_meta->len(), value,
-                           record_handler_};
-  return scan_record(trx, &filter, -1, (void *)&context, scan_record_updater);
+  RecordUpdater updater(*this, trx);
+  updater.set_update_info(value, field_meta->offset(), field_meta->len());
+  rc = scan_record(trx, &filter, -1, &updater, record_reader_update_adapter);
+  if (updated_count != nullptr) {
+    *updated_count = updater.updated_count();
+  }
+  return rc;
 }
 
 class RecordDeleter {

@@ -347,13 +347,21 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
     }
     // 到这里说明RelAttr list均合法，得到最后的输出范式(out_schema)做映射
     TupleSchema out_schema;
+    bool single_star = false;
     for (int i = selects.attr_num - 1; i >= 0; i--) {
       const RelAttr &attr = selects.attributes[i];
+      if (attr.relation_name == nullptr &&
+          strcmp("*", attr.attribute_name) == 0) {
+        // 特殊情况，所有关系的属性都要包含，也就是不用做映射
+        single_star = true;
+      }
       schema_add_field(db, attr.relation_name, attr.attribute_name, out_schema);
     }
-    ProjectExeNode project_node;
-    project_node.init(trx, tuple_set, std::move(out_schema));
-    project_node.execute(tuple_set);
+    if (!single_star) {
+      ProjectExeNode project_node;
+      project_node.init(trx, tuple_set, std::move(out_schema));
+      project_node.execute(tuple_set);
+    }
     tuple_set.print(ss);
   } else {
     // 当前只查询一张表，直接返回结果即可
