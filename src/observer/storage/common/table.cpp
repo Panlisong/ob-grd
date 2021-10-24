@@ -102,8 +102,7 @@ RC Table::create(const char *path, const char *name, const char *base_dir,
   table_meta_.serialize(fs);
   fs.close();
 
-  std::string data_file =
-      std::string(base_dir) + "/" + name + TABLE_DATA_SUFFIX;
+  std::string data_file = table_data_file(base_dir, name);
   data_buffer_pool_ = theGlobalDiskBufferPool();
   rc = data_buffer_pool_->create_file(data_file.c_str());
   if (rc != RC::SUCCESS) {
@@ -120,8 +119,7 @@ RC Table::create(const char *path, const char *name, const char *base_dir,
 }
 
 RC Table::init_record_handler(const char *base_dir) {
-  std::string data_file =
-      std::string(base_dir) + "/" + table_meta_.name() + TABLE_DATA_SUFFIX;
+  std::string data_file = table_data_file(base_dir, name());
   if (nullptr == data_buffer_pool_) {
     data_buffer_pool_ = theGlobalDiskBufferPool();
   }
@@ -149,8 +147,10 @@ RC Table::init_record_handler(const char *base_dir) {
 RC Table::clear() {
   RC rc = RC::SUCCESS;
   std::string table_meta_path = table_meta_file(base_dir_.c_str(), name());
+  rc = data_buffer_pool_->close_file(file_id_);
+
   if (remove(table_meta_path.c_str()) != 0) {
-    LOG_ERROR("Delete table %s meta failed", name());
+    LOG_ERROR("Delete tabl; %s meta failed", name());
     rc = RC::IOERR_DELETE;
   }
 
@@ -272,7 +272,6 @@ RC Table::commit_insert(Record *new_record) {
 }
 
 RC Table::rollback_insert(Record *new_record) {
-  LOG_INFO("point 1");
   RC rc = delete_entry_of_indexes(new_record->data, new_record->rid, false);
   if (rc == RC::SCHEMA_INDEX_NOT_EXIST) {
     rc = RC::SUCCESS;
@@ -281,7 +280,6 @@ RC Table::rollback_insert(Record *new_record) {
     return rc;
   }
 
-  LOG_INFO("point 2");
   return record_handler_->delete_record(&new_record->rid);
 }
 
@@ -682,8 +680,19 @@ public:
   RecordDeleter(Table &table, Trx *trx) : table_(table), trx_(trx) {}
 
   RC delete_record(Record *old_record) {
-    trx_->pending(&table_, TrxEvent::Type::DELETE, old_record, nullptr);
+    Record *record = new Record();
+    record->rid = old_record->rid;
+    record->data = new char[table_.table_meta_.record_size()];
+
+    memcpy(record->data, old_record->data, strlen(old_record->data));
+    int *tmp = (int *)record->data;
+		// test
+		if(tmp[1]==2){
+				return RC::GENERIC_ERROR;
+		}
+    trx_->pending(&table_, TrxEvent::Type::DELETE, record, nullptr);
     deleted_count_++;
+
     return RC::SUCCESS;
   }
 
@@ -702,24 +711,11 @@ static RC record_reader_delete_adapter(Record *record, void *context) {
 
 RC Table::delete_records(Trx *trx, ConditionFilter *filter,
                          int *deleted_count) {
-  if (trx == nullptr) {
-    trx = new Trx();
-  }
-
-  trx->begin();
-
   RecordDeleter deleter(*this, trx);
   RC rc = scan_record(trx, filter, -1, &deleter, record_reader_delete_adapter);
   if (deleted_count != nullptr) {
     *deleted_count = deleter.deleted_count();
   }
-
-  if (rc != RC::SUCCESS) {
-    trx->rollback();
-  } else {
-    rc = trx->commit();
-  }
-
   return rc;
 }
 

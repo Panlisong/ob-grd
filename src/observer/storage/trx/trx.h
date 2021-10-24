@@ -69,8 +69,8 @@ private:
 
 private:
   int32_t trx_id_ = 0;
-  std::list<TrxEvent *> trx_events_;
-  std::list<TrxEvent *>::iterator trx_event_;
+  std::vector<TrxEvent *> trx_events;
+  int cur_event_index = 0;
 };
 
 #endif // __OBSERVER_STORAGE_TRX_TRX_H_

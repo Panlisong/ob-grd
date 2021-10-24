@@ -175,18 +175,13 @@ RC DefaultHandler::delete_record(Trx *trx, const char *dbname,
                                  const char *relation_name, int condition_num,
                                  const Condition *conditions,
                                  int *deleted_count) {
-  Table *table = find_table(dbname, relation_name);
-  if (nullptr == table) {
-    return RC::SCHEMA_TABLE_NOT_EXIST;
+  Db *db = find_db(dbname);
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
   }
 
-  CompositeConditionFilter condition_filter;
-  RC rc = condition_filter.init(*table, conditions, condition_num);
-  if (rc != RC::SUCCESS) {
-    return rc;
-  }
-  // return table->delete_record(trx, &condition_filter, deleted_count);
-  return RC::SUCCESS;
+  return db->delete_records(trx, relation_name, condition_num, conditions,
+                            deleted_count);
 }
 
 RC DefaultHandler::update_record(Trx *trx, const char *dbname,

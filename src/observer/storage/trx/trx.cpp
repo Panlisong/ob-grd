@@ -36,23 +36,22 @@ void Trx::pending(Table *table, TrxEvent::Type type, Record *old_record,
                   Record *new_record) {
   const FieldMeta *trx_field = table->table_meta().trx_field();
 
-  if (old_record != nullptr) {
+  if (type == TrxEvent::Type::DELETE) {
     int32_t *ptrx_id = (int32_t *)(old_record->data + trx_field->offset());
     *ptrx_id = DELETED_FLAG_BIT_MASK | trx_id_;
-  }
-  if (new_record != nullptr) {
+  } else {
     int32_t *ptrx_id = (int32_t *)(new_record->data + trx_field->offset());
     *ptrx_id = trx_id_;
   }
   TrxEvent *trx_event = new TrxEvent(table, type, old_record, new_record);
-  trx_events_.push_back(trx_event);
-  trx_event_ = trx_events_.begin();
+  trx_events.push_back(trx_event);
 }
 
 RC Trx::commit() {
   RC rc = RC::SUCCESS;
-  while (trx_event_ != trx_events_.end()) {
-    TrxEvent *trx_event = *trx_event_;
+	int size= trx_events.size();
+  while (cur_event_index < size){
+    TrxEvent *trx_event = trx_events[cur_event_index];
     switch (trx_event->get_type()) {
     case TrxEvent::Type::INSERT: {
       rc = trx_event->commit_insert();
@@ -67,25 +66,26 @@ RC Trx::commit() {
     } break;
     };
 
+    cur_event_index++;
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to commit record data, table=%s, rc=%d:%s",
                 trx_event->get_table_name(), rc, strrc(rc));
       rollback();
+      break;
     }
-
-    trx_event_++;
   }
-  return RC::SUCCESS;
+  return rc;
 }
 
 void Trx::rollback() {
+  cur_event_index--;
+
   RC rc = RC::SUCCESS;
   TrxEvent *trx_event;
-  while (trx_event_ != trx_events_.begin()) {
-    trx_event = *trx_event_;
+  while (cur_event_index >= 0) {
+    trx_event = trx_events[cur_event_index];
     switch (trx_event->get_type()) {
     case TrxEvent::Type::INSERT: {
-      LOG_INFO("point 3\n");
       rc = trx_event->rollback_insert();
     } break;
     case TrxEvent::Type::DELETE: {
@@ -100,7 +100,7 @@ void Trx::rollback() {
       LOG_PANIC("Failed to rollback, table=%s, rid=%d, rc=%d:%s",
                 trx_event->get_table_name(), 0, rc, strrc(rc));
     }
-    trx_event_--;
+    cur_event_index--;
   }
 }
 

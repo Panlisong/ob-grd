@@ -179,7 +179,24 @@ RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  LOG_INFO("%d\n", inserted_count);
-
   return table->insert_records(trx, inserted_count, value_num, values);
+}
+
+RC Db::delete_records(Trx *trx, const char *table_name, int condition_num,
+                      const Condition *conditions, int *deleted_count) {
+  Table *table = opened_tables_[table_name];
+  if (table == nullptr) {
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+	CompositeConditionFilter *condition_filter = new CompositeConditionFilter();
+	RC rc=condition_filter->init(*table,conditions,condition_num);
+	if(rc!=RC::SUCCESS){
+			return rc;
+	}
+
+	rc= table->delete_records(trx,condition_filter,deleted_count);
+
+	delete condition_filter;
+	return rc;
 }

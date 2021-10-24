@@ -40,8 +40,9 @@ bool Session::is_trx_multi_operation_mode() const {
 }
 
 Trx *Session::current_trx() {
-  if (trx_ == nullptr) {
-    trx_ = new Trx;
+  if (trx_ == nullptr || !is_trx_multi_operation_mode()) {
+    trx_ = new Trx();
+		trx_->begin();
   }
   return trx_;
 }
