@@ -46,4 +46,36 @@ private:
   std::vector<DefaultConditionFilter *> condition_filters_;
 };
 
+class JoinExeNode : public ExecutionNode {
+public:
+  JoinExeNode();
+  virtual ~JoinExeNode();
+
+  RC init(Trx *trx, TupleSet &tl, TupleSet &tr, TupleSchema &&tuple_schema,
+          std::vector<TupleFilter *> &&tuple_filters);
+
+  RC execute(TupleSet &tuple_set) override;
+
+private:
+  Trx *trx_ = nullptr;
+  TupleSet tl_;              //   left tuple set: 待合并的左TupleSet
+  TupleSet tr_;              //  right tuple set: 待合并的右TupleSet
+  TupleSchema tuple_schema_; //    output schema：输出按照tuple_schema映射
+  std::vector<TupleFilter *> tuple_filters_; // Tuple过滤器
+};
+
+class ProjectExeNode : public ExecutionNode {
+public:
+  ProjectExeNode() = default;
+  ~ProjectExeNode() = default;
+
+  RC init(Trx *trx, TupleSet &in, TupleSchema &&tuple_schema);
+
+  RC execute(TupleSet &tuple_set) override;
+
+private:
+  Trx *trx_ = nullptr;
+  TupleSet in_;            //  input tuple set：待映射的TupleSet
+  TupleSchema out_schema_; //    output schema：输出按照tuple_schema映射
+};
 #endif //__OBSERVER_SQL_EXECUTOR_EXECUTION_NODE_H_

@@ -43,6 +43,8 @@ void Tuple::add(int value) { add(new IntValue(value)); }
 
 void Tuple::add(float value) { add(new FloatValue(value)); }
 
+void Tuple::add(time_t value) { add(new DateValue(value)); }
+
 void Tuple::add(const char *s, int len) { add(new StringValue(s, len)); }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -215,11 +217,7 @@ void TupleRecordConverter::add_record(const char *record) {
     } break;
     case DATES: {
       time_t value = *(time_t *)(record + field_meta->offset());
-      tm *tp = gmtime(&value);
-      char s[20];
-      std::snprintf(s, sizeof(s), "%04d-%02d-%02d", tp->tm_year, tp->tm_mon,
-                    tp->tm_mday + 1);
-      tuple.add(s, strlen(s));
+      tuple.add(value);
     } break;
     default: {
       LOG_PANIC("Unsupported field type. type=%d", field_meta->type());
@@ -228,4 +226,31 @@ void TupleRecordConverter::add_record(const char *record) {
   }
 
   tuple_set_.add(std::move(tuple));
+}
+
+/////////////////////////////////////////////////////////////////////////////
+TupleFilter::TupleFilter(int left_index, int right_index, CompOp op)
+    : left_index_(left_index), right_index_(right_index), op_(op) {}
+
+bool TupleFilter::filter(const Tuple &tl, const Tuple &tr) {
+  int cmp_result = tl.get(left_index_).compare(tr.get(right_index_));
+  switch (op_) {
+  case EQUAL_TO:
+    return 0 == cmp_result;
+  case LESS_EQUAL:
+    return cmp_result <= 0;
+  case NOT_EQUAL:
+    return cmp_result != 0;
+  case LESS_THAN:
+    return cmp_result < 0;
+  case GREAT_EQUAL:
+    return cmp_result >= 0;
+  case GREAT_THAN:
+    return cmp_result > 0;
+
+  default:
+    break;
+  }
+  LOG_PANIC("Never should print this.");
+  return cmp_result; // should not go here
 }
