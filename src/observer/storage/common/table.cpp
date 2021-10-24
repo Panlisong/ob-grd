@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "common/lang/string.h"
 #include "common/log/log.h"
+#include "rc.h"
 #include "storage/common/bplus_tree_index.h"
 #include "storage/common/condition_filter.h"
 #include "storage/common/index.h"
@@ -580,11 +581,79 @@ RC Table::create_index(Trx *trx, const char *index_name,
 
   return rc;
 }
+struct UpdateContext {
+  int offset;
+  int size;
+  const Value *value;
+  RecordFileHandler *record_handler;
+};
+
+static RC scan_record_updater(Record *rec, void *context) {
+  UpdateContext *ct = (UpdateContext *)context;
+  RecordFileHandler *record_handler = ct->record_handler;
+  memcpy(rec->data + ct->offset, ct->value->data, ct->size);
+  return record_handler->update_record(rec);
+}
+
+bool Table::match_table(const char *relation_name, const char *attribute_name) {
+  if (nullptr == relation_name || 0 == strcmp(name(), relation_name)) {
+    const FieldMeta *field_meta = table_meta_.field(attribute_name);
+    if (nullptr == field_meta) {
+      LOG_WARN("No such field. %s.%s", name(), attribute_name);
+      return false;
+    }
+    return true;
+  }
+  LOG_WARN("Cannot match table %s with %s", name(), relation_name);
+  return false;
+}
 
 RC Table::update_record(Trx *trx, const char *attribute_name,
                         const Value *value, int condition_num,
                         const Condition conditions[], int *updated_count) {
-  return RC::GENERIC_ERROR;
+  // 生成ConditionFilter
+  std::vector<DefaultConditionFilter *> condition_filters;
+  for (size_t i = 0; i < condition_num; i++) {
+    const Condition &cond = conditions[i];
+    // 检查条件是否合法
+    RC rc = RC::SUCCESS;
+    bool no_error = true;
+    if (cond.left_is_attr == 1) {
+      no_error = match_table(cond.left_attr.relation_name,
+                             cond.left_attr.attribute_name);
+    }
+    if (cond.right_is_attr == 1) {
+      no_error |= match_table(cond.right_attr.relation_name,
+                              cond.right_attr.attribute_name);
+    }
+    if (!no_error) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+
+    DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
+    rc = condition_filter->init(*this, cond);
+    condition_filters.push_back(condition_filter);
+    if (rc != RC::SUCCESS) {
+      delete condition_filter;
+      for (DefaultConditionFilter *&filter : condition_filters) {
+        delete filter;
+      }
+      return rc;
+    }
+  }
+  CompositeConditionFilter filter;
+  filter.init((const ConditionFilter **)condition_filters.data(),
+              condition_filters.size());
+
+  // 获取Attr在Record中的实际偏移和大小
+  const FieldMeta *field_meta = table_meta_.field(attribute_name);
+  if (field_meta == nullptr) {
+    LOG_WARN("No such field. %s.%s", name(), attribute_name);
+    return RC::SCHEMA_FIELD_MISSING;
+  }
+  UpdateContext context = {field_meta->offset(), field_meta->len(), value,
+                           record_handler_};
+  return scan_record(trx, &filter, -1, (void *)&context, scan_record_updater);
 }
 
 class RecordDeleter {

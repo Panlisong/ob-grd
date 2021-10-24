@@ -522,7 +522,7 @@ RC ExecuteStage::do_insert(const char *db, Query *sql,
 
 RC ExecuteStage::do_update(const char *db, Query *sql,
                            SessionEvent *session_event) {
-  Updates update = sql->sstr.update;
+  const Updates &update = sql->sstr.update;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
   int updated_count;

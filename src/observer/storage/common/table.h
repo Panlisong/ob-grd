@@ -77,6 +77,7 @@ public:
   RC rollback_delete(Trx *trx, const RID &rid);
 
 private:
+  bool match_table(const char *relation_name, const char *attribute_name);
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context,
                  RC (*record_reader)(Record *record, void *context));
   RC scan_record_by_index(Trx *trx, IndexScanner *scanner,
