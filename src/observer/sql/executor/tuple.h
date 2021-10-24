@@ -37,6 +37,7 @@ public:
   void add(const std::shared_ptr<TupleValue> &other);
   void add(int value);
   void add(float value);
+  void add(time_t value);
   void add(const char *s, int len);
 
   const std::vector<std::shared_ptr<TupleValue>> &values() const {
@@ -143,4 +144,17 @@ private:
   TupleSet &tuple_set_;
 };
 
+class TupleFilter {
+public:
+  TupleFilter(int left_index, int right_index, CompOp op);
+  bool filter(const Tuple &tl, const Tuple &tr);
+
+private:
+  // 一个TupleFilter处理一个Condition，类似ConditionFilter
+  // 用于处理形如"R.x op S.y"这样的Condition
+
+  int left_index_;  // 属性x在左Tuple中的索引
+  int right_index_; // 属性y在右Tuple中的索引
+  CompOp op_;
+};
 #endif //__OBSERVER_SQL_EXECUTOR_TUPLE_H_

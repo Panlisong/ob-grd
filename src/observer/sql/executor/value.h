@@ -84,4 +84,26 @@ private:
   std::string value_;
 };
 
+class DateValue : public TupleValue {
+public:
+  explicit DateValue(time_t value) : value_(value) {}
+
+  void to_string(std::ostream &os) const override {
+    tm *tp = gmtime(&value_);
+    char s[20];
+    memset(s, 0, sizeof s);
+    std::snprintf(s, sizeof(s), "%04d-%02d-%02d", tp->tm_year, tp->tm_mon,
+                  tp->tm_mday + 1);
+    os << s;
+  }
+
+  int compare(const TupleValue &other) const override {
+    const DateValue &timestamp_other = (const DateValue &)other;
+    return value_ - timestamp_other.value_;
+  }
+
+private:
+  time_t value_;
+};
+
 #endif //__OBSERVER_SQL_EXECUTOR_VALUE_H_

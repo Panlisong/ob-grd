@@ -27,6 +27,7 @@ See the Mulan PSL v2 for more details. */
 #include "session/session.h"
 #include "sql/executor/execution_node.h"
 #include "sql/executor/tuple.h"
+#include "sql/parser/parse_defs.h"
 #include "storage/common/condition_filter.h"
 #include "storage/common/table.h"
 #include "storage/default/default_handler.h"
@@ -37,8 +38,11 @@ using namespace common;
 void end_trx_if_need(Session *session, Trx *trx, bool all_right);
 
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
-                             const char *table_name,
-                             SelectExeNode &select_node);
+                             const char *table_name, SelectExeNode &select_node,
+                             TupleSchema &projection);
+RC create_join_executor(Trx *trx, const Selects &selects, TupleSet &tl,
+                        TupleSet &tr, TupleSchema &tuple_schema,
+                        JoinExeNode &join_node);
 
 //! Constructor
 ExecuteStage::ExecuteStage(const char *tag) : Stage(tag) {}
@@ -158,17 +162,10 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   } break;
   case SCF_DROP_TABLE: {
     RC rc = do_drop_table(current_db, sql);
-    const char *table_name = sql->sstr.drop_table.relation_name;
-    char response[100];
+    char response[10];
 
-    if (rc == RC::SUCCESS) {
-      snprintf(response, 100, "drop table %s success\n", table_name);
-    } else if (rc == RC::SCHEMA_TABLE_NOT_EXIST) {
-      snprintf(response, 100, "table %s not exists\n", table_name);
-    } else {
-      snprintf(response, 100, "drop table %s failed but drop it at last\n",
-               table_name);
-    }
+    snprintf(response, sizeof response,
+             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
     session_event->set_response(response);
     exe_event->done_immediate();
   } break;
@@ -249,6 +246,25 @@ void end_trx_if_need(Session *session, Trx *trx, bool all_right) {
   }
 }
 
+static RC schema_add_field(const char *db, const char *table_name,
+                           const char *field_name, TupleSchema &schema) {
+  // 先找Table Object
+  Table *table = DefaultHandler::get_default().find_table(db, table_name);
+  if (nullptr == table) {
+    LOG_WARN("No such table [%s] in db [%s]", table_name, db);
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+  const FieldMeta *field_meta = table->table_meta().field(field_name);
+  if (nullptr == field_meta) {
+    LOG_WARN("No such field. %s.%s", table->name(), field_name);
+    return RC::SCHEMA_FIELD_MISSING;
+  }
+
+  schema.add_if_not_exists(field_meta->type(), table->name(),
+                           field_meta->name());
+  return RC::SUCCESS;
+}
+
 // 这里没有对输入的某些信息做合法性校验，比如查询的列名、where条件中的列名等，没有做必要的合法性校验
 // 需要补充上这一部分.
 // 校验部分也可以放在resolve，不过跟execution放一起也没有关系
@@ -261,10 +277,13 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   const Selects &selects = sql->sstr.selection;
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
-  for (size_t i = 0; i < selects.relation_num; i++) {
+  std::vector<TupleSchema> join_schemas;
+  for (int i = selects.relation_num - 1; i >= 0; i--) {
     const char *table_name = selects.relations[i];
     SelectExeNode *select_node = new SelectExeNode;
-    rc = create_selection_executor(trx, selects, db, table_name, *select_node);
+    TupleSchema schema;
+    rc = create_selection_executor(trx, selects, db, table_name, *select_node,
+                                   schema);
     if (rc != RC::SUCCESS) {
       delete select_node;
       for (SelectExeNode *&tmp_node : select_nodes) {
@@ -274,6 +293,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
       return rc;
     }
     select_nodes.push_back(select_node);
+    join_schemas.push_back(schema);
   }
 
   if (select_nodes.empty()) {
@@ -300,6 +320,25 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   std::stringstream ss;
   if (tuple_sets.size() > 1) {
     // 本次查询了多张表，需要做join操作
+    TupleSet tuple_set = std::move(tuple_sets[0]);
+    for (size_t i = 0; i + 1 < tuple_sets.size(); i++) {
+      JoinExeNode *join_node = new JoinExeNode;
+      join_schemas[0].append(join_schemas[i + 1]);
+      TupleSchema scm = join_schemas[0];
+      rc = create_join_executor(trx, selects, tuple_set, tuple_sets[i + 1], scm,
+                                *join_node);
+      join_node->execute(tuple_set);
+    }
+    // 到这里说明RelAttr list均合法，得到最后的输出范式(out_schema)做映射
+    TupleSchema out_schema;
+    for (int i = selects.attr_num - 1; i >= 0; i--) {
+      const RelAttr &attr = selects.attributes[i];
+      schema_add_field(db, attr.relation_name, attr.attribute_name, out_schema);
+    }
+    ProjectExeNode project_node;
+    project_node.init(trx, tuple_set, std::move(out_schema));
+    project_node.execute(tuple_set);
+    tuple_set.print(ss);
   } else {
     // 当前只查询一张表，直接返回结果即可
     tuple_sets.front().print(ss);
@@ -334,10 +373,49 @@ static RC schema_add_field(Table *table, const char *field_name,
   return RC::SUCCESS;
 }
 
+RC create_join_executor(Trx *trx, const Selects &selects, TupleSet &tl,
+                        TupleSet &tr, TupleSchema &tuple_schema,
+                        JoinExeNode &join_node) {
+  // 列出和这两张表相关的condition
+  std::vector<TupleFilter *> filters;
+  for (size_t i = 0; i < selects.condition_num; i++) {
+    const Condition &cond = selects.conditions[i];
+    if (cond.left_is_attr == 0 || cond.right_is_attr == 0) {
+      continue;
+    }
+    int left_attr_idx_in_tl = tl.get_schema().index_of_field(
+        cond.left_attr.relation_name, cond.left_attr.attribute_name);
+    int left_atrr_idx_in_tr = tr.get_schema().index_of_field(
+        cond.left_attr.relation_name, cond.left_attr.attribute_name);
+
+    // 如果cond的左属性，
+    // 1. 既在leftTupleSet（简记为tl）又在tr中，说明不是join考虑的cond
+    // 2. 既不在tl又不在tr中，说明该cond与两个中间表无关
+    if ((left_atrr_idx_in_tr == -1 && left_attr_idx_in_tl == -1) ||
+        (left_atrr_idx_in_tr != -1 && left_attr_idx_in_tl != -1)) {
+      continue;
+    }
+    int right_attr_idx_in_tl = tl.get_schema().index_of_field(
+        cond.right_attr.relation_name, cond.right_attr.attribute_name);
+    int right_attr_idx_in_tr = tr.get_schema().index_of_field(
+        cond.right_attr.relation_name, cond.right_attr.attribute_name);
+
+    if (left_attr_idx_in_tl != -1 && right_attr_idx_in_tr != -1) {
+      filters.push_back(new TupleFilter(left_attr_idx_in_tl,
+                                        right_attr_idx_in_tr, cond.comp));
+    } else if (left_atrr_idx_in_tr != -1 && right_attr_idx_in_tl != -1) {
+      filters.push_back(new TupleFilter(right_attr_idx_in_tl,
+                                        left_atrr_idx_in_tr, cond.comp));
+    }
+  }
+  return join_node.init(trx, tl, tr, std::move(tuple_schema),
+                        std::move(filters));
+}
+
 // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
-                             const char *table_name,
-                             SelectExeNode &select_node) {
+                             const char *table_name, SelectExeNode &select_node,
+                             TupleSchema &projection) {
   // 列出跟这张表关联的Attr
   TupleSchema schema;
   Table *table = DefaultHandler::get_default().find_table(db, table_name);
@@ -353,7 +431,8 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
       if (0 == strcmp("*", attr.attribute_name)) {
         // 列出这张表所有字段
         TupleSchema::from_table(table, schema);
-        break; // 没有校验，给出* 之后，再写字段的错误
+        // 由SQL语法可以看出，'*'前后都不可能出现RelAtrr
+        break;
       } else {
         // 列出这张表相关字段
         RC rc = schema_add_field(table, attr.attribute_name, schema);
@@ -363,11 +442,23 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
       }
     }
   }
-
+  projection = schema;
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
   std::vector<DefaultConditionFilter *> condition_filters;
   for (size_t i = 0; i < selects.condition_num; i++) {
     const Condition &condition = selects.conditions[i];
+    // 修正schema
+    if (condition.left_is_attr == 1 && condition.right_is_attr == 1) {
+      bool left_match =
+          match_table(selects, condition.left_attr.relation_name, table_name);
+      if (left_match ^ match_table(selects, condition.right_attr.relation_name,
+                                   table_name)) { // 只有不同是匹配才会进入
+        const char *attr_name = left_match
+                                    ? condition.left_attr.attribute_name
+                                    : condition.right_attr.attribute_name;
+        schema_add_field(table, attr_name, schema); // 不会重复添加
+      }
+    }
     if ((condition.left_is_attr == 0 &&
          condition.right_is_attr == 0) || // 两边都是值
         (condition.left_is_attr == 1 && condition.right_is_attr == 0 &&
@@ -449,7 +540,9 @@ RC ExecuteStage::do_show_tables(const char *db, std::string &result) {
 }
 
 RC ExecuteStage::do_desc_table(const char *db, Query *sql,
-                               SessionEvent *session_event) {}
+                               SessionEvent *session_event) {
+		return RC::SUCCESS;
+}
 
 RC ExecuteStage::do_drop_table(const char *db, Query *sql) {
   DropTable drop_table = sql->sstr.drop_table;
