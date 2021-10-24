@@ -173,31 +173,13 @@ std::string Db::show_tables() {
 }
 
 RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,
-                      int value_num[], const Value *values[]) {
-  bool need_commit = false;
-  if (trx == nullptr) {
-    // one command.
-    trx = new Trx();
-    trx->begin();
-    need_commit = true;
-  }
-
+                      int value_num[], Value *values[]) {
   Table *table = opened_tables_[table_name];
   if (table == nullptr) {
-    if (need_commit) {
-      trx->commit();
-    }
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  RC rc = table->insert_records(trx, inserted_count, value_num, values);
+  LOG_INFO("%d\n", inserted_count);
 
-  if (need_commit && rc == RC::SUCCESS) {
-    trx->commit();
-  }
-  if (need_commit && rc != RC::SUCCESS) {
-    trx->rollback();
-  }
-
-  return rc;
+  return table->insert_records(trx, inserted_count, value_num, values);
 }

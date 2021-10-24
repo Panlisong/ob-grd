@@ -71,7 +71,7 @@ public:
 
 public:
   RC insert_records(Trx *trx, int inserted_count, int value_num[],
-                    const Value *values[]);
+                    Value *values[]);
   RC commit_insert(Record *new_record);
   RC rollback_insert(Record *new_record);
 

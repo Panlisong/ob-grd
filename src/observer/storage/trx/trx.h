@@ -70,7 +70,7 @@ private:
 private:
   int32_t trx_id_ = 0;
   std::list<TrxEvent *> trx_events_;
-  std::list<TrxEvent *>::reference trx_event_;
+  std::list<TrxEvent *>::iterator trx_event_;
 };
 
 #endif // __OBSERVER_STORAGE_TRX_TRX_H_

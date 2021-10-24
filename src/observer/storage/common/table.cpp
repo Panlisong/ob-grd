@@ -220,7 +220,7 @@ RC Table::open(const char *meta_file, const char *base_dir) {
 }
 
 RC Table::insert_records(Trx *trx, int inserted_count, int value_num[],
-                         const Value *values[]) {
+                         Value *values[]) {
   RC rc = RC::SUCCESS;
 
   for (int i = 0; i < inserted_count; i++) {
@@ -246,18 +246,20 @@ RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
     return rc;
   }
 
-  Record new_record;
-  new_record.data = record_data;
+  Record *new_record = new Record();
+  new_record->data = record_data;
 
   // record.valid = true;
-  trx->pending(this, TrxEvent::Type::INSERT, nullptr, &new_record);
-
-  delete[] record_data;
+  trx->pending(this, TrxEvent::Type::INSERT, nullptr, new_record);
 
   return RC::SUCCESS;
 }
 
 RC Table::commit_insert(Record *new_record) {
+  if (new_record->data == nullptr) {
+    LOG_INFO("no data\n");
+  }
+
   RC rc = record_handler_->insert_record(
       new_record->data, table_meta_.record_size(), &new_record->rid);
   if (rc != RC::SUCCESS) {
@@ -270,6 +272,7 @@ RC Table::commit_insert(Record *new_record) {
 }
 
 RC Table::rollback_insert(Record *new_record) {
+  LOG_INFO("point 1");
   RC rc = delete_entry_of_indexes(new_record->data, new_record->rid, false);
   if (rc == RC::SCHEMA_INDEX_NOT_EXIST) {
     rc = RC::SUCCESS;
@@ -278,6 +281,7 @@ RC Table::rollback_insert(Record *new_record) {
     return rc;
   }
 
+  LOG_INFO("point 2");
   return record_handler_->delete_record(&new_record->rid);
 }
 
@@ -301,6 +305,7 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   // 复制所有字段的值
   int record_size = table_meta_.record_size();
   char *record = new char[record_size];
+  memset(record, 0, record_size);
 
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);

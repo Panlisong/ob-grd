@@ -46,7 +46,7 @@ public:
 
   std::string show_tables();
   RC insert_records(Trx *trx, const char *table_name, int inserted_count,
-                    int value_num[], const Value *values[]);
+                    int value_num[], Value *values[]);
 
 private:
   RC open_all_tables();

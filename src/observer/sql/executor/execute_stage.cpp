@@ -309,7 +309,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
     delete tmp_node;
   }
   session_event->set_response(ss.str());
-  end_trx_if_need(session, trx, true);
   return rc;
 }
 
@@ -404,8 +403,9 @@ RC ExecuteStage::do_insert(const char *db, Query *sql,
   Inserts insert = sql->sstr.insertion;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
-  RC rc = DefaultHandler::get_default().insert_record(
-      trx, db, insert.relation_name, insert.value_num, insert.values);
+
+  RC rc = DefaultHandler::get_default().insert_records(
+      trx, db, insert.relation_name, insert.tuple_num, insert.tuples);
 
   end_trx_if_need(session, trx, rc == RC::SUCCESS);
   return rc;

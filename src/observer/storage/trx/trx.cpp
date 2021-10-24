@@ -6,7 +6,10 @@
 #include "storage/common/table.h"
 #include "storage/trx/trx.h"
 
-Trx::Trx() : trx_event_(trx_events_.front()) {}
+static const uint32_t DELETED_FLAG_BIT_MASK = 0x80000000;
+// static const uint32_t TRX_ID_BIT_MASK = 0x7FFFFFFF;
+
+Trx::Trx() {}
 
 Trx::~Trx() {}
 
@@ -31,23 +34,34 @@ void Trx::begin() {
 
 void Trx::pending(Table *table, TrxEvent::Type type, Record *old_record,
                   Record *new_record) {
+  const FieldMeta *trx_field = table->table_meta().trx_field();
+
+  if (old_record != nullptr) {
+    int32_t *ptrx_id = (int32_t *)(old_record->data + trx_field->offset());
+    *ptrx_id = DELETED_FLAG_BIT_MASK | trx_id_;
+  }
+  if (new_record != nullptr) {
+    int32_t *ptrx_id = (int32_t *)(new_record->data + trx_field->offset());
+    *ptrx_id = trx_id_;
+  }
   TrxEvent *trx_event = new TrxEvent(table, type, old_record, new_record);
   trx_events_.push_back(trx_event);
+  trx_event_ = trx_events_.begin();
 }
 
 RC Trx::commit() {
   RC rc = RC::SUCCESS;
-  trx_event_ = trx_events_.front();
-  while (trx_event_ != nullptr) {
-    switch (trx_event_->get_type()) {
+  while (trx_event_ != trx_events_.end()) {
+    TrxEvent *trx_event = *trx_event_;
+    switch (trx_event->get_type()) {
     case TrxEvent::Type::INSERT: {
-      rc = trx_event_->commit_insert();
+      rc = trx_event->commit_insert();
     } break;
     case TrxEvent::Type::DELETE: {
-      rc = trx_event_->commit_delete();
+      rc = trx_event->commit_delete();
     } break;
     case TrxEvent::Type::UPDATE: {
-      rc = trx_event_->commit_update();
+      rc = trx_event->commit_update();
     } break;
     default: {
     } break;
@@ -55,7 +69,7 @@ RC Trx::commit() {
 
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to commit record data, table=%s, rc=%d:%s",
-                trx_event_->get_table_name(), rc, strrc(rc));
+                trx_event->get_table_name(), rc, strrc(rc));
       rollback();
     }
 
@@ -66,29 +80,28 @@ RC Trx::commit() {
 
 void Trx::rollback() {
   RC rc = RC::SUCCESS;
-  while (trx_event_ != nullptr) {
-    switch (trx_event_->get_type()) {
+  TrxEvent *trx_event;
+  while (trx_event_ != trx_events_.begin()) {
+    trx_event = *trx_event_;
+    switch (trx_event->get_type()) {
     case TrxEvent::Type::INSERT: {
-      rc = trx_event_->rollback_insert();
+      LOG_INFO("point 3\n");
+      rc = trx_event->rollback_insert();
     } break;
     case TrxEvent::Type::DELETE: {
-      rc = trx_event_->rollback_delete();
+      rc = trx_event->rollback_delete();
     } break;
     case TrxEvent::Type::UPDATE: {
-      rc = trx_event_->rollback_update();
+      rc = trx_event->rollback_update();
     } break;
     }
 
     if (rc != SUCCESS) {
       LOG_PANIC("Failed to rollback, table=%s, rid=%d, rc=%d:%s",
-                trx_event_->get_table_name(), 0, rc, strrc(rc));
+                trx_event->get_table_name(), 0, rc, strrc(rc));
     }
     trx_event_--;
   }
-
-  trx_events_.clear();
-  trx_event_ = nullptr;
-  trx_id_ = 0;
 }
 
 RC TrxEvent::commit_insert() { return table_->commit_insert(new_record_); }
