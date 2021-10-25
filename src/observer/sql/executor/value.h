@@ -14,9 +14,11 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_SQL_EXECUTOR_VALUE_H_
 #define __OBSERVER_SQL_EXECUTOR_VALUE_H_
 
+#include <cassert>
 #include <string.h>
 #include <time.h>
 
+#include <iomanip>
 #include <ostream>
 #include <string>
 
@@ -25,6 +27,7 @@ public:
   TupleValue() = default;
   virtual ~TupleValue() = default;
 
+  virtual void get_value(void *data) const = 0;
   virtual void to_string(std::ostream &os) const = 0;
   virtual int compare(const TupleValue &other) const = 0;
 
@@ -34,6 +37,8 @@ private:
 class IntValue : public TupleValue {
 public:
   explicit IntValue(int value) : value_(value) {}
+
+  void get_value(void *data) const override { *(int *)data = value_; }
 
   void to_string(std::ostream &os) const override { os << value_; }
 
@@ -50,7 +55,11 @@ class FloatValue : public TupleValue {
 public:
   explicit FloatValue(float value) : value_(value) {}
 
-  void to_string(std::ostream &os) const override { os << value_; }
+  void get_value(void *data) const override { *(float *)data = value_; }
+
+  void to_string(std::ostream &os) const override {
+    os << std::setprecision(2) << value_;
+  }
 
   int compare(const TupleValue &other) const override {
     const FloatValue &float_other = (const FloatValue &)other;
@@ -73,6 +82,8 @@ public:
   StringValue(const char *value, int len) : value_(value, len) {}
   explicit StringValue(const char *value) : value_(value) {}
 
+  void get_value(void *data) const override { *(std::string *)data = value_; }
+
   void to_string(std::ostream &os) const override { os << value_; }
 
   int compare(const TupleValue &other) const override {
@@ -87,6 +98,8 @@ private:
 class DateValue : public TupleValue {
 public:
   explicit DateValue(time_t value) : value_(value) {}
+
+  void get_value(void *data) const override { *(time_t *)data = value_; }
 
   void to_string(std::ostream &os) const override {
     tm *tp = gmtime(&value_);
