@@ -685,12 +685,6 @@ public:
     record->data = new char[table_.table_meta_.record_size()];
 
     memcpy(record->data, old_record->data, strlen(old_record->data));
-    int *tmp = (int *)record->data;
-    // test
-    if (tmp[1] == 2) {
-      return RC::GENERIC_ERROR;
-    }
-
     DeleteTrxEvent *event = new DeleteTrxEvent(&table_, record);
     trx_->pending(event);
 
