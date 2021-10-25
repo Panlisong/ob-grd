@@ -37,8 +37,6 @@ public:
 
   Table *find_table(const char *table_name) const;
 
-  std::string show_tables();
-
   const char *name() const;
 
   void all_tables(std::vector<std::string> &table_names) const;

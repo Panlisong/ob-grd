@@ -103,18 +103,6 @@ Table *Db::find_table(const char *table_name) const {
   return nullptr;
 }
 
-std::string Db::show_tables() {
-  std::vector<std::string> all_table_names;
-  all_tables(all_table_names);
-
-  std::string result = "all tables:\n";
-  for (auto table_name : all_table_names) {
-    result += table_name + "\n";
-  }
-
-  return result;
-}
-
 RC Db::open_all_tables() {
   std::vector<std::string> table_meta_files;
   int ret = common::list_file(path_.c_str(), TABLE_META_FILE_PATTERN,
