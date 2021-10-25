@@ -20,23 +20,20 @@ public:
   };
 
 public:
-  TrxEvent();
-  ~TrxEvent();
-
-public:
-	virtual const char *get_table_name();
-  virtual RC commit();
-  virtual RC rollback();
+  virtual const char *get_table_name() { return ""; };
+  virtual RC commit() { return RC::SUCCESS; }
+  virtual RC rollback() { return RC::SUCCESS; };
 };
 
 class InsertTrxEvent : public TrxEvent {
 public:
-  InsertTrxEvent(Table *table, Record *new_record);
+  InsertTrxEvent(Table *table, Record *new_record)
+      : table_(table), new_record_(new_record) {}
   ~InsertTrxEvent();
 
-	const char *get_table_name();
-  RC commit();
-  RC rollback();
+  const char *get_table_name() { return table_->name(); }
+  RC commit() { return table_->commit_insert(new_record_); }
+  RC rollback() { return table_->rollback_insert(new_record_); }
 
 private:
   Table *table_;
@@ -45,12 +42,13 @@ private:
 
 class DeleteTrxEvent : public TrxEvent {
 public:
-  DeleteTrxEvent(Table *table, Record *old_record_);
+  DeleteTrxEvent(Table *table, Record *old_record)
+      : table_(table), old_record_(old_record) {}
   ~DeleteTrxEvent();
 
-	const char *get_table_name();
-  RC commit();
-  RC rollback();
+  const char *get_table_name() { return table_->name(); }
+  RC commit() { return table_->commit_delete(old_record_); }
+  RC rollback() { return table_->rollback_delete(old_record_); }
 
 private:
   Table *table_;

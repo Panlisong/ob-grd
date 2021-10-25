@@ -6,9 +6,6 @@
 #include "storage/common/table.h"
 #include "storage/trx/trx.h"
 
-static const uint32_t DELETED_FLAG_BIT_MASK = 0x80000000;
-// static const uint32_t TRX_ID_BIT_MASK = 0x7FFFFFFF;
-
 Trx::Trx() {}
 
 Trx::~Trx() {}
@@ -68,29 +65,3 @@ void Trx::rollback() {
     cur_event_index--;
   }
 }
-
-InsertTrxEvent::InsertTrxEvent(Table *table, Record *new_record) {
-  table_ = table;
-  new_record_ = new_record;
-}
-
-InsertTrxEvent::~InsertTrxEvent() {}
-
-const char *InsertTrxEvent::get_table_name() { return table_->name(); }
-
-RC InsertTrxEvent::commit() { return table_->commit_insert(new_record_); }
-
-RC InsertTrxEvent::rollback() { return table_->rollback_insert(new_record_); }
-
-DeleteTrxEvent::DeleteTrxEvent(Table *table, Record *old_record) {
-  table_ = table;
-  old_record_ = old_record;
-}
-
-const char *DeleteTrxEvent::get_table_name() { return table_->name(); }
-
-DeleteTrxEvent::~DeleteTrxEvent() {}
-
-RC DeleteTrxEvent::commit() { return table_->commit_delete(old_record_); }
-
-RC DeleteTrxEvent::rollback() { return table_->rollback_delete(old_record_); }
