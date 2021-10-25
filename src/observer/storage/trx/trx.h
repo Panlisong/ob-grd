@@ -20,33 +20,41 @@ public:
   };
 
 public:
-  TrxEvent(Table *table, TrxEvent::Type type, Record *old_record,
-           Record *new_record) {
-    table_ = table;
-    type_ = type;
-    old_record_ = old_record;
-    new_record_ = new_record;
-  }
+  TrxEvent();
   ~TrxEvent();
 
 public:
-  TrxEvent::Type get_type() { return type_; }
-  const char *get_table_name() { return table_->name(); }
+	virtual const char *get_table_name();
+  virtual RC commit();
+  virtual RC rollback();
+};
 
-  RC commit_insert();
-  RC rollback_insert();
+class InsertTrxEvent : public TrxEvent {
+public:
+  InsertTrxEvent(Table *table, Record *new_record);
+  ~InsertTrxEvent();
 
-  RC commit_delete();
-  RC rollback_delete();
-
-  RC commit_update();
-  RC rollback_update();
+	const char *get_table_name();
+  RC commit();
+  RC rollback();
 
 private:
   Table *table_;
-  TrxEvent::Type type_;
-  Record *old_record_;
   Record *new_record_;
+};
+
+class DeleteTrxEvent : public TrxEvent {
+public:
+  DeleteTrxEvent(Table *table, Record *old_record_);
+  ~DeleteTrxEvent();
+
+	const char *get_table_name();
+  RC commit();
+  RC rollback();
+
+private:
+  Table *table_;
+  Record *old_record_;
 };
 
 class Trx {
@@ -59,8 +67,7 @@ public:
 
 public:
   void begin();
-  void pending(Table *table, TrxEvent::Type type, Record *old_record,
-               Record *new_record);
+  void pending(TrxEvent *event);
   RC commit();
   void rollback();
 

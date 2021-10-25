@@ -250,7 +250,8 @@ RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
   new_record->data = record_data;
 
   // record.valid = true;
-  trx->pending(this, TrxEvent::Type::INSERT, nullptr, new_record);
+	InsertTrxEvent *event = new InsertTrxEvent(this,new_record);
+	trx->pending(event);
 
   return RC::SUCCESS;
 }
@@ -690,7 +691,10 @@ public:
 		if(tmp[1]==2){
 				return RC::GENERIC_ERROR;
 		}
-    trx_->pending(&table_, TrxEvent::Type::DELETE, record, nullptr);
+
+		DeleteTrxEvent *event = new DeleteTrxEvent(&table_,record);
+		trx_->pending(event);
+
     deleted_count_++;
 
     return RC::SUCCESS;
