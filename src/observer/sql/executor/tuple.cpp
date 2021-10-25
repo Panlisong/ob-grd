@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/executor/tuple.h"
 #include "common/log/log.h"
 #include "storage/common/table.h"
+#include <string>
 
 Tuple::Tuple(const Tuple &other) {
   LOG_PANIC("Copy constructor of tuple is not supported");
@@ -61,26 +62,27 @@ void TupleSchema::from_table(const Table *table, TupleSchema &schema) {
   for (int i = 0; i < field_num; i++) {
     const FieldMeta *field_meta = table_meta.field(i);
     if (field_meta->visible()) {
-      schema.add(field_meta->type(), table_name, field_meta->name());
+      schema.add(field_meta->type(), COLUMN, table_name, field_meta->name());
     }
   }
 }
 
-void TupleSchema::add(AttrType type, const char *table_name,
+void TupleSchema::add(AttrType type, FuncName func, const char *table_name,
                       const char *field_name) {
-  fields_.emplace_back(type, table_name, field_name);
+  fields_.emplace_back(type, func, table_name, field_name);
 }
 
-void TupleSchema::add_if_not_exists(AttrType type, const char *table_name,
+void TupleSchema::add_if_not_exists(AttrType type, FuncName func,
+                                    const char *table_name,
                                     const char *field_name) {
   for (const auto &field : fields_) {
-    if (0 == strcmp(field.table_name(), table_name) &&
+    if (func == field.func() && 0 == strcmp(field.table_name(), table_name) &&
         0 == strcmp(field.field_name(), field_name)) {
       return;
     }
   }
 
-  add(type, table_name, field_name);
+  add(type, func, table_name, field_name);
 }
 
 void TupleSchema::append(const TupleSchema &other) {
@@ -110,24 +112,37 @@ void TupleSchema::print(std::ostream &os) const {
   }
 
   // 判断有多张表还是只有一张表
+  bool multi_flag = false;
   std::set<std::string> table_names;
   for (const auto &field : fields_) {
     table_names.insert(field.table_name());
+    if (table_names.size() > 1) {
+      multi_flag = true;
+      break;
+    }
   }
 
+  std::string func[FUNC_NUM] = {"", "MAX", "MIN", "COUNT", "AVG"};
+  std::string pre;
   for (std::vector<TupleField>::const_iterator iter = fields_.begin(),
                                                end = --fields_.end();
        iter != end; ++iter) {
-    if (table_names.size() > 1) {
-      os << iter->table_name() << ".";
+    pre = multi_flag ? iter->table_name() + std::string(".") : "";
+    if (iter->func() != COLUMN) {
+      os << func[iter->func()] << "(" << pre << iter->field_name() << ") | ";
+      continue;
     }
-    os << iter->field_name() << " | ";
+    os << pre << iter->field_name() << " | ";
   }
 
-  if (table_names.size() > 1) {
-    os << fields_.back().table_name() << ".";
+  auto last = fields_.back();
+  pre = multi_flag ? last.table_name() + std::string(".") : "";
+  if (last.func() != COLUMN) {
+    os << func[last.func()] << "(" << pre << last.field_name() << ")"
+       << std::endl;
+  } else {
+    os << pre << last.field_name() << std::endl;
   }
-  os << fields_.back().field_name() << std::endl;
 }
 
 /////////////////////////////////////////////////////////////////////////////

@@ -23,8 +23,19 @@ See the Mulan PSL v2 for more details. */
 #define MAX_ERROR_MESSAGE 20
 #define MAX_DATA 50
 
+// Built-in Function类型
+typedef enum {
+  COLUMN,
+  MAX_FUNC,
+  MIN_FUNC,
+  COUNT_FUNC,
+  AVG_FUNC,
+  FUNC_NUM
+} FuncName;
+
 //属性结构体
 typedef struct {
+  FuncName func;        // 这一属性使用的函数类型
   char *relation_name;  // relation name (may be NULL) 表名
   char *attribute_name; // attribute name              属性名
 } RelAttr;
@@ -183,8 +194,8 @@ typedef struct Query {
 extern "C" {
 #endif // __cplusplus
 
-void relation_attr_init(RelAttr *relation_attr, const char *relation_name,
-                        const char *attribute_name);
+void relation_attr_init(RelAttr *relation_attr, FuncName func_flag,
+                        const char *relation_name, const char *attribute_name);
 void relation_attr_destroy(RelAttr *relation_attr);
 
 void value_init_integer(Value *value, int v);

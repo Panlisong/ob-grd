@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "common/lang/string.h"
 #include "common/log/log.h"
+#include "rc.h"
 #include "storage/common/bplus_tree_index.h"
 #include "storage/common/condition_filter.h"
 #include "storage/common/index.h"
@@ -250,8 +251,8 @@ RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
   new_record->data = record_data;
 
   // record.valid = true;
-	InsertTrxEvent *event = new InsertTrxEvent(this,new_record);
-	trx->pending(event);
+  InsertTrxEvent *event = new InsertTrxEvent(this, new_record);
+  trx->pending(event);
 
   return RC::SUCCESS;
 }
@@ -542,39 +543,24 @@ RC Table::create_index(Trx *trx, const char *index_name,
 
   return rc;
 }
-
 class RecordUpdater {
 public:
   RecordUpdater(Table &table, Trx *trx) : table_(table), trx_(trx) {}
 
   RC update_record(Record *record) {
     RC rc = RC::SUCCESS;
-    old_records.push_back(*record);
+    memcpy(record->data + offset_, value_->data, size_);
     rc = table_.update_record(trx_, record);
     if (rc == RC::SUCCESS) {
       updated_count_++;
     }
-
     return rc;
   }
 
-  RC rollback_update() {
-    RC rc = RC::SUCCESS;
-    RC return_rc = RC::SUCCESS;
-    while (!old_records.empty()) {
-      Record old_record = old_records.back();
-      old_records.pop_back();
-      return_rc = table_.update_record(trx_, &old_record);
-      if (return_rc != RC::SUCCESS) {
-        LOG_PANIC("Failed to rollback record data when update records failed. "
-                  "table name=%s, rc=%d:%s",
-                  table_.name(), return_rc, strrc(return_rc));
-        rc = return_rc;
-      }
-    }
-    updated_count_ = 0;
-
-    return rc;
+  void set_update_info(const Value *v, int offset, int len) {
+    value_ = v;
+    offset_ = offset;
+    size_ = len;
   }
 
   int updated_count() const { return updated_count_; }
@@ -582,8 +568,10 @@ public:
 private:
   Table &table_;
   Trx *trx_;
+  const Value *value_;
+  int offset_;
+  int size_;
   int updated_count_ = 0;
-  std::list<Record> old_records;
 };
 
 static RC record_reader_update_adapter(Record *record, void *context) {
@@ -591,88 +579,99 @@ static RC record_reader_update_adapter(Record *record, void *context) {
   return record_updater.update_record(record);
 }
 
-RC Table::update_record(Trx *trx, const char *attribute_name,
-                        const Value *value, int condition_num,
-                        const Condition conditions[], int *updated_count) {
-  if (condition_num <= 0 || conditions == nullptr) {
-    LOG_ERROR("Invalid argument, condition_num=%d, conditions=%p",
-              condition_num, conditions);
-    return RC::INVALID_ARGUMENT;
-  }
-
-  RC rc;
-  CompositeConditionFilter *filter = new CompositeConditionFilter();
-  Table &table = *this;
-  rc = filter->init(table, conditions, condition_num);
-
-  if (rc != RC::SUCCESS) {
-    LOG_ERROR("Update record failed, table name=%s", table_meta_.name());
-    delete filter;
-    return rc;
-  }
-
-  RecordUpdater updater(*this, trx);
-  rc = scan_record(trx, filter, -1, &updater, record_reader_update_adapter);
-  if (rc != RC::SUCCESS) {
-    updater.rollback_update();
-  }
-  if (updated_count != nullptr) {
-    *updated_count = updater.updated_count();
-  }
-
-  delete filter;
-  return rc;
-}
-
 RC Table::update_record(Trx *trx, Record *record) {
   RC rc = RC::SUCCESS;
-
   if (trx != nullptr) {
-    // trx->init_trx_info(this, *record);
+    // 需要实现trx update
+    // rc = trx->update_record(this, record);
+  }
+  // 当更新search key时需要更新
+  // rc = update_entry_of_indexes(record->data, record->rid);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to update indexes of record (rid=%d.%d). rc=%d:%s",
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+    return rc;
   }
   rc = record_handler_->update_record(record);
 
-  if (rc != RC::SUCCESS) {
-    LOG_ERROR("Update record failed, table name=%s, rc=%d:%s",
-              table_meta_.name(), rc, strrc(rc));
-    return rc;
+  return rc;
+}
+
+// RC Table::update_entry_of_indexes(const char *record, const RID &rid) {
+//   RC rc = RC::SUCCESS;
+//   for (Index *index : indexes_) {
+//     rc = index->update_entry(record, &rid);
+//     if (rc != RC::SUCCESS) {
+//       if (rc != RC::RECORD_INVALID_KEY || !error_on_not_exists) {
+//         break;
+//       }
+//     }
+//   }
+//   return rc;
+// }
+
+bool Table::match_table(const char *relation_name, const char *attribute_name) {
+  if (nullptr == relation_name || 0 == strcmp(name(), relation_name)) {
+    const FieldMeta *field_meta = table_meta_.field(attribute_name);
+    if (nullptr == field_meta) {
+      LOG_WARN("No such field. %s.%s", name(), attribute_name);
+      return false;
+    }
+    return true;
   }
+  LOG_WARN("Cannot match table %s with %s", name(), relation_name);
+  return false;
+}
 
-  if (trx != nullptr) {
-    // rc = trx->insert_record(this, record);
+RC Table::update_record(Trx *trx, const char *attribute_name,
+                        const Value *value, int condition_num,
+                        const Condition conditions[], int *updated_count) {
+  RC rc = RC::SUCCESS;
+  // 生成ConditionFilter
+  std::vector<DefaultConditionFilter *> condition_filters;
+  for (size_t i = 0; i < condition_num; i++) {
+    const Condition &cond = conditions[i];
+    // 检查条件是否合法
+    bool no_error = true;
+    if (cond.left_is_attr == 1) {
+      no_error = match_table(cond.left_attr.relation_name,
+                             cond.left_attr.attribute_name);
+    }
+    if (cond.right_is_attr == 1) {
+      no_error |= match_table(cond.right_attr.relation_name,
+                              cond.right_attr.attribute_name);
+    }
+    if (!no_error) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+
+    DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
+    rc = condition_filter->init(*this, cond);
+    condition_filters.push_back(condition_filter);
     if (rc != RC::SUCCESS) {
-      LOG_ERROR("Failed to log operation(update) to trx");
-
-      RC rc2 = record_handler_->delete_record(&record->rid);
-      if (rc2 != RC::SUCCESS) {
-        LOG_PANIC("Failed to rollback record data when update entries "
-                  "failed. table name=%s, rc=%d:%s",
-                  name(), rc2, strrc(rc2));
+      delete condition_filter;
+      for (DefaultConditionFilter *&filter : condition_filters) {
+        delete filter;
       }
       return rc;
     }
   }
+  CompositeConditionFilter filter;
+  filter.init((const ConditionFilter **)condition_filters.data(),
+              condition_filters.size());
 
-  // TODO
-  // insert -> update
-  rc = insert_entry_of_indexes(record->data, record->rid);
-  if (rc != RC::SUCCESS) {
-    RC rc2 = delete_entry_of_indexes(record->data, record->rid, true);
-    if (rc2 != RC::SUCCESS) {
-      LOG_PANIC("Failed to rollback index data when insert index entries "
-                "failed. table name=%s, rc=%d:%s",
-                name(), rc2, strrc(rc2));
-    }
-    rc2 = record_handler_->delete_record(&record->rid);
-    if (rc2 != RC::SUCCESS) {
-      LOG_PANIC("Failed to rollback record data when insert index entries "
-                "failed. table name=%s, rc=%d:%s",
-                name(), rc2, strrc(rc2));
-    }
-    return rc;
+  // 获取Attr在Record中的实际偏移和大小
+  const FieldMeta *field_meta = table_meta_.field(attribute_name);
+  if (field_meta == nullptr) {
+    LOG_WARN("No such field. %s.%s", name(), attribute_name);
+    return RC::SCHEMA_FIELD_MISSING;
   }
-  return rc;
-
+  RecordUpdater updater(*this, trx);
+  updater.set_update_info(value, field_meta->offset(), field_meta->len());
+  rc = scan_record(trx, &filter, -1, &updater, record_reader_update_adapter);
+  if (updated_count != nullptr) {
+    *updated_count = updater.updated_count();
+  }
   return rc;
 }
 
@@ -687,13 +686,13 @@ public:
 
     memcpy(record->data, old_record->data, strlen(old_record->data));
     int *tmp = (int *)record->data;
-		// test
-		if(tmp[1]==2){
-				return RC::GENERIC_ERROR;
-		}
+    // test
+    if (tmp[1] == 2) {
+      return RC::GENERIC_ERROR;
+    }
 
-		DeleteTrxEvent *event = new DeleteTrxEvent(&table_,record);
-		trx_->pending(event);
+    DeleteTrxEvent *event = new DeleteTrxEvent(&table_, record);
+    trx_->pending(event);
 
     deleted_count_++;
 

@@ -45,6 +45,10 @@ DELI			 [\-\\/\.]
 [Ee][Xx][Ii][Tt]						             RETURN_TOKEN(EXIT);
 [Hh][Ee][Ll][Pp]                    	   RETURN_TOKEN(HELP);
 [Dd][Ee][Ss][Cc]                         RETURN_TOKEN(DESC);
+(?i:max)										 RETURN_TOKEN(MAX_F);
+(?i:min)										 RETURN_TOKEN(MIN_F);
+(?i:count)										 RETURN_TOKEN(COUNT_F);
+(?i:avg)										 RETURN_TOKEN(AVG_F);
 [Cc][Rr][Ee][Aa][Tt][Ee]                 RETURN_TOKEN(CREATE);
 [Dd][Rr][Oo][Pp]                    	   RETURN_TOKEN(DROP);
 [Tt][Aa][Bb][Ll][Ee]					           RETURN_TOKEN(TABLE);

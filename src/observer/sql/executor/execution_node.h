@@ -74,8 +74,11 @@ public:
   RC execute(TupleSet &tuple_set) override;
 
 private:
+  RC execute_aggregate(TupleSet &tuple_set);
+
   Trx *trx_ = nullptr;
   TupleSet in_;            //  input tuple set：待映射的TupleSet
   TupleSchema out_schema_; //    output schema：输出按照tuple_schema映射
+  bool has_aggregate = false;
 };
 #endif //__OBSERVER_SQL_EXECUTOR_EXECUTION_NODE_H_

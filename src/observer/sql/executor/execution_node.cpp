@@ -109,12 +109,105 @@ RC ProjectExeNode::init(Trx *trx, TupleSet &in, TupleSchema &&tuple_schema) {
   trx_ = trx;
   in_ = std::move(in);
   out_schema_ = tuple_schema;
+  for (size_t i = 0; i < out_schema_.fields().size(); i++) {
+    if (out_schema_.field(i).func() != COLUMN) {
+      has_aggregate = true;
+      break;
+    }
+  }
+  return RC::SUCCESS;
+}
+
+static float get_float_value(const TupleValue &tuple, const TupleField &field) {
+  if (field.func() == AVG_FUNC && field.type() == INTS) {
+    // avg()参数为INT时，需要转换
+    int v;
+    tuple.get_value(&v);
+    return (float)v;
+  }
+  float v;
+  tuple.get_value(&v);
+  return v;
+}
+
+RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
+  // 目前TupleSet只有一组所以直接保留第一个tuple然后迭代即可
+  Tuple cur;
+  // 1. 初始化
+  for (const TupleField &field : out_schema_.fields()) {
+    if (field.func() == COUNT_FUNC) {
+      // TODO：支持NULL时需要修正
+      cur.add(in_.size());
+    } else {
+      // max min avg 以及普通列初值都是第一个值
+      // 且除count外max min avg参数均不可能为
+      int field_in_tuple = in_.get_schema().index_of_field(field.table_name(),
+                                                           field.field_name());
+      auto &t = in_.get(0);
+      assert(field_in_tuple != -1);
+
+      if (field.func() == AVG_FUNC && field.type() == INTS) {
+        // avg()参数为INT时，需要转换
+        int v;
+        t.get(field_in_tuple).get_value(&v);
+        cur.add((float)v);
+      } else {
+        cur.add(t.get_pointer(field_in_tuple));
+      }
+    }
+  }
+  // 2.从第二行开始迭代
+  for (int i = 1; i < in_.size(); i++) {
+    Tuple tmp;
+    auto &next = in_.get(i);
+    for (size_t j = 0; j < out_schema_.fields().size(); j++) {
+      const TupleField &field = out_schema_.field(j);
+      switch (field.func()) {
+      case AVG_FUNC: {
+        // 上面的初始化确保AVG列一定为float
+        float v1;
+        float v2 = get_float_value(next.get(j), field);
+        cur.get(j).get_value(&v1);
+
+        float ans = v1 + v2;
+        if (i + 1 == in_.size()) {
+          ans /= in_.size();
+        }
+        tmp.add(ans);
+      } break;
+      case MAX_FUNC:
+        if (next.get(j).compare(cur.get(j)) > 0) {
+          tmp.add(next.get_pointer(j));
+        } else {
+          tmp.add(cur.get_pointer(j)); // 保持不变
+        }
+        break;
+      case MIN_FUNC:
+        if (next.get(j).compare(cur.get(j)) < 0) {
+          tmp.add(next.get_pointer(j));
+          break;
+        }
+      case COUNT_FUNC:
+      case COLUMN:
+        tmp.add(cur.get_pointer(j)); // 保持不变
+      default:
+        break;
+      }
+    }
+    cur = std::move(tmp);
+  }
+  tuple_set.add(std::move(cur));
   return RC::SUCCESS;
 }
 
 RC ProjectExeNode::execute(TupleSet &tuple_set) {
   tuple_set.clear();
   tuple_set.set_schema(out_schema_);
+
+  if (has_aggregate) {
+    return execute_aggregate(tuple_set);
+  }
+
   for (auto &t : in_.tuples()) {
     Tuple tuple;
     for (const TupleField &field : out_schema_.fields()) {

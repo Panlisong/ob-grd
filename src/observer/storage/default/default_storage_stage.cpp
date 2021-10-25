@@ -178,6 +178,7 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     rc = handler_->update_record(
         current_trx, current_db, table_name, field_name, &updates.value,
         updates.condition_num, updates.conditions, &updated_count);
+    // TODO: 事物处理
     snprintf(response, sizeof(response), "%s\n",
              rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
   } break;
@@ -207,7 +208,12 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     snprintf(response, sizeof(response), "%s\n",
              rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
   } break;
-
+  case SCF_DROP_TABLE: {
+    const DropTable &drop_table = sql->sstr.drop_table;
+    rc = handler_->drop_table(current_db, drop_table.relation_name);
+    snprintf(response, sizeof response,
+             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
+  } break;
   case SCF_SHOW_TABLES: {
     Db *db = handler_->find_db(current_db);
     if (nullptr == db) {

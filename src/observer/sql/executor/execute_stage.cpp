@@ -134,75 +134,15 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
     do_select(current_db, sql, exe_event->sql_event()->session_event());
     exe_event->done_immediate();
   } break;
-  case SCF_INSERT: {
-    RC rc = do_insert(current_db, sql, exe_event->sql_event()->session_event());
-    char response[10];
-    snprintf(response, sizeof response,
-             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
-    session_event->set_response(response);
-    exe_event->done_immediate();
-  } break;
-  case SCF_UPDATE: {
-    RC rc = do_update(current_db, sql, exe_event->sql_event()->session_event());
-    char response[10];
-    snprintf(response, sizeof response,
-             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
-    session_event->set_response(response);
-    exe_event->done_immediate();
-  } break;
-  case SCF_DELETE: {
-    RC rc = do_delete(current_db, sql, exe_event->sql_event()->session_event());
-    char response[10];
-    snprintf(response, sizeof response,
-             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
-    session_event->set_response(response);
-    exe_event->done_immediate();
-  } break;
-  case SCF_CREATE_TABLE: {
-    RC rc = do_create_table(current_db, sql);
-    char response[10];
-    snprintf(response, sizeof response,
-             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
-    LOG_INFO("%s", strrc(rc));
-    session_event->set_response(response);
-    exe_event->done_immediate();
-  } break;
-  case SCF_SHOW_TABLES: {
-    std::string response;
-    do_show_tables(current_db, response);
-    session_event->set_response(response.c_str());
-    exe_event->done_immediate();
-  } break;
-  case SCF_DESC_TABLE: {
-    do_desc_table(current_db, sql, exe_event->sql_event()->session_event());
-    exe_event->done_immediate();
-  } break;
-  case SCF_DROP_TABLE: {
-    RC rc = do_drop_table(current_db, sql);
-    char response[10];
-    snprintf(response, sizeof response,
-             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
-    session_event->set_response(response);
-    exe_event->done_immediate();
-  } break;
-  case SCF_CREATE_INDEX: {
-    RC rc = do_create_index(current_db, sql,
-                            exe_event->sql_event()->session_event());
-    char response[10];
-    snprintf(response, sizeof response,
-             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
-    session_event->set_response(response);
-    exe_event->done_immediate();
-  } break;
-  case SCF_DROP_INDEX: {
-    RC rc =
-        do_drop_index(current_db, sql, exe_event->sql_event()->session_event());
-    char response[10];
-    snprintf(response, sizeof response,
-             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
-    session_event->set_response(response);
-    exe_event->done_immediate();
-  } break;
+  case SCF_INSERT:
+  case SCF_UPDATE:
+  case SCF_DELETE:
+  case SCF_CREATE_TABLE:
+  case SCF_SHOW_TABLES:
+  case SCF_DESC_TABLE:
+  case SCF_DROP_TABLE:
+  case SCF_CREATE_INDEX:
+  case SCF_DROP_INDEX:
   case SCF_LOAD_DATA: {
     StorageEvent *storage_event = new (std::nothrow) StorageEvent(exe_event);
     if (storage_event == nullptr) {
@@ -280,21 +220,35 @@ void end_trx_if_need(Session *session, Trx *trx, RC *rc) {
 }
 
 static RC schema_add_field(const char *db, const char *table_name,
-                           const char *field_name, TupleSchema &schema) {
+                           FuncName func, const char *field_name,
+                           TupleSchema &schema) {
   // 先找Table Object
   Table *table = DefaultHandler::get_default().find_table(db, table_name);
   if (nullptr == table) {
     LOG_WARN("No such table [%s] in db [%s]", table_name, db);
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
+
+  if (func == COLUMN && strcmp(field_name, "*") == 0) {
+    // 列名 '*' 或 'T.*'
+    TupleSchema::from_table(table, schema);
+    return RC::SUCCESS;
+  }
+
+  if (func == COUNT_FUNC && strcmp(field_name, "*") == 0) {
+    // 特殊情况：count(*)
+    schema.add(INTS, func, table->name(), field_name);
+    return RC::SUCCESS;
+  }
+
+  // func(A) 或 func(T.A) 或 A 或 T.A
   const FieldMeta *field_meta = table->table_meta().field(field_name);
   if (nullptr == field_meta) {
     LOG_WARN("No such field. %s.%s", table->name(), field_name);
     return RC::SCHEMA_FIELD_MISSING;
   }
-
-  schema.add_if_not_exists(field_meta->type(), table->name(),
-                           field_meta->name());
+  // TODO: 对于聚合函数，参数类型检查应该提前！！
+  schema.add(field_meta->type(), func, table->name(), field_meta->name());
   return RC::SUCCESS;
 }
 
@@ -308,7 +262,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
   const Selects &selects = sql->sstr.selection;
-  // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
+  // 1. 生成与每个关系表的最简select执行节点
   std::vector<SelectExeNode *> select_nodes;
   std::vector<TupleSchema> join_schemas;
   for (int i = selects.relation_num - 1; i >= 0; i--) {
@@ -348,9 +302,9 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   }
 
   std::stringstream ss;
+  TupleSet tuple_set = std::move(tuple_sets[0]);
   if (tuple_sets.size() > 1) {
-    // 本次查询了多张表，需要做join操作
-    TupleSet tuple_set = std::move(tuple_sets[0]);
+    // *2. 本次查询了多张表，需要做join操作
     for (size_t i = 0; i + 1 < tuple_sets.size(); i++) {
       JoinExeNode *join_node = new JoinExeNode;
       join_schemas[0].append(join_schemas[i + 1]);
@@ -359,20 +313,32 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
                                 *join_node);
       join_node->execute(tuple_set);
     }
-    // 到这里说明RelAttr list均合法，得到最后的输出范式(out_schema)做映射
-    TupleSchema out_schema;
-    for (int i = selects.attr_num - 1; i >= 0; i--) {
-      const RelAttr &attr = selects.attributes[i];
-      schema_add_field(db, attr.relation_name, attr.attribute_name, out_schema);
-    }
-    ProjectExeNode project_node;
-    project_node.init(trx, tuple_set, std::move(out_schema));
-    project_node.execute(tuple_set);
-    tuple_set.print(ss);
-  } else {
-    // 当前只查询一张表，直接返回结果即可
-    tuple_sets.front().print(ss);
   }
+  // 3. 重读一边RelAttr List得到最后的输出范式(out_schema)做映射
+  TupleSchema out_schema;
+  for (int i = selects.attr_num - 1; i >= 0; i--) {
+    const RelAttr &attr = selects.attributes[i];
+    if (attr.func == COLUMN && attr.relation_name == nullptr &&
+        strcmp("*", attr.attribute_name) == 0) {
+      // 特殊情况：*
+      // 所有关系的属性都要包含，恰好等于笛卡尔积的结果schema
+      out_schema.append(tuple_set.get_schema());
+      continue;
+    }
+    // 该schema_add_field可重添加字段
+    const char *table_name = attr.relation_name;
+    if (table_name == nullptr) {
+      // 程序运行到这里不会有RelAttr List语义错误
+      // 说明是单表查询
+      table_name = selects.relations[0];
+    }
+    schema_add_field(db, table_name, attr.func, attr.attribute_name,
+                     out_schema);
+  }
+  ProjectExeNode project_node;
+  project_node.init(trx, tuple_set, std::move(out_schema));
+  project_node.execute(tuple_set);
+  tuple_set.print(ss);
 
   for (SelectExeNode *&tmp_node : select_nodes) {
     delete tmp_node;
@@ -398,7 +364,8 @@ static RC schema_add_field(Table *table, const char *field_name,
     return RC::SCHEMA_FIELD_MISSING;
   }
 
-  schema.add_if_not_exists(field_meta->type(), table->name(),
+  // 生成初始Select执行节点使用，只生成最简schema
+  schema.add_if_not_exists(field_meta->type(), COLUMN, table->name(),
                            field_meta->name());
   return RC::SUCCESS;
 }
@@ -462,9 +429,10 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
         // 列出这张表所有字段
         TupleSchema::from_table(table, schema);
         // 由SQL语法可以看出，'*'前后都不可能出现RelAtrr
+        // 但是可能出现 "A1, A2, ..., An, *"
         break;
       } else {
-        // 列出这张表相关字段
+        // 不会重复添加
         RC rc = schema_add_field(table, attr.attribute_name, schema);
         if (rc != RC::SUCCESS) {
           return rc;
@@ -517,90 +485,4 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
 
   return select_node.init(trx, table, std::move(schema),
                           std::move(condition_filters));
-}
-
-RC ExecuteStage::do_insert(const char *db, Query *sql,
-                           SessionEvent *session_event) {
-  Inserts insert = sql->sstr.insertion;
-  Session *session = session_event->get_client()->session;
-  Trx *trx = session->current_trx();
-
-  RC rc = DefaultHandler::get_default().insert_records(
-      trx, db, insert.relation_name, insert.tuple_num, insert.tuples);
-
-  end_trx_if_need(session, trx, &rc);
-  return rc;
-}
-
-RC ExecuteStage::do_update(const char *db, Query *sql,
-                           SessionEvent *session_event) {
-  Updates update = sql->sstr.update;
-  Session *session = session_event->get_client()->session;
-  Trx *trx = session->current_trx();
-
-  int updated_count;
-  RC rc = DefaultHandler::get_default().update_record(
-      trx, db, update.relation_name, update.attribute_name, &update.value,
-      update.condition_num, update.conditions, &updated_count);
-  end_trx_if_need(session, trx, &rc);
-  return rc;
-}
-
-RC ExecuteStage::do_delete(const char *db, Query *sql,
-                           SessionEvent *session_event) {
-  Deletes deletion = sql->sstr.deletion;
-  Session *session = session_event->get_client()->session;
-  Trx *trx = session->current_trx();
-
-  int deleted_count;
-  RC rc = DefaultHandler::get_default().delete_record(
-      trx, db, deletion.relation_name, deletion.condition_num,
-      deletion.conditions, &deleted_count);
-  end_trx_if_need(session, trx, &rc);
-  return rc;
-}
-
-RC ExecuteStage::do_create_table(const char *db, Query *sql) {
-  CreateTable create_table = sql->sstr.create_table;
-  return DefaultHandler::get_default().create_table(
-      db, create_table.relation_name, create_table.attribute_count,
-      create_table.attributes);
-}
-
-RC ExecuteStage::do_show_tables(const char *db, std::string &result) {
-  return DefaultHandler::get_default().show_tables(db, result);
-}
-
-RC ExecuteStage::do_desc_table(const char *db, Query *sql,
-                               SessionEvent *session_event) {
-  return RC::SUCCESS;
-}
-
-RC ExecuteStage::do_drop_table(const char *db, Query *sql) {
-  DropTable drop_table = sql->sstr.drop_table;
-  return DefaultHandler::get_default().drop_table(db, drop_table.relation_name);
-}
-
-RC ExecuteStage::do_create_index(const char *db, Query *sql,
-                                 SessionEvent *session_event) {
-  CreateIndex create_index = sql->sstr.create_index;
-  Session *session = session_event->get_client()->session;
-  Trx *trx = session->current_trx();
-  RC rc = DefaultHandler::get_default().create_index(
-      trx, db, create_index.relation_name, create_index.index_name,
-      create_index.attribute_name);
-  end_trx_if_need(session, trx, &rc);
-  return rc;
-}
-
-RC ExecuteStage::do_drop_index(const char *db, Query *sql,
-                               SessionEvent *session_event) {
-  DropIndex drop_index = sql->sstr.drop_index;
-  Session *session = session_event->get_client()->session;
-  Trx *trx = session->current_trx();
-  // TODO: drop_index relation_name
-  RC rc = DefaultHandler::get_default().drop_index(trx, db, "",
-                                                   drop_index.index_name);
-  end_trx_if_need(session, trx, &rc);
-  return rc;
 }
