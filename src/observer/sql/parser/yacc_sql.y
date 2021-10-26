@@ -402,7 +402,7 @@ select_attr:
 			relation_attr_init(&attr, COLUMN, $1, $3);
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
-	| COUNT_F LBRACE STAR RBRACE{
+	| COUNT_F LBRACE STAR RBRACE select_expr{
 			RelAttr attr;
 			relation_attr_init(&attr, $1, NULL, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
@@ -412,7 +412,7 @@ select_attr:
 			relation_attr_init(&attr, $1, NULL, $3);
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
-	| aggregate_func LBRACE ID DOT STAR RBRACE select_expr{
+	| COUNT_F LBRACE ID DOT STAR RBRACE select_expr{
 			RelAttr attr;
 			relation_attr_init(&attr, $1, $3, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
@@ -444,12 +444,17 @@ select_expr:
         // CONTEXT->ssql->sstr.selection.attributes[CONTEXT->select_length].attribute_name=$4;
         // CONTEXT->ssql->sstr.selection.attributes[CONTEXT->select_length++].relation_name=$2;
   	  }
+	| COMMA COUNT_F LBRACE STAR RBRACE select_expr{
+			RelAttr attr;
+			relation_attr_init(&attr, $2, NULL, "*");
+			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
+		}
 	| COMMA aggregate_func LBRACE ID RBRACE select_expr{
 			RelAttr attr;
 			relation_attr_init(&attr, $2, NULL, $4);
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 	  }
-	| COMMA aggregate_func LBRACE ID DOT STAR RBRACE select_expr{
+	| COMMA COUNT_F LBRACE ID DOT STAR RBRACE select_expr{
 			RelAttr attr;
 			relation_attr_init(&attr, $2, $4, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);

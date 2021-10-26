@@ -78,7 +78,8 @@ private:
 
   Trx *trx_ = nullptr;
   TupleSet in_;            //  input tuple set：待映射的TupleSet
-  TupleSchema out_schema_; //    output schema：输出按照tuple_schema映射
-  bool has_aggregate = false;
+  TupleSchema out_schema_; //  output schema：输出按照tuple_schema映射
+  bool has_aggregate_ = false; //  select clasue 中是否有聚合函数
+  bool only_count_ = true;
 };
 #endif //__OBSERVER_SQL_EXECUTOR_EXECUTION_NODE_H_

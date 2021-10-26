@@ -110,9 +110,13 @@ RC ProjectExeNode::init(Trx *trx, TupleSet &in, TupleSchema &&tuple_schema) {
   in_ = std::move(in);
   out_schema_ = tuple_schema;
   for (size_t i = 0; i < out_schema_.fields().size(); i++) {
-    if (out_schema_.field(i).func() != COLUMN) {
-      has_aggregate = true;
-      break;
+    auto func = out_schema_.field(i).func();
+    if (func != COLUMN) {
+      has_aggregate_ = true;
+      if (func != COUNT_FUNC) {
+        only_count_ = false;
+        break;
+      }
     }
   }
   return RC::SUCCESS;
@@ -156,17 +160,28 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
       }
     }
   }
+
+  // 如果只有COUNT则无需迭代
+  if (only_count_) {
+    tuple_set.add(std::move(cur));
+    return RC::SUCCESS;
+  }
+
   // 2.从第二行开始迭代
   for (int i = 1; i < in_.size(); i++) {
     Tuple tmp;
     auto &next = in_.get(i);
     for (size_t j = 0; j < out_schema_.fields().size(); j++) {
       const TupleField &field = out_schema_.field(j);
+      int field_in_tuple = in_.get_schema().index_of_field(field.table_name(),
+                                                           field.field_name());
+      assert(field_in_tuple != -1);
+      auto &next_value = next.get(field_in_tuple);
       switch (field.func()) {
       case AVG_FUNC: {
         // 上面的初始化确保AVG列一定为float
         float v1;
-        float v2 = get_float_value(next.get(j), field);
+        float v2 = get_float_value(next_value, field);
         cur.get(j).get_value(&v1);
 
         float ans = v1 + v2;
@@ -176,15 +191,15 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
         tmp.add(ans);
       } break;
       case MAX_FUNC:
-        if (next.get(j).compare(cur.get(j)) > 0) {
+        if (next_value.compare(cur.get(j)) > 0) {
           tmp.add(next.get_pointer(j));
         } else {
           tmp.add(cur.get_pointer(j)); // 保持不变
         }
         break;
       case MIN_FUNC:
-        if (next.get(j).compare(cur.get(j)) < 0) {
-          tmp.add(next.get_pointer(j));
+        if (next_value.compare(cur.get(j)) < 0) {
+          tmp.add(next.get_pointer(field_in_tuple));
           break;
         }
       case COUNT_FUNC:
@@ -204,7 +219,7 @@ RC ProjectExeNode::execute(TupleSet &tuple_set) {
   tuple_set.clear();
   tuple_set.set_schema(out_schema_);
 
-  if (has_aggregate) {
+  if (has_aggregate_) {
     return execute_aggregate(tuple_set);
   }
 

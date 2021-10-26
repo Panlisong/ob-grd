@@ -274,7 +274,8 @@ check_select_clause(std::unordered_map<std::string, Table *> &relations,
     const char *table_name = attr.relation_name;
     const char *field_name = attr.attribute_name;
     // (1) 特殊情况：单星，非聚合参数
-    if (attr.func && table_name == nullptr && strcmp(field_name, "*") == 0) {
+    if (attr.func == COLUMN && table_name == nullptr &&
+        strcmp(field_name, "*") == 0) {
       if (single_star > 1) {
         LOG_ERROR("SQL syntax error: more than one star in select clause");
         error = true;
