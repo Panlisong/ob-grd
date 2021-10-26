@@ -90,8 +90,9 @@ ParserContext *get_context(yyscan_t scanner)
         FLOAT_T
         HELP
         EXIT
-				NOTNULL
-				NULLABLE
+		NOT
+		NULL_T
+		NULLABLE
         DOT //QUOTE
         INTO
         VALUES
@@ -130,6 +131,7 @@ ParserContext *get_context(yyscan_t scanner)
 %token <string> STRING_V
 //非终结符
 
+%type <number> is_nullable;
 %type <number> type;
 %type <number> aggregate_func;
 %type <condition1> condition;
@@ -247,7 +249,7 @@ attr_def_list:
     ;
     
 attr_def:
-    ID_get type LBRACE number RBRACE ISNULLABLE
+    ID_get type LBRACE number RBRACE is_nullable
 		{
 			AttrInfo attribute;
 			attr_info_init(&attribute, CONTEXT->id, $2, $4, $6);
@@ -258,7 +260,7 @@ attr_def:
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].length = $4;
 			CONTEXT->value_length++;
 		}
-    |ID_get type ISNULLABLE
+    |ID_get type is_nullable
 		{
 			AttrInfo attribute;
 			attr_info_init(&attribute, CONTEXT->id, $2, $2 == DATES ? 8 : 4, $3);
@@ -286,8 +288,8 @@ ID_get:
 		snprintf(CONTEXT->id, sizeof(CONTEXT->id), "%s", temp);
 	}
 	;
-IS_NULLABLE:
-  NOTNULL{ $$ = 0; } 
+is_nullable:
+  NOT NULL_T{ $$ = 0; } 
 | NULLABLE{ $$ = 1; }
 	;
 	
