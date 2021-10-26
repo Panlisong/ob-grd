@@ -36,7 +36,7 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
-void end_trx_if_need(Session *session, Trx *trx, bool all_right);
+void end_trx_if_need(Session *session, Trx *trx, RC *rc);
 
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
                              const char *table_name, SelectExeNode &select_node,
@@ -155,26 +155,32 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   } break;
   case SCF_SYNC: {
     RC rc = DefaultHandler::get_default().sync();
-    session_event->set_response(strrc(rc));
+    char response[10];
+    snprintf(response, sizeof response,
+             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
+    session_event->set_response(response);
     exe_event->done_immediate();
   } break;
   case SCF_BEGIN: {
     session_event->get_client()->session->set_trx_multi_operation_mode(true);
-    session_event->set_response(strrc(RC::SUCCESS));
+    session_event->set_response("SUCCESS\n");
     exe_event->done_immediate();
   } break;
   case SCF_COMMIT: {
     Trx *trx = session_event->get_client()->session->current_trx();
     RC rc = trx->commit();
     session_event->get_client()->session->set_trx_multi_operation_mode(false);
-    session_event->set_response(strrc(rc));
+    char response[10];
+    snprintf(response, sizeof response,
+             rc == RC::SUCCESS ? "SUCCESS\n" : "FAILURE\n");
+    session_event->set_response(response);
     exe_event->done_immediate();
   } break;
   case SCF_ROLLBACK: {
     Trx *trx = session_event->get_client()->session->current_trx();
-    RC rc = trx->rollback();
+    trx->rollback();
     session_event->get_client()->session->set_trx_multi_operation_mode(false);
-    session_event->set_response(strrc(rc));
+    session_event->set_response(strrc(RC::SUCCESS));
     exe_event->done_immediate();
   } break;
   case SCF_HELP: {
@@ -186,7 +192,8 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
         "insert into `table` values(`value1`,`value2`);\n"
         "update `table` set column=value [where `column`=`value`];\n"
         "delete from `table` [where `column`=`value`];\n"
-        "select [ * | `columns` ] from `table`;\n";
+        "select [ * | `columns` ] from `table`;\n"
+        "exit;\n";
     session_event->set_response(response);
     exe_event->done_immediate();
   } break;
@@ -203,10 +210,10 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   }
 }
 
-void end_trx_if_need(Session *session, Trx *trx, bool all_right) {
+void end_trx_if_need(Session *session, Trx *trx, RC *rc) {
   if (!session->is_trx_multi_operation_mode()) {
-    if (all_right) {
-      trx->commit();
+    if (*rc == RC::SUCCESS) {
+      *rc = trx->commit();
     } else {
       trx->rollback();
     }
@@ -438,7 +445,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
       for (SelectExeNode *&tmp_node : select_nodes) {
         delete tmp_node;
       }
-      end_trx_if_need(session, trx, false);
       return rc;
     }
     select_nodes.push_back(select_node);
@@ -447,7 +453,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
 
   if (select_nodes.empty()) {
     LOG_ERROR("No table given");
-    end_trx_if_need(session, trx, false);
     return RC::SQL_SYNTAX;
   }
 
@@ -459,7 +464,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
       for (SelectExeNode *&tmp_node : select_nodes) {
         delete tmp_node;
       }
-      end_trx_if_need(session, trx, false);
       return rc;
     } else {
       tuple_sets.push_back(std::move(tuple_set));

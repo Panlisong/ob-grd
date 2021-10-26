@@ -44,7 +44,7 @@ void yyerror(yyscan_t scanner, const char *str)
   context->select_length = 0;
   context->value_length = 0;
   context->ssql->sstr.insertion.tuple_num = 0;
-  printf("parse sql failed. error=%s", str);
+  printf("parse sql failed. error=%s\n", str);
 }
 
 ParserContext *get_context(yyscan_t scanner)

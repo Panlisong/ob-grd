@@ -23,6 +23,9 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/record_manager.h"
 #include "storage/common/table.h"
 
+int *get_value_num(int tuple_num, Tuples tuples[]);
+Value **get_values(int tuple_num, Tuples tuples[]);
+
 DefaultHandler &DefaultHandler::get_default() {
   static DefaultHandler handler;
   return handler;
@@ -122,7 +125,6 @@ RC DefaultHandler::create_table(const char *dbname, const char *relation_name,
 RC DefaultHandler::drop_table(const char *dbname, const char *relation_name) {
   Db *db = find_db(dbname);
   if (db == nullptr) {
-    // return RC::SCHEMA_DB_NOT_OPENED;
     return RC::SCHEMA_DB_NOT_EXIST;
   }
   return db->drop_table(relation_name);
@@ -146,31 +148,30 @@ RC DefaultHandler::drop_index(Trx *trx, const char *dbname,
   return RC::GENERIC_ERROR;
 }
 
-RC DefaultHandler::insert_record(Trx *trx, const char *dbname,
-                                 const char *relation_name, int value_num,
-                                 const Value *values) {
-  Table *table = find_table(dbname, relation_name);
-  if (nullptr == table) {
-    return RC::SCHEMA_TABLE_NOT_EXIST;
+RC DefaultHandler::insert_records(Trx *trx, const char *dbname,
+                                  const char *relation_name, size_t tuple_num,
+                                  Tuples *tuples) {
+  Db *db = find_db(dbname);
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
   }
 
-  return table->insert_record(trx, value_num, values);
+  int *value_num = get_value_num(tuple_num, tuples);
+  Value **values = get_values(tuple_num, tuples);
+  return db->insert_records(trx, relation_name, tuple_num, value_num, values);
 }
+
 RC DefaultHandler::delete_record(Trx *trx, const char *dbname,
                                  const char *relation_name, int condition_num,
                                  const Condition *conditions,
                                  int *deleted_count) {
-  Table *table = find_table(dbname, relation_name);
-  if (nullptr == table) {
-    return RC::SCHEMA_TABLE_NOT_EXIST;
+  Db *db = find_db(dbname);
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
   }
 
-  CompositeConditionFilter condition_filter;
-  RC rc = condition_filter.init(*table, conditions, condition_num);
-  if (rc != RC::SUCCESS) {
-    return rc;
-  }
-  return table->delete_record(trx, &condition_filter, deleted_count);
+  return db->delete_records(trx, relation_name, condition_num, conditions,
+                            deleted_count);
 }
 
 RC DefaultHandler::update_record(Trx *trx, const char *dbname,
@@ -221,4 +222,22 @@ RC DefaultHandler::sync() {
     }
   }
   return rc;
+}
+
+int *get_value_num(int tuple_num, Tuples tuples[]) {
+  int *value_num = new int[tuple_num];
+  for (int i = 0; i < tuple_num; i++) {
+    value_num[i] = tuples[i].value_num;
+  }
+
+  return value_num;
+}
+
+Value **get_values(int tuple_num, Tuples tuples[]) {
+  Value **values = new Value *[tuple_num];
+  for (int i = 0; i < tuple_num; i++) {
+    values[i] = tuples[i].values;
+  }
+
+  return values;
 }

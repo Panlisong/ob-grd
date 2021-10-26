@@ -20,6 +20,8 @@ See the Mulan PSL v2 for more details. */
 
 #include "rc.h"
 #include "sql/parser/parse_defs.h"
+#include "storage/common/condition_filter.h"
+#include "storage/trx/trx.h"
 
 class Table;
 
@@ -42,6 +44,13 @@ public:
   void all_tables(std::vector<std::string> &table_names) const;
 
   RC sync();
+
+  std::string show_tables();
+  RC insert_records(Trx *trx, const char *table_name, int inserted_count,
+                    int value_num[], Value *values[]);
+
+  RC delete_records(Trx *trx, const char *table_name, int condition_num,
+                        const Condition *conditions, int *deleted_count);
 
 private:
   RC open_all_tables();

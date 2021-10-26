@@ -32,7 +32,6 @@ Db::~Db() {
 }
 
 RC Db::init(const char *name, const char *dbpath) {
-
   if (nullptr == name || common::is_blank(name)) {
     LOG_WARN("Name cannot be empty");
     return RC::INVALID_ARGUMENT;
@@ -159,4 +158,45 @@ RC Db::sync() {
   }
   LOG_INFO("Sync db over. db=%s", name_.c_str());
   return rc;
+}
+
+std::string Db::show_tables() {
+  std::vector<std::string> all_table_names;
+  all_tables(all_table_names);
+
+  std::string result = "all tables:\n";
+  for (auto table_name : all_table_names) {
+    result += table_name + "\n";
+  }
+
+  return result;
+}
+
+RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,
+                      int value_num[], Value *values[]) {
+  Table *table = opened_tables_[table_name];
+  if (table == nullptr) {
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  return table->insert_records(trx, inserted_count, value_num, values);
+}
+
+RC Db::delete_records(Trx *trx, const char *table_name, int condition_num,
+                      const Condition *conditions, int *deleted_count) {
+  Table *table = opened_tables_[table_name];
+  if (table == nullptr) {
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+	CompositeConditionFilter *condition_filter = new CompositeConditionFilter();
+	RC rc=condition_filter->init(*table,conditions,condition_num);
+	if(rc!=RC::SUCCESS){
+			return rc;
+	}
+
+	rc= table->delete_records(trx,condition_filter,deleted_count);
+
+	delete condition_filter;
+	return rc;
 }
