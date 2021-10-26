@@ -56,6 +56,7 @@ typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES } AttrType;
 //属性值
 typedef struct _Value {
   AttrType type; // type of value
+	bool is_null;  // is null
   void *data;    // value
 } Value;
 

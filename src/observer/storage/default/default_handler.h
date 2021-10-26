@@ -153,9 +153,9 @@ public:
    * @return
    */
   RC update_records(Trx *trx, const char *dbname, const char *relation_name,
-                   const char *attribute_name, const Value *value,
-                   int condition_num, const Condition *conditions,
-                   int *updated_count);
+                    const char *attribute_name, const Value *value,
+                    int condition_num, const Condition *conditions,
+                    int *updated_count);
 
 public:
   Db *find_db(const char *dbname) const;
