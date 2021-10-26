@@ -75,7 +75,6 @@ public:
   RC commit_insert(Record *new_record);
   RC rollback_insert(Record *new_record);
 
-
 private:
   RC insert_record(Trx *trx, int value_num, const Value *values);
 
@@ -90,7 +89,6 @@ public:
   RC rollback_update(Trx *trx, const RID &rid);
 
 private:
-  bool match_table(const char *relation_name, const char *attribute_name);
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context,
                  RC (*record_reader)(Record *record, void *context));
   RC scan_record_by_index(Trx *trx, IndexScanner *scanner,

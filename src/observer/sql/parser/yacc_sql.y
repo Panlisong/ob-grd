@@ -402,9 +402,13 @@ select_attr:
 			relation_attr_init(&attr, COLUMN, $1, $3);
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
-	| COUNT_F LBRACE STAR RBRACE select_expr{
+	| aggregate_func LBRACE STAR RBRACE select_expr{
 			RelAttr attr;
-			relation_attr_init(&attr, $1, NULL, "*");
+			if ($1 != COUNT_FUNC) {
+				CONTEXT->ssql->sstr.errors = "invalid arg of aggregate function";
+				YYERROR;
+			}
+			relation_attr_init(&attr, COUNT_FUNC, NULL, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
 	| aggregate_func LBRACE ID RBRACE select_expr{
@@ -412,8 +416,12 @@ select_attr:
 			relation_attr_init(&attr, $1, NULL, $3);
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
-	| COUNT_F LBRACE ID DOT STAR RBRACE select_expr{
+	| aggregate_func LBRACE ID DOT STAR RBRACE select_expr{
 			RelAttr attr;
+			if ($1 != COUNT_FUNC) {
+				CONTEXT->ssql->sstr.errors = "invalid arg of aggregate function";
+				YYERROR;
+			}
 			relation_attr_init(&attr, $1, $3, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
@@ -444,8 +452,12 @@ select_expr:
         // CONTEXT->ssql->sstr.selection.attributes[CONTEXT->select_length].attribute_name=$4;
         // CONTEXT->ssql->sstr.selection.attributes[CONTEXT->select_length++].relation_name=$2;
   	  }
-	| COMMA COUNT_F LBRACE STAR RBRACE select_expr{
+	| COMMA aggregate_func LBRACE STAR RBRACE select_expr{
 			RelAttr attr;
+			if ($2 != COUNT_FUNC) {
+				CONTEXT->ssql->sstr.errors = "invalid arg of aggregate function";
+				YYERROR;
+			}
 			relation_attr_init(&attr, $2, NULL, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
@@ -454,8 +466,12 @@ select_expr:
 			relation_attr_init(&attr, $2, NULL, $4);
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 	  }
-	| COMMA COUNT_F LBRACE ID DOT STAR RBRACE select_expr{
+	| COMMA aggregate_func LBRACE ID DOT STAR RBRACE select_expr{
 			RelAttr attr;
+			if ($2 != COUNT_FUNC) {
+				CONTEXT->ssql->sstr.errors = "invalid arg of aggregate function";
+				YYERROR;
+			}
 			relation_attr_init(&attr, $2, $4, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
       }

@@ -610,42 +610,19 @@ RC Table::update_record(Trx *trx, Record *record) {
 //   return rc;
 // }
 
-bool Table::match_table(const char *relation_name, const char *attribute_name) {
-  if (nullptr == relation_name || 0 == strcmp(name(), relation_name)) {
-    const FieldMeta *field_meta = table_meta_.field(attribute_name);
-    if (nullptr == field_meta) {
-      LOG_WARN("No such field. %s.%s", name(), attribute_name);
-      return false;
-    }
-    return true;
-  }
-  LOG_WARN("Cannot match table %s with %s", name(), relation_name);
-  return false;
-}
-
 RC Table::update_record(Trx *trx, const char *attribute_name,
                         const Value *value, int condition_num,
                         const Condition conditions[], int *updated_count) {
   RC rc = RC::SUCCESS;
-  // 生成ConditionFilter
+  // 进入这里说明更新Table一定存在
+  // 1. 生成ConditionFilter
   std::vector<DefaultConditionFilter *> condition_filters;
   for (size_t i = 0; i < condition_num; i++) {
     const Condition &cond = conditions[i];
-    // 检查条件是否合法
-    bool no_error = true;
-    if (cond.left_is_attr == 1) {
-      no_error = match_table(cond.left_attr.relation_name,
-                             cond.left_attr.attribute_name);
-    }
-    if (cond.right_is_attr == 1) {
-      no_error |= match_table(cond.right_attr.relation_name,
-                              cond.right_attr.attribute_name);
-    }
-    if (!no_error) {
-      return RC::SCHEMA_FIELD_MISSING;
-    }
-
     DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
+    // (1) 元数据检查
+    // (2) 类型检查和转换
+    // 都在condition_filter->init
     rc = condition_filter->init(*this, cond);
     condition_filters.push_back(condition_filter);
     if (rc != RC::SUCCESS) {
@@ -660,11 +637,18 @@ RC Table::update_record(Trx *trx, const char *attribute_name,
   filter.init((const ConditionFilter **)condition_filters.data(),
               condition_filters.size());
 
-  // 获取Attr在Record中的实际偏移和大小
+  // 2. 创建Updater（获取Attr在Record中的实际偏移和大小）
+  // (1) 检查更新字段是否存在
   const FieldMeta *field_meta = table_meta_.field(attribute_name);
   if (field_meta == nullptr) {
     LOG_WARN("No such field. %s.%s", name(), attribute_name);
     return RC::SCHEMA_FIELD_MISSING;
+  }
+  // (2) 检查类型是否匹配
+  // 目前实现类型不同则报错
+  if (field_meta->type() != value->type) {
+    LOG_WARN("Type dismatching.");
+    return RC::GENERIC_ERROR;
   }
   RecordUpdater updater(*this, trx);
   updater.set_update_info(value, field_meta->offset(), field_meta->len());

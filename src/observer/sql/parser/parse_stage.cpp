@@ -123,6 +123,7 @@ StageEvent *ParseStage::handle_request(StageEvent *event) {
     char response[25] = {"FAILURE\n"};
     sql_event->session_event()->set_response(response);
     query_destroy(result);
+    LOG_ERROR("Failed to parse sql: %s", sql.c_str());
     return nullptr;
   }
 

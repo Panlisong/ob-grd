@@ -37,6 +37,12 @@ public:
    * @return true means match condition, false means failed to match.
    */
   virtual bool filter(const Record &rec) const = 0;
+  bool isComparable(AttrType lt, AttrType rt) {
+    if (lt == DATES || rt == DATES || lt == CHARS || rt == CHARS) {
+      return lt == rt;
+    }
+    return true;
+  }
 };
 
 class DefaultConditionFilter : public ConditionFilter {
@@ -62,6 +68,8 @@ private:
   ConDesc right_;
   AttrType attr_type_ = UNDEFINED;
   CompOp comp_op_ = NO_OP;
+  bool left_attr_convert_ = false;
+  bool right_attr_convert_ = false;
 };
 
 class CompositeConditionFilter : public ConditionFilter {

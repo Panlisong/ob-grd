@@ -293,11 +293,6 @@ check_select_clause(std::unordered_map<std::string, Table *> &relations,
         error = true;
         break;
       }
-      if (strcmp(table_name, "*") == 0) {
-        // 多表单星一定正确，列名显然；作为聚合函数参数也正确，
-        // 是因为在parser层面只允许COUNT(T.*)
-        continue;
-      }
       auto res = relations.find(table_name);
       if (res == relations.end()) {
         error = true;
@@ -306,9 +301,18 @@ check_select_clause(std::unordered_map<std::string, Table *> &relations,
       }
       table = res->second;
     } else { // 单表情况
-      table = relations[selects.relations[0]];
+      table = relations.begin()->second;
     }
 
+    // 到这里Table存在性已经检验
+    if (strcmp(field_name, "*") == 0) {
+      // 多表：'T.*'一定正确；作为聚合函数参数也正确，
+      // 单表：非聚合函数的 '*' 已经检测，作为聚合函数不用检测一定正确
+      // PS：在parser层面只允许'COUNT(T.*)'或COUNT(*)，所以无需检查
+      continue;
+    }
+
+    // 到这里字段名一定不为'*'
     if (!match_field(table, field_name)) {
       error = true;
       break;

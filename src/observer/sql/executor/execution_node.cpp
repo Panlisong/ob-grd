@@ -175,13 +175,11 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
       const TupleField &field = out_schema_.field(j);
       int field_in_tuple = in_.get_schema().index_of_field(field.table_name(),
                                                            field.field_name());
-      assert(field_in_tuple != -1);
-      auto &next_value = next.get(field_in_tuple);
       switch (field.func()) {
       case AVG_FUNC: {
         // 上面的初始化确保AVG列一定为float
         float v1;
-        float v2 = get_float_value(next_value, field);
+        float v2 = get_float_value(next.get(field_in_tuple), field);
         cur.get(j).get_value(&v1);
 
         float ans = v1 + v2;
@@ -191,14 +189,14 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
         tmp.add(ans);
       } break;
       case MAX_FUNC:
-        if (next_value.compare(cur.get(j)) > 0) {
+        if (next.get(field_in_tuple).compare(cur.get(j)) > 0) {
           tmp.add(next.get_pointer(j));
         } else {
           tmp.add(cur.get_pointer(j)); // 保持不变
         }
         break;
       case MIN_FUNC:
-        if (next_value.compare(cur.get(j)) < 0) {
+        if (next.get(field_in_tuple).compare(cur.get(j)) < 0) {
           tmp.add(next.get_pointer(field_in_tuple));
           break;
         }

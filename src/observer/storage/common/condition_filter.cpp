@@ -117,45 +117,79 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   //  }
   // NOTE：这里没有实现不同类型的数据比较，比如整数跟浮点数之间的对比
   // 但是选手们还是要实现。这个功能在预选赛中会出现
-  if (type_left != type_right) {
+  if (!isComparable(type_left, type_right)) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
+
+  if (type_left != type_right) {
+    // 可比较且类型不同，说明要发生类型转换
+    // 目前实现只有INF和FLOAT类型转换
+    // R(F) op V(I) / V(I) op R(F) => V(I) 转 V(F)
+    // R(I) op V(F) / V(F) op R(I) => R(I) 转 R(F)
+    // R(F) op R(I) / R(I) op R(F) => R(I) 转 R(F)
+    // V(F) op V(I) / V(I) op V(F) => V(I) 转 V(F)
+
+    // 1. 常量直接更改
+    if (condition.left_is_attr == 0 && type_left == INTS) {
+      float v = *(int *)left.value;
+      // memcpy(left.value, &v, sizeof(v));
+      // // 同步cond
+      // condition.left_value.type = FLOATS;
+      // 由于cond为const， 无法同步类型转换，所以上面的写法不推荐
+      left.value = new float(v); // WARNING：注意释放内存
+    }
+    if (condition.right_is_attr == 0 && type_right == INTS) {
+      float v = *(int *)right.value;
+      // memcpy(right.value, &v, sizeof(v));
+      left.value = new float(v); // WARNING：注意释放内存
+    }
+    // 2. 属性，做标记延后转换
+    if (condition.left_is_attr == 1 && type_left == INTS) {
+      left_attr_convert_ = true;
+    }
+    if (condition.right_is_attr == 1 && type_right == INTS) {
+      right_attr_convert_ = true;
+    }
+    type_left = FLOATS;
   }
 
   return init(left, right, type_left, condition.comp);
 }
 
 bool DefaultConditionFilter::filter(const Record &rec) const {
-  char *left_value = nullptr;
-  char *right_value = nullptr;
+  char *lvalue = nullptr;
+  char *rvalue = nullptr;
 
   if (left_.is_attr) { // value
-    left_value = (char *)(rec.data + left_.attr_offset);
+    lvalue = (char *)(rec.data + left_.attr_offset);
   } else {
-    left_value = (char *)left_.value;
+    lvalue = (char *)left_.value;
   }
 
   if (right_.is_attr) {
-    right_value = (char *)(rec.data + right_.attr_offset);
+    rvalue = (char *)(rec.data + right_.attr_offset);
   } else {
-    right_value = (char *)right_.value;
+    rvalue = (char *)right_.value;
   }
 
   int cmp_result = 0;
   switch (attr_type_) {
   case CHARS: { // 字符串都是定长的，直接比较
     // 按照C字符串风格来定
-    cmp_result = strcmp(left_value, right_value);
+    cmp_result = strcmp(lvalue, rvalue);
   } break;
   case INTS: {
     // 没有考虑大小端问题
     // 对int和float，要考虑字节对齐问题,有些平台下直接转换可能会跪
-    int left = *(int *)left_value;
-    int right = *(int *)right_value;
+    int left = *(int *)lvalue;
+    int right = *(int *)rvalue;
     cmp_result = left - right;
   } break;
   case FLOATS: {
-    float left = *(float *)left_value;
-    float right = *(float *)right_value;
+    bool left_convert = left_attr_convert_ && left_.is_attr;
+    bool right_convert = right_attr_convert_ && right_.is_attr;
+    float left = left_convert ? *(int *)lvalue : *(float *)lvalue;
+    float right = right_convert ? *(int *)rvalue : *(float *)rvalue;
     cmp_result = (int)(left - right);
   } break;
   default: {

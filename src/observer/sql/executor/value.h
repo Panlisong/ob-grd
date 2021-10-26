@@ -58,7 +58,18 @@ public:
   void get_value(void *data) const override { *(float *)data = value_; }
 
   void to_string(std::ostream &os) const override {
-    os << std::setprecision(2) << value_;
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(2) << value_;
+    std::string str = ss.str();
+
+    assert(str.find('.') != std::string::npos);
+    // Remove trailing zeroes
+    str = str.substr(0, str.find_last_not_of('0') + 1);
+    // If the decimal point is now the last character, remove that as well
+    if (str.find('.') == str.size() - 1) {
+      str = str.substr(0, str.size() - 1);
+    }
+    os << str;
   }
 
   int compare(const TupleValue &other) const override {
