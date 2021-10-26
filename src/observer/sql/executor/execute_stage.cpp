@@ -36,8 +36,6 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
-void end_trx_if_need(Session *session, Trx *trx, RC *rc);
-
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db,
                              const char *table_name, SelectExeNode &select_node,
                              TupleSchema &projection);
@@ -207,16 +205,6 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
     exe_event->done_immediate();
     LOG_ERROR("Unsupported command=%d\n", sql->flag);
   }
-  }
-}
-
-void end_trx_if_need(Session *session, Trx *trx, RC *rc) {
-  if (!session->is_trx_multi_operation_mode()) {
-    if (*rc == RC::SUCCESS) {
-      *rc = trx->commit();
-    } else {
-      trx->rollback();
-    }
   }
 }
 
