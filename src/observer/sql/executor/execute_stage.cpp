@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include "execute_stage.h"
 
@@ -235,13 +236,174 @@ static RC schema_add_field(const char *db, const char *table_name,
     LOG_WARN("No such field. %s.%s", table->name(), field_name);
     return RC::SCHEMA_FIELD_MISSING;
   }
-  // TODO: 对于聚合函数，参数类型检查应该提前！！
+
   schema.add(field_meta->type(), func, table->name(), field_meta->name());
   return RC::SUCCESS;
 }
 
 // 这里没有对输入的某些信息做合法性校验，比如查询的列名、where条件中的列名等，没有做必要的合法性校验
 // 需要补充上这一部分.
+static bool match_field(Table *table, const char *field_name) {
+  const FieldMeta *field_meta = table->table_meta().field(field_name);
+  if (nullptr == field_meta) {
+    LOG_WARN("No such field. %s.%s", table->name(), field_name);
+    return false;
+  }
+  return true;
+}
+
+static RC
+check_select_clause(std::unordered_map<std::string, Table *> &relations,
+                    const Selects &selects, bool multi_flag) {
+  int single_star = 0;
+  bool error = false;
+  for (int i = selects.attr_num - 1; i >= 0; i--) {
+    const RelAttr &attr = selects.attributes[i];
+    const char *table_name = attr.relation_name;
+    const char *field_name = attr.attribute_name;
+    // (1) 特殊情况：单星，非聚合参数
+    if (attr.func == COLUMN && table_name == nullptr &&
+        strcmp(field_name, "*") == 0) {
+      if (single_star > 1) {
+        LOG_ERROR("SQL syntax error: more than one star in select clause");
+        error = true;
+        break;
+      }
+      single_star++;
+      continue;
+    }
+
+    // (2) 检查表，字段是否存在
+    Table *table = nullptr;
+    if (multi_flag) { // 多表情况
+      if (table_name == nullptr) {
+        LOG_ERROR("SQL syntax error: need to write relation name explicitly");
+        error = true;
+        break;
+      }
+      if (strcmp(table_name, "*") == 0) {
+        // 多表单星一定正确，列名显然；作为聚合函数参数也正确，
+        // 是因为在parser层面只允许COUNT(T.*)
+        continue;
+      }
+      auto res = relations.find(table_name);
+      if (res == relations.end()) {
+        error = true;
+        LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
+        break;
+      }
+      table = res->second;
+    } else { // 单表情况
+      table = relations[selects.relations[0]];
+    }
+
+    if (!match_field(table, field_name)) {
+      error = true;
+      break;
+    }
+
+    // (3) AVG参数要匹配
+    if (attr.func == AVG_FUNC) { /* 聚合函数 */
+      const FieldMeta *field_meta =
+          table->table_meta().field(attr.attribute_name);
+      if (field_meta->type() != INTS && field_meta->type() != FLOATS) {
+        error = true;
+        LOG_ERROR("SQL syntax error: AVG's arg cannot be %s",
+                  field_meta->type());
+        break;
+      }
+    }
+  }
+
+  if (error) {
+    return RC::GENERIC_ERROR;
+  }
+  return RC::SUCCESS;
+}
+
+static bool
+check_condition_attr(std::unordered_map<std::string, Table *> &relations,
+                     const char *table_name, const char *field_name,
+                     bool multi_flag) {
+  Table *table = nullptr;
+  if (multi_flag) {
+    if (table_name == nullptr) {
+      LOG_ERROR("SQL syntax error: need to write relation name explicitly");
+      return false;
+    }
+    auto res = relations.find(table_name);
+    if (res == relations.end()) {
+      LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
+      return false;
+    }
+    table = res->second;
+  } else { // 单表情况
+    table = relations.begin()->second;
+  }
+  if (!match_field(table, field_name)) {
+    return false;
+  }
+  return true;
+}
+
+static RC
+check_where_clause(std::unordered_map<std::string, Table *> &relations,
+                   const Selects &selects, bool multi_flag) {
+  bool error = false;
+  for (size_t i = 0; i < selects.condition_num; i++) {
+    const Condition &cond = selects.conditions[i];
+    if (cond.left_is_attr == 1) {
+      const char *table_name = cond.left_attr.relation_name;
+      const char *field_name = cond.left_attr.attribute_name;
+      if (!check_condition_attr(relations, table_name, field_name,
+                                multi_flag)) {
+        error = true;
+        break;
+      }
+    }
+    if (cond.right_is_attr == 1) {
+      const char *table_name = cond.right_attr.relation_name;
+      const char *field_name = cond.right_attr.attribute_name;
+      if (!check_condition_attr(relations, table_name, field_name,
+                                multi_flag)) {
+        error = true;
+        break;
+      }
+    }
+  }
+  if (error) {
+    return RC::GENERIC_ERROR;
+  }
+  return RC::SUCCESS;
+}
+
+RC ExecuteStage::resolve_select(const char *db, const Selects &selects) {
+  RC rc = RC::SUCCESS;
+  std::unordered_map<std::string, Table *> relations;
+  bool multi_flag = selects.relation_num > 1;
+  // 1. 检查 from clause
+  // 关系一定要存在
+  for (int i = selects.relation_num - 1; i >= 0; i--) {
+    const char *table_name = selects.relations[i];
+    Table *table = DefaultHandler::get_default().find_table(db, table_name);
+    if (table == nullptr) {
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+    relations[table_name] = table;
+  }
+  // 2. 检查 select clause
+  // 属性名：多表必须T.A，T.*；单表A, *，单表情况下不允许多个*
+  // 聚合函数参数：另有规定，例如AVG()不能测日期和字符串
+  rc = check_select_clause(relations, selects, multi_flag);
+  if (rc != RC::SUCCESS) {
+    return RC::GENERIC_ERROR;
+  }
+  // 3. 检查condition
+  // ConditionFilter中有类型转换和检查，这里不用做
+
+  return check_where_clause(relations, selects, multi_flag);
+}
+
 // 校验部分也可以放在resolve，不过跟execution放一起也没有关系
 RC ExecuteStage::do_select(const char *db, Query *sql,
                            SessionEvent *session_event) {
@@ -250,6 +412,14 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
   const Selects &selects = sql->sstr.selection;
+
+  // 0. 优先检查元数据
+  rc = resolve_select(db, selects);
+  if (rc != RC::SUCCESS) {
+    session_event->set_response("FAILURE\n");
+    return rc;
+  }
+
   // 1. 生成与每个关系表的最简select执行节点
   std::vector<SelectExeNode *> select_nodes;
   std::vector<TupleSchema> join_schemas;
@@ -300,6 +470,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
       rc = create_join_executor(trx, selects, tuple_set, tuple_sets[i + 1], scm,
                                 *join_node);
       join_node->execute(tuple_set);
+      delete join_node;
     }
   }
   // 3. 重读一边RelAttr List得到最后的输出范式(out_schema)做映射
