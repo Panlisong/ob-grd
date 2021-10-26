@@ -55,6 +55,38 @@ private:
   Record *old_record_;
 };
 
+class UpdateTrxEvent : public TrxEvent {
+public:
+  UpdateTrxEvent(Table *table, Record *old_record, const Value *new_value,
+                 int offset, int len)
+      : table_(table), old_record_(old_record), offset_(offset), len_(len) {
+    new_value_ = new char[len_];
+    memcpy(new_value_, new_value->data, len);
+    old_value_ = new char[len_];
+    memcpy(old_value_, old_record->data + offset_, len_);
+  }
+  ~UpdateTrxEvent() {
+    delete new_value_;
+    delete old_value_;
+  }
+
+  const char *get_table_name() { return table_->name(); }
+  RC commit() {
+    return table_->commit_update(old_record_, new_value_, offset_, len_);
+  }
+  RC rollback() {
+    return table_->rollback_update(old_record_, old_value_, offset_, len_);
+  }
+
+private:
+  Table *table_;
+  Record *old_record_;
+  char *new_value_;
+  char *old_value_;
+  int offset_;
+  int len_;
+};
+
 class Trx {
 public:
   Trx();

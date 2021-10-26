@@ -166,7 +166,8 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
   case SCF_INSERT: { // insert into
     Inserts &inserts = sql->sstr.insertion;
     const char *table_name = inserts.relation_name;
-		RC rc = handler_->insert_records(current_trx,current_db,table_name, inserts.tuple_num,inserts.tuples);
+    RC rc = handler_->insert_records(current_trx, current_db, table_name,
+                                     inserts.tuple_num, inserts.tuples);
     snprintf(response, sizeof(response), "%s\n",
              rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
   } break;
@@ -175,10 +176,9 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     const char *table_name = updates.relation_name;
     const char *field_name = updates.attribute_name;
     int updated_count = 0;
-    rc = handler_->update_record(
+    rc = handler_->update_records(
         current_trx, current_db, table_name, field_name, &updates.value,
         updates.condition_num, updates.conditions, &updated_count);
-    // TODO: 事物处理
     snprintf(response, sizeof(response), "%s\n",
              rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
   } break;
@@ -260,10 +260,12 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     break;
   }
 
+  LOG_INFO("%d:%s", rc, strrc(rc));
   if (rc == RC::SUCCESS && !session->is_trx_multi_operation_mode()) {
     rc = current_trx->commit();
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to commit trx. rc=%d:%s", rc, strrc(rc));
+      current_trx->rollback();
     }
   }
 

@@ -174,7 +174,7 @@ RC DefaultHandler::delete_record(Trx *trx, const char *dbname,
                             deleted_count);
 }
 
-RC DefaultHandler::update_record(Trx *trx, const char *dbname,
+RC DefaultHandler::update_records(Trx *trx, const char *dbname,
                                  const char *relation_name,
                                  const char *attribute_name, const Value *value,
                                  int condition_num, const Condition *conditions,
@@ -184,7 +184,7 @@ RC DefaultHandler::update_record(Trx *trx, const char *dbname,
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  return table->update_record(trx, attribute_name, value, condition_num,
+  return table->update_records(trx, attribute_name, value, condition_num,
                               conditions, updated_count);
 }
 

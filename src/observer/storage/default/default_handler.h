@@ -152,7 +152,7 @@ public:
    * @param conditions
    * @return
    */
-  RC update_record(Trx *trx, const char *dbname, const char *relation_name,
+  RC update_records(Trx *trx, const char *dbname, const char *relation_name,
                    const char *attribute_name, const Value *value,
                    int condition_num, const Condition *conditions,
                    int *updated_count);

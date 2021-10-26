@@ -543,24 +543,23 @@ RC Table::create_index(Trx *trx, const char *index_name,
 
   return rc;
 }
+
 class RecordUpdater {
 public:
   RecordUpdater(Table &table, Trx *trx) : table_(table), trx_(trx) {}
-
   RC update_record(Record *record) {
-    RC rc = RC::SUCCESS;
-    memcpy(record->data + offset_, value_->data, size_);
-    rc = table_.update_record(trx_, record);
-    if (rc == RC::SUCCESS) {
-      updated_count_++;
-    }
-    return rc;
+    UpdateTrxEvent *event =
+        new UpdateTrxEvent(&table_, record, value_, offset_, len_);
+    trx_->pending(event);
+    updated_count_++;
+
+    return RC::SUCCESS;
   }
 
   void set_update_info(const Value *v, int offset, int len) {
     value_ = v;
     offset_ = offset;
-    size_ = len;
+    len_ = len;
   }
 
   int updated_count() const { return updated_count_; }
@@ -570,7 +569,7 @@ private:
   Trx *trx_;
   const Value *value_;
   int offset_;
-  int size_;
+  int len_;
   int updated_count_ = 0;
 };
 
@@ -579,51 +578,7 @@ static RC record_reader_update_adapter(Record *record, void *context) {
   return record_updater.update_record(record);
 }
 
-RC Table::update_record(Trx *trx, Record *record) {
-  RC rc = RC::SUCCESS;
-  if (trx != nullptr) {
-    // 需要实现trx update
-    // rc = trx->update_record(this, record);
-  }
-  // 当更新search key时需要更新
-  // rc = update_entry_of_indexes(record->data, record->rid);
-  if (rc != RC::SUCCESS) {
-    LOG_ERROR("Failed to update indexes of record (rid=%d.%d). rc=%d:%s",
-              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
-    return rc;
-  }
-  rc = record_handler_->update_record(record);
-
-  return rc;
-}
-
-// RC Table::update_entry_of_indexes(const char *record, const RID &rid) {
-//   RC rc = RC::SUCCESS;
-//   for (Index *index : indexes_) {
-//     rc = index->update_entry(record, &rid);
-//     if (rc != RC::SUCCESS) {
-//       if (rc != RC::RECORD_INVALID_KEY || !error_on_not_exists) {
-//         break;
-//       }
-//     }
-//   }
-//   return rc;
-// }
-
-bool Table::match_table(const char *relation_name, const char *attribute_name) {
-  if (nullptr == relation_name || 0 == strcmp(name(), relation_name)) {
-    const FieldMeta *field_meta = table_meta_.field(attribute_name);
-    if (nullptr == field_meta) {
-      LOG_WARN("No such field. %s.%s", name(), attribute_name);
-      return false;
-    }
-    return true;
-  }
-  LOG_WARN("Cannot match table %s with %s", name(), relation_name);
-  return false;
-}
-
-RC Table::update_record(Trx *trx, const char *attribute_name,
+RC Table::update_records(Trx *trx, const char *attribute_name,
                         const Value *value, int condition_num,
                         const Condition conditions[], int *updated_count) {
   RC rc = RC::SUCCESS;
@@ -675,6 +630,58 @@ RC Table::update_record(Trx *trx, const char *attribute_name,
   return rc;
 }
 
+RC Table::commit_update(Record *record, char *new_value, int offset,
+                        int len) {
+  memcpy(record->data + offset, new_value, len);
+  // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
+  RC rc = RC::SUCCESS;
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to update indexes of record(rid=%d.%d). rc=%d:%s",
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+    return rc;
+  }
+  return record_handler_->update_record(record);
+}
+
+RC Table::rollback_update(Record *record, char *old_value, int offset,
+                          int len) {
+  memcpy(record->data + offset, old_value, len);
+  // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
+  RC rc = RC::SUCCESS;
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to update indexes of record(rid=%d.%d). rc=%d:%s",
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+    return rc;
+  }
+
+	return record_handler_->update_record(record);
+}
+
+// RC Table::update_entry_of_indexes(const char *record, const RID &rid) {
+//   RC rc = RC::SUCCESS;
+//   for (Index *index : indexes_) {
+//     rc = index->update_entry(record, &rid);
+//     if (rc != RC::SUCCESS) {
+//       if (rc != RC::RECORD_INVALID_KEY || !error_on_not_exists) {
+//         break;
+//       }
+//     }
+//   }
+//   return rc;
+// }
+
+bool Table::match_table(const char *relation_name, const char *attribute_name) {
+  if (nullptr == relation_name || 0 == strcmp(name(), relation_name)) {
+    const FieldMeta *field_meta = table_meta_.field(attribute_name);
+    if (nullptr == field_meta) {
+      LOG_WARN("No such field. %s.%s", name(), attribute_name);
+      return false;
+    }
+    return true;
+  }
+  LOG_WARN("Cannot match table %s with %s", name(), relation_name);
+  return false;
+}
 class RecordDeleter {
 public:
   RecordDeleter(Table &table, Trx *trx) : table_(table), trx_(trx) {}
@@ -725,12 +732,7 @@ RC Table::commit_delete(Record *old_record) {
     return rc;
   }
 
-  rc = record_handler_->delete_record(&old_record->rid);
-  if (rc != RC::SUCCESS) {
-    return rc;
-  }
-
-  return rc;
+  return record_handler_->delete_record(&old_record->rid);
 }
 
 RC Table::rollback_delete(Record *old_record) {
@@ -769,24 +771,6 @@ RC Table::delete_entry_of_indexes(const char *record, const RID &rid,
     }
   }
   return rc;
-}
-
-RC Table::commit_update(Trx *trx, const RID &rid) {
-  Record record;
-  RC rc = record_handler_->get_record(&rid, &record);
-  if (rc != RC::SUCCESS) {
-    return rc;
-  }
-  // return trx->commit_insert(this, record);
-  return RC::SUCCESS;
-}
-
-RC Table::rollback_update(Trx *trx, const RID &rid) {
-  Record record;
-  RC rc = record_handler_->get_record(&rid, &record);
-  if (rc != RC::SUCCESS) {
-    return rc;
-  }
 }
 
 Index *Table::find_index(const char *index_name) const {
