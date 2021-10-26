@@ -90,6 +90,8 @@ ParserContext *get_context(yyscan_t scanner)
         FLOAT_T
         HELP
         EXIT
+				NOTNULL
+				NULLABLE
         DOT //QUOTE
         INTO
         VALUES
@@ -245,10 +247,10 @@ attr_def_list:
     ;
     
 attr_def:
-    ID_get type LBRACE number RBRACE 
+    ID_get type LBRACE number RBRACE ISNULLABLE
 		{
 			AttrInfo attribute;
-			attr_info_init(&attribute, CONTEXT->id, $2, $4);
+			attr_info_init(&attribute, CONTEXT->id, $2, $4, $6);
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name =(char*)malloc(sizeof(char));
 			// strcpy(CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name, CONTEXT->id); 
@@ -256,10 +258,10 @@ attr_def:
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].length = $4;
 			CONTEXT->value_length++;
 		}
-    |ID_get type
+    |ID_get type ISNULLABLE
 		{
 			AttrInfo attribute;
-			attr_info_init(&attribute, CONTEXT->id, $2, $2 == DATES ? 8 : 4);
+			attr_info_init(&attribute, CONTEXT->id, $2, $2 == DATES ? 8 : 4, $3);
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name=(char*)malloc(sizeof(char));
 			// strcpy(CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name, CONTEXT->id); 
@@ -284,7 +286,10 @@ ID_get:
 		snprintf(CONTEXT->id, sizeof(CONTEXT->id), "%s", temp);
 	}
 	;
-
+IS_NULLABLE:
+  NOTNULL{ $$ = 0; } 
+| NULLABLE{ $$ = 1; }
+	;
 	
 insert:				/*insert   语句的语法解析树*/
 	INSERT INTO ID VALUES tuple tuple_list SEMICOLON
