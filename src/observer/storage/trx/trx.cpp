@@ -7,8 +7,15 @@
 #include "storage/trx/trx.h"
 
 Trx::Trx() {}
-
 Trx::~Trx() {}
+
+InsertTrxEvent::~InsertTrxEvent() { delete new_record_; }
+DeleteTrxEvent::~DeleteTrxEvent() { delete old_record_; }
+UpdateTrxEvent::~UpdateTrxEvent() {
+  delete old_record_;
+  delete new_value_;
+  delete old_value_;
+}
 
 const char *Trx::trx_field_name() { return "__trx"; }
 
@@ -45,6 +52,7 @@ RC Trx::commit() {
       rollback();
       break;
     }
+    delete trx_event;
   }
   return rc;
 }

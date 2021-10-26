@@ -547,7 +547,12 @@ RC Table::create_index(Trx *trx, const char *index_name,
 class RecordUpdater {
 public:
   RecordUpdater(Table &table, Trx *trx) : table_(table), trx_(trx) {}
-  RC update_record(Record *record) {
+  RC update_record(Record *old_record) {
+    Record *record = new Record();
+    record->rid = old_record->rid;
+    record->data = new char[table_.table_meta_.record_size()];
+
+    memcpy(record->data, old_record->data, table_.table_meta_.record_size());
     UpdateTrxEvent *event =
         new UpdateTrxEvent(&table_, record, value_, offset_, len_);
     trx_->pending(event);

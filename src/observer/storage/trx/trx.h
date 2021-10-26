@@ -13,6 +13,8 @@
 
 class TrxEvent {
 public:
+  TrxEvent() = default;
+  virtual ~TrxEvent() = default;
   enum class Type : int {
     INSERT,
     UPDATE,
@@ -29,7 +31,7 @@ class InsertTrxEvent : public TrxEvent {
 public:
   InsertTrxEvent(Table *table, Record *new_record)
       : table_(table), new_record_(new_record) {}
-  ~InsertTrxEvent();
+  virtual ~InsertTrxEvent();
 
   const char *get_table_name() { return table_->name(); }
   RC commit() { return table_->commit_insert(new_record_); }
@@ -44,7 +46,7 @@ class DeleteTrxEvent : public TrxEvent {
 public:
   DeleteTrxEvent(Table *table, Record *old_record)
       : table_(table), old_record_(old_record) {}
-  ~DeleteTrxEvent();
+  virtual ~DeleteTrxEvent();
 
   const char *get_table_name() { return table_->name(); }
   RC commit() { return table_->commit_delete(old_record_); }
@@ -65,10 +67,7 @@ public:
     old_value_ = new char[len_];
     memcpy(old_value_, old_record->data + offset_, len_);
   }
-  ~UpdateTrxEvent() {
-    delete new_value_;
-    delete old_value_;
-  }
+  virtual ~UpdateTrxEvent();
 
   const char *get_table_name() { return table_->name(); }
   RC commit() {
