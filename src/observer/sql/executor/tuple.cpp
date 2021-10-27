@@ -112,15 +112,7 @@ void TupleSchema::print(std::ostream &os) const {
   }
 
   // 判断有多张表还是只有一张表
-  bool multi_flag = false;
-  std::set<std::string> table_names;
-  for (const auto &field : fields_) {
-    table_names.insert(field.table_name());
-    if (table_names.size() > 1) {
-      multi_flag = true;
-      break;
-    }
-  }
+  bool multi_flag = multi_flag_;
 
   std::string func[FUNC_NUM] = {"", "MAX", "MIN", "COUNT", "AVG"};
   std::string pre;

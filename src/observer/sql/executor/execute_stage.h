@@ -17,6 +17,8 @@ See the Mulan PSL v2 for more details. */
 #include "common/seda/stage.h"
 #include "rc.h"
 #include "sql/parser/parse.h"
+#include "storage/common/table.h"
+#include <unordered_map>
 
 class SessionEvent;
 
@@ -37,7 +39,8 @@ protected:
                       common::CallbackContext *context) override;
 
   void handle_request(common::StageEvent *event);
-  RC resolve_select(const char *db, const Selects &selects);
+  RC resolve_select(const char *db, const Selects &selects,
+                    std::unordered_map<std::string, Table *> &relations);
   RC do_select(const char *db, Query *sql, SessionEvent *session_event);
 
 protected:

@@ -99,11 +99,14 @@ public:
 
   void print(std::ostream &os) const;
 
+  void set_multi_flag(bool flag) { multi_flag_ = flag; }
+
 public:
   static void from_table(const Table *table, TupleSchema &schema);
 
 private:
   std::vector<TupleField> fields_;
+  bool multi_flag_ = false;
 };
 
 class TupleSet {

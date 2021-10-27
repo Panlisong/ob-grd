@@ -13,7 +13,6 @@ See the Mulan PSL v2 for more details. */
 
 #include <sstream>
 #include <string>
-#include <unordered_map>
 
 #include "execute_stage.h"
 
@@ -30,7 +29,6 @@ See the Mulan PSL v2 for more details. */
 #include "sql/executor/tuple.h"
 #include "sql/parser/parse_defs.h"
 #include "storage/common/condition_filter.h"
-#include "storage/common/table.h"
 #include "storage/default/default_handler.h"
 #include "storage/trx/trx.h"
 
@@ -253,14 +251,16 @@ static bool match_field(Table *table, const char *field_name) {
 }
 
 static RC
-check_select_clause(std::unordered_map<std::string, Table *> &relations,
-                    const Selects &selects, bool multi_flag) {
+check_select_clause(const std::unordered_map<std::string, Table *> &relations,
+                    const Selects &selects) {
+  bool multi_flag = relations.size() > 1;
   int single_star = 0;
   bool error = false;
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
     const char *table_name = attr.relation_name;
     const char *field_name = attr.attribute_name;
+    Table *table = relations.begin()->second;
     // (1) 特殊情况：单星，非聚合参数
     if (attr.func == COLUMN && table_name == nullptr &&
         strcmp(field_name, "*") == 0) {
@@ -274,7 +274,6 @@ check_select_clause(std::unordered_map<std::string, Table *> &relations,
     }
 
     // (2) 检查表，字段是否存在
-    Table *table = nullptr;
     if (multi_flag) { // 多表情况
       if (table_name == nullptr) {
         LOG_ERROR("SQL syntax error: need to write relation name explicitly");
@@ -288,9 +287,7 @@ check_select_clause(std::unordered_map<std::string, Table *> &relations,
         break;
       }
       table = res->second;
-    } else { // 单表情况
-      table = relations.begin()->second;
-    }
+    } // 单表情况是table的初值
 
     // 到这里Table存在性已经检验
     if (strcmp(field_name, "*") == 0) {
@@ -326,9 +323,9 @@ check_select_clause(std::unordered_map<std::string, Table *> &relations,
 }
 
 static bool
-check_condition_attr(std::unordered_map<std::string, Table *> &relations,
-                     const char *table_name, const char *field_name,
-                     bool multi_flag) {
+check_condition_attr(const std::unordered_map<std::string, Table *> &relations,
+                     const char *table_name, const char *field_name) {
+  bool multi_flag = relations.size() > 1;
   Table *table = nullptr;
   if (multi_flag) {
     if (table_name == nullptr) {
@@ -352,15 +349,14 @@ check_condition_attr(std::unordered_map<std::string, Table *> &relations,
 
 static RC
 check_where_clause(std::unordered_map<std::string, Table *> &relations,
-                   const Selects &selects, bool multi_flag) {
+                   const Selects &selects) {
   bool error = false;
   for (size_t i = 0; i < selects.condition_num; i++) {
     const Condition &cond = selects.conditions[i];
     if (cond.left_is_attr == 1) {
       const char *table_name = cond.left_attr.relation_name;
       const char *field_name = cond.left_attr.attribute_name;
-      if (!check_condition_attr(relations, table_name, field_name,
-                                multi_flag)) {
+      if (!check_condition_attr(relations, table_name, field_name)) {
         error = true;
         break;
       }
@@ -368,8 +364,7 @@ check_where_clause(std::unordered_map<std::string, Table *> &relations,
     if (cond.right_is_attr == 1) {
       const char *table_name = cond.right_attr.relation_name;
       const char *field_name = cond.right_attr.attribute_name;
-      if (!check_condition_attr(relations, table_name, field_name,
-                                multi_flag)) {
+      if (!check_condition_attr(relations, table_name, field_name)) {
         error = true;
         break;
       }
@@ -381,10 +376,10 @@ check_where_clause(std::unordered_map<std::string, Table *> &relations,
   return RC::SUCCESS;
 }
 
-RC ExecuteStage::resolve_select(const char *db, const Selects &selects) {
+RC ExecuteStage::resolve_select(
+    const char *db, const Selects &selects,
+    std::unordered_map<std::string, Table *> &relations) {
   RC rc = RC::SUCCESS;
-  std::unordered_map<std::string, Table *> relations;
-  bool multi_flag = selects.relation_num > 1;
   // 1. 检查 from clause
   // 关系一定要存在
   for (int i = selects.relation_num - 1; i >= 0; i--) {
@@ -395,17 +390,20 @@ RC ExecuteStage::resolve_select(const char *db, const Selects &selects) {
     }
     relations[table_name] = table;
   }
+  if (relations.size() == 0) {
+    return RC::SQL_SYNTAX;
+  }
   // 2. 检查 select clause
   // 属性名：多表必须T.A，T.*；单表A, *，单表情况下不允许多个*
   // 聚合函数参数：另有规定，例如AVG()不能测日期和字符串
-  rc = check_select_clause(relations, selects, multi_flag);
+  rc = check_select_clause(relations, selects);
   if (rc != RC::SUCCESS) {
-    return RC::GENERIC_ERROR;
+    return RC::SQL_SYNTAX;
   }
   // 3. 检查condition
   // ConditionFilter中有类型转换和检查，这里不用做
 
-  return check_where_clause(relations, selects, multi_flag);
+  return check_where_clause(relations, selects);
 }
 
 // 校验部分也可以放在resolve，不过跟execution放一起也没有关系
@@ -418,7 +416,8 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   const Selects &selects = sql->sstr.selection;
 
   // 0. 优先检查元数据
-  rc = resolve_select(db, selects);
+  std::unordered_map<std::string, Table *> relations;
+  rc = resolve_select(db, selects, relations);
   if (rc != RC::SUCCESS) {
     session_event->set_response("FAILURE\n");
     return rc;
@@ -431,6 +430,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
     const char *table_name = selects.relations[i];
     SelectExeNode *select_node = new SelectExeNode;
     TupleSchema schema;
+    schema.set_multi_flag(false);
     rc = create_selection_executor(trx, selects, db, table_name, *select_node,
                                    schema);
     if (rc != RC::SUCCESS) {
@@ -467,6 +467,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   TupleSet tuple_set = std::move(tuple_sets[0]);
   if (tuple_sets.size() > 1) {
     // *2. 本次查询了多张表，需要做join操作
+    join_schemas[0].set_multi_flag(true);
     for (size_t i = 0; i + 1 < tuple_sets.size(); i++) {
       JoinExeNode *join_node = new JoinExeNode;
       join_schemas[0].append(join_schemas[i + 1]);
@@ -479,6 +480,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   }
   // 3. 重读一边RelAttr List得到最后的输出范式(out_schema)做映射
   TupleSchema out_schema;
+  out_schema.set_multi_flag(relations.size() > 1);
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
     if (attr.func == COLUMN && attr.relation_name == nullptr &&
