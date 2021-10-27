@@ -77,9 +77,6 @@ RC Db::drop_table(const char *table_name) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  std::string table_file_path =
-      table_meta_file(path_.c_str(), table_name); // 文件路径可以移到Table模块
-
   Table *table = opened_tables_[table_name];
 
   RC rc = table->clear();
@@ -189,14 +186,14 @@ RC Db::delete_records(Trx *trx, const char *table_name, int condition_num,
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-	CompositeConditionFilter *condition_filter = new CompositeConditionFilter();
-	RC rc=condition_filter->init(*table,conditions,condition_num);
-	if(rc!=RC::SUCCESS){
-			return rc;
-	}
+  CompositeConditionFilter *condition_filter = new CompositeConditionFilter();
+  RC rc = condition_filter->init(*table, conditions, condition_num);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
 
-	rc= table->delete_records(trx,condition_filter,deleted_count);
+  rc = table->delete_records(trx, condition_filter, deleted_count);
 
-	delete condition_filter;
-	return rc;
+  delete condition_filter;
+  return rc;
 }

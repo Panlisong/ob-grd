@@ -149,9 +149,11 @@ RC Table::clear() {
   RC rc = RC::SUCCESS;
   std::string table_meta_path = table_meta_file(base_dir_.c_str(), name());
   rc = data_buffer_pool_->close_file(file_id_);
+  record_handler_->close();
+  delete record_handler_;
 
   if (remove(table_meta_path.c_str()) != 0) {
-    LOG_ERROR("Delete tabl; %s meta failed", name());
+    LOG_ERROR("Delete table %s meta failed", name());
     rc = RC::IOERR_DELETE;
   }
 
