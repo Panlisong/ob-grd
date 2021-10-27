@@ -291,6 +291,7 @@ ID_get:
 is_nullable:
   NOT NULL_T{ $$ = 0; } 
 | NULLABLE{ $$ = 1; }
+| {$$ = 0; }
 	;
 	
 insert:				/*insert   语句的语法解析树*/
