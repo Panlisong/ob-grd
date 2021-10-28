@@ -171,21 +171,21 @@ std::string Db::show_tables() {
 
 RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,
                       int value_num[], Value *values[]) {
-  Table *table = opened_tables_[table_name];
-  if (table == nullptr) {
+  auto res = opened_tables_.find(table_name);
+  if (res == opened_tables_.end()) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
-
+  Table *table = res->second;
   return table->insert_records(trx, inserted_count, value_num, values);
 }
 
 RC Db::delete_records(Trx *trx, const char *table_name, int condition_num,
                       const Condition *conditions, int *deleted_count) {
-  Table *table = opened_tables_[table_name];
-  if (table == nullptr) {
+  auto res = opened_tables_.find(table_name);
+  if (res == opened_tables_.end()) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
-
+  Table *table = res->second;
   CompositeConditionFilter *condition_filter = new CompositeConditionFilter();
   RC rc = condition_filter->init(*table, conditions, condition_num);
   if (rc != RC::SUCCESS) {
