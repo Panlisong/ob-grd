@@ -149,9 +149,11 @@ RC Table::clear() {
   RC rc = RC::SUCCESS;
   std::string table_meta_path = table_meta_file(base_dir_.c_str(), name());
   rc = data_buffer_pool_->close_file(file_id_);
+  record_handler_->close();
+  delete record_handler_;
 
   if (remove(table_meta_path.c_str()) != 0) {
-    LOG_ERROR("Delete tabl; %s meta failed", name());
+    LOG_ERROR("Delete table %s meta failed", name());
     rc = RC::IOERR_DELETE;
   }
 
@@ -616,7 +618,6 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
     // (2) 类型检查和转换
     // 都在condition_filter->init
     rc = condition_filter->init(*this, cond);
-    condition_filters.push_back(condition_filter);
     if (rc != RC::SUCCESS) {
       delete condition_filter;
       for (DefaultConditionFilter *&filter : condition_filters) {
@@ -624,6 +625,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
       }
       return rc;
     }
+    condition_filters.push_back(condition_filter);
   }
   CompositeConditionFilter filter;
   filter.init((const ConditionFilter **)condition_filters.data(),

@@ -17,8 +17,10 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <vector>
 
+#include "common/log/log.h"
 #include "sql/executor/value.h"
 #include "sql/parser/parse.h"
+#include "storage/common/table.h"
 
 class Table;
 
@@ -99,11 +101,15 @@ public:
 
   void print(std::ostream &os) const;
 
+  void set_multi_flag(bool flag) { multi_flag_ = flag; }
+
 public:
-  static void from_table(const Table *table, TupleSchema &schema);
+  static void from_table(const Table *table, TupleSchema &schema,
+                         bool repeatable);
 
 private:
   std::vector<TupleField> fields_;
+  bool multi_flag_ = false;
 };
 
 class TupleSet {
@@ -142,6 +148,37 @@ class TupleRecordConverter {
 public:
   TupleRecordConverter(Table *table, TupleSet &tuple_set);
 
+  static Tuple get_tuple(const char *record, Table *table,
+                         const TupleSchema &schema) {
+    Tuple tuple;
+    const TableMeta &table_meta = table->table_meta();
+    for (const TupleField &field : schema.fields()) {
+      const FieldMeta *field_meta = table_meta.field(field.field_name());
+      assert(field_meta != nullptr);
+      switch (field_meta->type()) {
+      case INTS: {
+        int value = *(int *)(record + field_meta->offset());
+        tuple.add(value);
+      } break;
+      case FLOATS: {
+        float value = *(float *)(record + field_meta->offset());
+        tuple.add(value);
+      } break;
+      case CHARS: {
+        const char *s = record + field_meta->offset(); // 现在当做Cstring来处理
+        tuple.add(s, strlen(s));
+      } break;
+      case DATES: {
+        time_t value = *(time_t *)(record + field_meta->offset());
+        tuple.add(value);
+      } break;
+      default: {
+        LOG_PANIC("Unsupported field type. type=%d", field_meta->type());
+      }
+      }
+    }
+    return tuple;
+  }
   void add_record(const char *record);
 
 private:

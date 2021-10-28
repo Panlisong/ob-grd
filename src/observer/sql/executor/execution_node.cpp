@@ -29,7 +29,7 @@ RC SelectExeNode::init(
     std::vector<DefaultConditionFilter *> &&condition_filters) {
   trx_ = trx;
   table_ = table;
-  tuple_schema_ = tuple_schema;
+  tuple_schema_ = std::move(tuple_schema);
   condition_filters_ = std::move(condition_filters);
   return RC::SUCCESS;
 }
@@ -60,13 +60,14 @@ JoinExeNode::~JoinExeNode() {
   tuple_filters_.clear();
 }
 
-RC JoinExeNode::init(Trx *trx, TupleSet &tl, TupleSet &tr,
-                     TupleSchema &&tuple_schema,
+RC JoinExeNode::init(Trx *trx, TupleSet &&tl, TupleSet &&tr,
                      std::vector<TupleFilter *> &&tuple_filters) {
   trx_ = trx;
   tl_ = std::move(tl);
   tr_ = std::move(tr);
-  tuple_schema_ = tuple_schema;
+  TupleSchema scm = tl_.get_schema();
+  scm.append(tr_.get_schema());
+  tuple_schema_ = std::move(scm);
   tuple_filters_ = std::move(tuple_filters);
   return RC::SUCCESS;
 }
@@ -190,7 +191,7 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
       } break;
       case MAX_FUNC:
         if (next.get(field_in_tuple).compare(cur.get(j)) > 0) {
-          tmp.add(next.get_pointer(j));
+          tmp.add(next.get_pointer(field_in_tuple));
         } else {
           tmp.add(cur.get_pointer(j)); // 保持不变
         }

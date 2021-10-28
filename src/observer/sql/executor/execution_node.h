@@ -39,6 +39,8 @@ public:
 
   RC execute(TupleSet &tuple_set) override;
 
+  const TupleSchema get_schema() { return tuple_schema_; }
+
 private:
   Trx *trx_ = nullptr;
   Table *table_;
@@ -51,7 +53,7 @@ public:
   JoinExeNode();
   virtual ~JoinExeNode();
 
-  RC init(Trx *trx, TupleSet &tl, TupleSet &tr, TupleSchema &&tuple_schema,
+  RC init(Trx *trx, TupleSet &&tl, TupleSet &&tr,
           std::vector<TupleFilter *> &&tuple_filters);
 
   RC execute(TupleSet &tuple_set) override;

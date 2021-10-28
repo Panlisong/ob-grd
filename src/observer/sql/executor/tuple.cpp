@@ -12,8 +12,6 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "sql/executor/tuple.h"
-#include "common/log/log.h"
-#include "storage/common/table.h"
 #include <string>
 
 Tuple::Tuple(const Tuple &other) {
@@ -55,14 +53,20 @@ std::string TupleField::to_string() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void TupleSchema::from_table(const Table *table, TupleSchema &schema) {
+void TupleSchema::from_table(const Table *table, TupleSchema &schema,
+                             bool repeatable) {
   const char *table_name = table->name();
   const TableMeta &table_meta = table->table_meta();
   const int field_num = table_meta.field_num();
   for (int i = 0; i < field_num; i++) {
     const FieldMeta *field_meta = table_meta.field(i);
     if (field_meta->visible()) {
-      schema.add(field_meta->type(), COLUMN, table_name, field_meta->name());
+      if (repeatable) {
+        schema.add(field_meta->type(), COLUMN, table_name, field_meta->name());
+      } else {
+        schema.add_if_not_exists(field_meta->type(), COLUMN, table_name,
+                                 field_meta->name());
+      }
     }
   }
 }
@@ -112,15 +116,7 @@ void TupleSchema::print(std::ostream &os) const {
   }
 
   // 判断有多张表还是只有一张表
-  bool multi_flag = false;
-  std::set<std::string> table_names;
-  for (const auto &field : fields_) {
-    table_names.insert(field.table_name());
-    if (table_names.size() > 1) {
-      multi_flag = true;
-      break;
-    }
-  }
+  bool multi_flag = multi_flag_;
 
   std::string func[FUNC_NUM] = {"", "MAX", "MIN", "COUNT", "AVG"};
   std::string pre;
@@ -211,35 +207,7 @@ TupleRecordConverter::TupleRecordConverter(Table *table, TupleSet &tuple_set)
     : table_(table), tuple_set_(tuple_set) {}
 
 void TupleRecordConverter::add_record(const char *record) {
-  const TupleSchema &schema = tuple_set_.schema();
-  Tuple tuple;
-  const TableMeta &table_meta = table_->table_meta();
-  for (const TupleField &field : schema.fields()) {
-    const FieldMeta *field_meta = table_meta.field(field.field_name());
-    assert(field_meta != nullptr);
-    switch (field_meta->type()) {
-    case INTS: {
-      int value = *(int *)(record + field_meta->offset());
-      tuple.add(value);
-    } break;
-    case FLOATS: {
-      float value = *(float *)(record + field_meta->offset());
-      tuple.add(value);
-    } break;
-    case CHARS: {
-      const char *s = record + field_meta->offset(); // 现在当做Cstring来处理
-      tuple.add(s, strlen(s));
-    } break;
-    case DATES: {
-      time_t value = *(time_t *)(record + field_meta->offset());
-      tuple.add(value);
-    } break;
-    default: {
-      LOG_PANIC("Unsupported field type. type=%d", field_meta->type());
-    }
-    }
-  }
-
+  Tuple tuple = get_tuple(record, table_, tuple_set_.get_schema());
   tuple_set_.add(std::move(tuple));
 }
 
