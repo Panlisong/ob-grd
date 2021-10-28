@@ -555,6 +555,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
       for (auto &tmp_node : select_nodes) {
         delete tmp_node.second;
       }
+      session_event->set_response("FAILURE\n");
       return rc;
     }
     select_nodes[p.first] = select_node;
@@ -576,6 +577,8 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
       for (auto &tmp_node : select_nodes) {
         delete tmp_node.second;
       }
+      LOG_ERROR("Failed to do basic select.");
+      session_event->set_response("FAILURE\n");
       return rc;
     } else {
       tuple_sets.push_back(std::move(tuple_set));
@@ -671,7 +674,7 @@ bool match_table(bool multi_flag, const char *table_name_in_condition,
     return 0 == strcmp(table_name_in_condition, table_name_to_match);
   }
   // 没有显式表名
-  return multi_flag == true;
+  return multi_flag == false;
 }
 
 static RC add_filter(const Condition conds[], size_t cond_num, Table *table,
@@ -728,6 +731,7 @@ RC create_selection_executor(
     Trx *trx, const Selects &selects, Table *table,
     std::unordered_map<std::string, TupleSchema> &mini_schema,
     SelectExeNode &select_node, bool multi_flag) {
+  RC rc = RC::SUCCESS;
   const char *table_name = table->name();
   std::vector<DefaultConditionFilter *> cond_filters;
   // 找出仅与此表相关的过滤条件
@@ -740,8 +744,11 @@ RC create_selection_executor(
   }
 
   // 2. where clause中
-  add_filter(selects.conditions, selects.condition_num, table, cond_filters,
-             multi_flag);
+  rc = add_filter(selects.conditions, selects.condition_num, table,
+                  cond_filters, multi_flag);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
   TupleSchema scm = mini_schema[table_name];
   return select_node.init(trx, table, std::move(scm), std::move(cond_filters));
 }

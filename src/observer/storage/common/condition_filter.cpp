@@ -36,7 +36,7 @@ DefaultConditionFilter::~DefaultConditionFilter() {}
 
 RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right,
                                 AttrType attr_type, CompOp comp_op) {
-  if (attr_type < CHARS || attr_type > FLOATS) {
+  if (attr_type < CHARS || attr_type > DATES) {
     LOG_ERROR("Invalid condition with unsupported attribute type: %d",
               attr_type);
     return RC::INVALID_ARGUMENT;
@@ -118,6 +118,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   // NOTE：这里没有实现不同类型的数据比较，比如整数跟浮点数之间的对比
   // 但是选手们还是要实现。这个功能在预选赛中会出现
   if (!isComparable(type_left, type_right)) {
+    LOG_ERROR("Type dismatching.");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
 
@@ -190,8 +191,26 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
     bool right_convert = right_attr_convert_ && right_.is_attr;
     float left = left_convert ? *(int *)lvalue : *(float *)lvalue;
     float right = right_convert ? *(int *)rvalue : *(float *)rvalue;
-    cmp_result = (int)(left - right);
+    double res = (double)left - right;
+    if (res < 0) {
+      cmp_result = -1;
+    } else if (res > 0) {
+      cmp_result = 1;
+    } else {
+      cmp_result = 0;
+    }
   } break;
+  case DATES: {
+    time_t left = *(time_t *)lvalue;
+    time_t right = *(time_t *)rvalue;
+    long long res = left - right;
+    if (res < 0LL) {
+      res = -1;
+    } else if (res > 0LL) {
+      res = 1;
+    }
+    cmp_result = (int)res;
+  }
   default: {
   }
   }
