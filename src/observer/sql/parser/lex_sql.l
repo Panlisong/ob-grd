@@ -51,6 +51,7 @@ DELI			 [\-\\/\.]
 (?i:avg)										 RETURN_TOKEN(AVG_F);
 (?i:join)										 RETURN_TOKEN(JOIN);
 (?i:inner)										 RETURN_TOKEN(INNER);
+(?i:unique)										 RETURN_TOKEN(UNIQUE);
 [Cc][Rr][Ee][Aa][Tt][Ee]                 RETURN_TOKEN(CREATE);
 [Dd][Rr][Oo][Pp]                    	   RETURN_TOKEN(DROP);
 [Tt][Aa][Bb][Ll][Ee]					           RETURN_TOKEN(TABLE);

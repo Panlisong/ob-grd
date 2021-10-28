@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_STORAGE_DEFAULT_ENGINE_H__
 #define __OBSERVER_STORAGE_DEFAULT_ENGINE_H__
 
+#include <cstddef>
 #include <map>
 #include <string>
 
@@ -103,7 +104,8 @@ public:
    * @return
    */
   RC create_index(Trx *trx, const char *dbname, const char *relation_name,
-                  const char *index_name, const char *attribute_name);
+                  const char *index_name, char *attribute_name[MAX_NUM],
+                  size_t attr_num);
 
   /**
    * 该函数用来删除名为indexName的索引。
@@ -153,9 +155,9 @@ public:
    * @return
    */
   RC update_records(Trx *trx, const char *dbname, const char *relation_name,
-                   const char *attribute_name, const Value *value,
-                   int condition_num, const Condition *conditions,
-                   int *updated_count);
+                    const char *attribute_name, const Value *value,
+                    int condition_num, const Condition *conditions,
+                    int *updated_count);
 
 public:
   Db *find_db(const char *dbname) const;
