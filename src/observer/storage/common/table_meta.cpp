@@ -55,7 +55,7 @@ RC TableMeta::init_sys_fields() {
   }
 
   sys_fields_.push_back(trx_field_meta);
-	sys_fields_.push_back(null_field_meta);
+  sys_fields_.push_back(null_field_meta);
   return rc;
 }
 
@@ -95,7 +95,7 @@ RC TableMeta::init(const char *name, int field_num,
     const AttrInfo &attr_info = attributes[i];
     rc = fields_[i + sys_fields_.size()].init(attr_info.name, attr_info.type,
                                               field_offset, attr_info.length,
-                                              true, true);
+                                              true, attr_info.nullable == 1);
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to init field meta. table name=%s, field name: %s",
                 name, attr_info.name);
@@ -120,6 +120,8 @@ RC TableMeta::add_index(const IndexMeta &index) {
 const char *TableMeta::name() const { return name_.c_str(); }
 
 const FieldMeta *TableMeta::trx_field() const { return &fields_[0]; }
+
+const FieldMeta *TableMeta::null_field() const { return &fields_[1]; }
 
 const FieldMeta *TableMeta::field(int index) const { return &fields_[index]; }
 const FieldMeta *TableMeta::field(const char *name) const {
@@ -302,4 +304,16 @@ void TableMeta::desc(std::ostream &os) const {
     os << std::endl;
   }
   os << ')' << std::endl;
+}
+
+int TableMeta::find_column_by_offset(int offset) {
+  int size = fields_.size();
+  for (int i = 0; i < size; i++) {
+    offset -= fields_[i].len();
+    if (offset == 0) {
+      return i - 1;
+    }
+  }
+
+  return -1;
 }

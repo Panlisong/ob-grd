@@ -90,6 +90,7 @@ ParserContext *get_context(yyscan_t scanner)
         FLOAT_T
         HELP
         EXIT
+		IS
 		NOT
 		NULL_T
 		NULLABLE
@@ -348,6 +349,9 @@ value:
 			value_init_date(&CONTEXT->values[CONTEXT->value_length++], mktime(&t));
 		}
 	}
+	|NULL_T {
+			value_init_null(&CONTEXT->values[CONTEXT->value_length++]);
+	}
     ;
     
 delete:		/*  delete 语句的语法解析树*/
@@ -365,6 +369,15 @@ update:			/*  update 语句的语法解析树*/
 		{
 			CONTEXT->ssql->flag = SCF_UPDATE;//"update";
 			Value *value = &CONTEXT->values[0];
+			updates_init(&CONTEXT->ssql->sstr.update, $2, $4, value, 
+					CONTEXT->conditions, CONTEXT->condition_length);
+			CONTEXT->condition_length = 0;
+		}
+| UPDATE ID SET ID EQ NULL_T where SEMICOLON
+		{
+			CONTEXT->ssql->flag = SCF_UPDATE;//"update";
+			Value *value = &CONTEXT->values[0];
+			value->type = ATTR_NULL;
 			updates_init(&CONTEXT->ssql->sstr.update, $2, $4, value, 
 					CONTEXT->conditions, CONTEXT->condition_length);
 			CONTEXT->condition_length = 0;
@@ -534,7 +547,6 @@ condition:
 			// $$->right_attr.relation_name = NULL;
 			// $$->right_attr.attribute_name = NULL;
 			// $$->right_value = *$3;
-
 		}
 		|value comOp value 
 		{
@@ -617,7 +629,6 @@ condition:
 			// $$->right_attr.relation_name=NULL;
 			// $$->right_attr.attribute_name=NULL;
 			// $$->right_value =*$5;			
-							
     }
     |value comOp ID DOT ID
 		{
@@ -668,6 +679,8 @@ comOp:
     | LE { CONTEXT->comp = LESS_EQUAL; }
     | GE { CONTEXT->comp = GREAT_EQUAL; }
     | NE { CONTEXT->comp = NOT_EQUAL; }
+		| IS { CONTEXT->comp = OP_IS; }
+		| IS NOT { CONTEXT->comp = OP_IS_NOT; }
     ;
 
 load_data:

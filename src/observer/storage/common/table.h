@@ -77,8 +77,13 @@ public:
   RC update_records(Trx *trx, const char *attribute_name, const Value *value,
                     int condition_num, const Condition conditions[],
                     int *updated_count);
-  RC commit_update(Record *record, char *new_value, int offset, int len);
-  RC rollback_update(Record *record, char *old_value, int offset, int len);
+  RC commit_update(Record *record, const Value *new_value, int offset,
+                   int len);
+  RC rollback_update(Record *record, bool old_null, char *old_value,
+                     int offset, int len);
+
+	int find_column_by_offset(int offset);
+	int null_field_offset();
 
 private:
   RC insert_record(Trx *trx, int value_num, const Value *values);

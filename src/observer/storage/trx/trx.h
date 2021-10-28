@@ -61,11 +61,14 @@ class UpdateTrxEvent : public TrxEvent {
 public:
   UpdateTrxEvent(Table *table, Record *old_record, const Value *new_value,
                  int offset, int len)
-      : table_(table), old_record_(old_record), offset_(offset), len_(len) {
-    new_value_ = new char[len_];
-    memcpy(new_value_, new_value->data, len);
+      : table_(table), old_record_(old_record), new_value_(new_value),
+        offset_(offset), len_(len) {
     old_value_ = new char[len_];
     memcpy(old_value_, old_record->data + offset_, len_);
+    int column = table_->find_column_by_offset(offset);
+    int null_field_offset = table->null_field_offset();
+    int32_t *null_field = (int32_t *)(old_record + null_field_offset);
+    old_null_ = ((*null_field) & (1 << column)) != 0;
   }
   virtual ~UpdateTrxEvent();
 
@@ -74,14 +77,16 @@ public:
     return table_->commit_update(old_record_, new_value_, offset_, len_);
   }
   RC rollback() {
-    return table_->rollback_update(old_record_, old_value_, offset_, len_);
+    return table_->rollback_update(old_record_, old_null_, old_value_, offset_,
+                                   len_);
   }
 
 private:
   Table *table_;
   Record *old_record_;
-  char *new_value_;
+  const Value *new_value_;
   char *old_value_;
+  bool old_null_;
   int offset_;
   int len_;
 };

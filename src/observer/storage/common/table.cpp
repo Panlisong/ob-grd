@@ -295,16 +295,20 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    if (field->nullable() == false && value.is_null) {
+    if (field->nullable() == false && value.type == ATTR_NULL) {
       LOG_ERROR("Invalid value type.field name=%s, not null but given=null",
                 field->name());
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
-    if (field->type() != value.type) {
-      LOG_ERROR("Invalid value type. field name=%s, type=%d, but given=%d",
-                field->name(), field->type(), value.type);
+    if (field->type() != value.type &&
+        (field->nullable() == false && value.type == ATTR_NULL)) {
+      LOG_ERROR("Invalid value type. field name=%s, type=%d, nullable=%d but "
+                "given=%d",
+                field->name(), field->type(), field->nullable(), value.type);
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
+    LOG_INFO("Field name=%s, type=%d, nullable=%d, given=%d", field->name(),
+             field->type(), field->nullable(), value.type);
   }
 
   // 复制所有字段的值
@@ -315,11 +319,18 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    if (value.is_null) {
+    if (value.type == ATTR_NULL) {
+      // bit i means value[i] is null.
+      int null_field_offset = table_meta_.null_field()->offset();
+      int32_t *null_field = (int32_t *)(record + null_field_offset);
+      *null_field |= (1 << i);
     } else {
       memcpy(record + field->offset(), value.data, field->len());
     }
   }
+  int null_field_offset = table_meta_.null_field()->offset();
+  int32_t *null_field = (int32_t *)(record + null_field_offset);
+  LOG_INFO("null_field: %x", *null_field);
 
   record_out = record;
   return RC::SUCCESS;
@@ -627,9 +638,10 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   }
   // (2) 检查类型是否匹配
   // 目前实现类型不同则报错
-  if (field_meta->type() != value->type) {
+  if (field_meta->type() != value->type &&
+      (field_meta->nullable() == false && value->type == ATTR_NULL)) {
     LOG_WARN("Type dismatching.");
-    return RC::GENERIC_ERROR;
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
   RecordUpdater updater(*this, trx);
   updater.set_update_info(value, field_meta->offset(), field_meta->len());
@@ -640,8 +652,15 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   return rc;
 }
 
-RC Table::commit_update(Record *record, char *new_value, int offset, int len) {
-  memcpy(record->data + offset, new_value, len);
+RC Table::commit_update(Record *record, const Value *new_value, int offset,
+                        int len) {
+  if (new_value->type == ATTR_NULL) {
+    int column = find_column_by_offset(offset);
+    int32_t *null_field = (int32_t *)(record + null_field_offset());
+    *null_field |= (1 << column);
+  } else {
+    memcpy(record->data + offset, (char *)new_value->data, len);
+  }
   // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
   RC rc = RC::SUCCESS;
   if (rc != RC::SUCCESS) {
@@ -652,9 +671,17 @@ RC Table::commit_update(Record *record, char *new_value, int offset, int len) {
   return record_handler_->update_record(record);
 }
 
-RC Table::rollback_update(Record *record, char *old_value, int offset,
-                          int len) {
-  memcpy(record->data + offset, old_value, len);
+RC Table::rollback_update(Record *record, bool old_null, char *old_value,
+                          int offset, int len) {
+  int column = table_meta_.find_column_by_offset(offset);
+  int null_field_offset = table_meta_.null_field()->offset();
+  int32_t *null_field = (int32_t *)(record + null_field_offset);
+  if (old_null) {
+    *null_field &= (1 << column);
+  } else {
+    *null_field &= 0xFFFFFFFF - (1 << column);
+    memcpy(record->data + offset, old_value, len);
+  }
   // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
   RC rc = RC::SUCCESS;
   if (rc != RC::SUCCESS) {
@@ -861,3 +888,9 @@ RC Table::sync() {
   LOG_INFO("Sync table over. table=%s", name());
   return rc;
 }
+
+int Table::find_column_by_offset(int offset) {
+  return table_meta_.find_column_by_offset(offset);
+}
+
+int Table::null_field_offset() { return table_meta_.null_field()->offset(); }
