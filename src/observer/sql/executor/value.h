@@ -114,7 +114,7 @@ public:
 
   void to_string(std::ostream &os) const override {
     tm *tp = gmtime(&value_);
-    char s[20];
+    char s[36];
     memset(s, 0, sizeof s);
     std::snprintf(s, sizeof(s), "%04d-%02d-%02d", tp->tm_year + 1900,
                   tp->tm_mon + 1, tp->tm_mday);
@@ -123,7 +123,13 @@ public:
 
   int compare(const TupleValue &other) const override {
     const DateValue &timestamp_other = (const DateValue &)other;
-    return value_ - timestamp_other.value_;
+    long long res = value_ - timestamp_other.value_;
+    if (res > 0LL) {
+      return 1;
+    } else if (res < 0LL) {
+      return -1;
+    }
+    return 0;
   }
 
 private:

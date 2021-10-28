@@ -141,7 +141,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
     if (condition.right_is_attr == 0 && type_right == INTS) {
       float v = *(int *)right.value;
       // memcpy(right.value, &v, sizeof(v));
-      left.value = new float(v); // WARNING：注意释放内存
+      right.value = new float(v); // WARNING：注意释放内存
     }
     // 2. 属性，做标记延后转换
     if (condition.left_is_attr == 1 && type_left == INTS) {

@@ -72,12 +72,34 @@ typedef struct _Condition {
   Value right_value;  // right-hand side value if right_is_attr = FALSE
 } Condition;
 
+/** TableRef结构体
+ *  表引用有两种类型：join table和普通table
+ ×  （分别简记为J, T）
+ *  1. join table 树结构
+ *           J--R(relation_name: 右结点表名)
+ *  child<--/
+ *         J--R
+ *        /
+ *       T
+ *  2. normal table
+ *      T--R(relation_name: 当前表名)
+ *      |
+ *     null
+ */
+typedef struct _TableRef {
+  int is_join;             // 是否为join table
+  char *relation_name;     // 表名，具体含义见上面注释
+  struct _TableRef *child; // 子结点
+  size_t cond_num;
+  Condition conditions[MAX_NUM]; // join condtion
+} TableRef;
+
 // struct of select
 typedef struct {
   size_t attr_num;               // Length of attrs in Select clause
   RelAttr attributes[MAX_NUM];   // attrs in Select clause
-  size_t relation_num;           // Length of relations in Fro clause
-  char *relations[MAX_NUM];      // relations in From clause
+  size_t ref_num;                // Length of table references in Fro clause
+  TableRef references[MAX_NUM];  // Table references in From clause
   size_t condition_num;          // Length of conditions in Where clause
   Condition conditions[MAX_NUM]; // conditions in Where clause
 } Selects;
@@ -194,6 +216,9 @@ typedef struct Query {
 extern "C" {
 #endif // __cplusplus
 
+void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
+                    TableRef *child, Condition conditions[], int cond_num);
+void table_ref_destory(TableRef *ref);
 void relation_attr_init(RelAttr *relation_attr, FuncName func_flag,
                         const char *relation_name, const char *attribute_name);
 void relation_attr_destroy(RelAttr *relation_attr);
@@ -217,7 +242,7 @@ void attr_info_destroy(AttrInfo *attr_info);
 
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr);
-void selects_append_relation(Selects *selects, const char *relation_name);
+void selects_append_relation(Selects *selects, TableRef *ref);
 void selects_append_conditions(Selects *selects, Condition conditions[],
                                size_t condition_num);
 void selects_destroy(Selects *selects);

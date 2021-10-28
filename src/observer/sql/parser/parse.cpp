@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse.h"
 #include "common/log/log.h"
 #include "rc.h"
+#include "sql/parser/parse_defs.h"
 #include <mutex>
 
 RC parse(char *st, Query *sqln);
@@ -21,6 +22,30 @@ RC parse(char *st, Query *sqln);
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
+                    TableRef *child, Condition conditions[], int cond_num) {
+  ref->is_join = is_join;
+  ref->relation_name = strdup(relation_name);
+  ref->child = child;
+  ref->cond_num = cond_num;
+  if (cond_num) {
+    for (int i = 0; i < cond_num; i++) {
+      ref->conditions[i] = conditions[i];
+    }
+  }
+}
+
+void table_ref_destory(TableRef *ref) {
+  if (ref->is_join) {
+    table_ref_destory(ref->child);
+  }
+  free(ref->relation_name);
+  for (size_t i = 0; i < ref->cond_num; i++) {
+    condition_destroy(&ref->conditions[i]);
+  }
+  ref->cond_num = 0;
+}
+
 void relation_attr_init(RelAttr *relation_attr, FuncName func_flag,
                         const char *relation_name, const char *attribute_name) {
   if (relation_name != nullptr) {
@@ -130,8 +155,8 @@ void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr) {
   selects->attributes[selects->attr_num++] = *rel_attr;
 }
-void selects_append_relation(Selects *selects, const char *relation_name) {
-  selects->relations[selects->relation_num++] = strdup(relation_name);
+void selects_append_relation(Selects *selects, TableRef *ref) {
+  selects->references[selects->ref_num++] = *ref;
 }
 
 void selects_append_conditions(Selects *selects, Condition conditions[],
@@ -150,11 +175,10 @@ void selects_destroy(Selects *selects) {
   }
   selects->attr_num = 0;
 
-  for (size_t i = 0; i < selects->relation_num; i++) {
-    free(selects->relations[i]);
-    selects->relations[i] = NULL;
+  for (size_t i = 0; i < selects->ref_num; i++) {
+    table_ref_destory(&selects->references[i]);
   }
-  selects->relation_num = 0;
+  selects->ref_num = 0;
 
   for (size_t i = 0; i < selects->condition_num; i++) {
     condition_destroy(&selects->conditions[i]);
