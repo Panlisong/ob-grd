@@ -599,7 +599,6 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
     // (2) 类型检查和转换
     // 都在condition_filter->init
     rc = condition_filter->init(*this, cond);
-    condition_filters.push_back(condition_filter);
     if (rc != RC::SUCCESS) {
       delete condition_filter;
       for (DefaultConditionFilter *&filter : condition_filters) {
@@ -607,6 +606,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
       }
       return rc;
     }
+    condition_filters.push_back(condition_filter);
   }
   CompositeConditionFilter filter;
   filter.init((const ConditionFilter **)condition_filters.data(),
