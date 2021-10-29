@@ -37,10 +37,10 @@ public:
 
   void add(TupleValue *value);
   void add(const std::shared_ptr<TupleValue> &other);
-  void add(int value);
-  void add(float value);
-  void add(time_t value);
-  void add(const char *s, int len);
+  void add(int value, bool is_null);
+  void add(float value, bool is_null);
+  void add(time_t value, bool is_null);
+  void add(const char *s, int len, bool is_null);
 
   const std::vector<std::shared_ptr<TupleValue>> &values() const {
     return values_;
@@ -131,6 +131,8 @@ public:
 
   bool is_empty() const;
   int size() const;
+  int not_null_size(int column) const;
+
   const Tuple &get(int index) const;
   const std::vector<Tuple> &tuples() const;
 
@@ -155,22 +157,27 @@ public:
     for (const TupleField &field : schema.fields()) {
       const FieldMeta *field_meta = table_meta.field(field.field_name());
       assert(field_meta != nullptr);
+      int offset = field_meta->offset();
+      int column = table->find_column_by_offset(offset);
+      int32_t *null_field = (int32_t *)(record + table->null_field_offset());
+      bool is_null = ((*null_field) & (1 << column)) != 0;
+
       switch (field_meta->type()) {
       case INTS: {
-        int value = *(int *)(record + field_meta->offset());
-        tuple.add(value);
+        int value = *(int *)(record + offset);
+        tuple.add(value, is_null);
       } break;
       case FLOATS: {
-        float value = *(float *)(record + field_meta->offset());
-        tuple.add(value);
+        float value = *(float *)(record + offset);
+        tuple.add(value, is_null);
       } break;
       case CHARS: {
-        const char *s = record + field_meta->offset(); // 现在当做Cstring来处理
-        tuple.add(s, strlen(s));
+        const char *s = record + offset; // 现在当做Cstring来处理
+        tuple.add(s, strlen(s), is_null);
       } break;
       case DATES: {
-        time_t value = *(time_t *)(record + field_meta->offset());
-        tuple.add(value);
+        time_t value = *(time_t *)(record + offset);
+        tuple.add(value, is_null);
       } break;
       default: {
         LOG_PANIC("Unsupported field type. type=%d", field_meta->type());

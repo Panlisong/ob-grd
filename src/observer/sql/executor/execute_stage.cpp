@@ -695,7 +695,8 @@ static RC add_filter(const Condition conds[], size_t cond_num, Table *table,
          match_table(multi_flag, cond.right_attr.relation_name,
                      table->name())) // 左右都是属性名，并且表名都符合
     ) {
-      DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
+      Table &t = *table;
+      DefaultConditionFilter *condition_filter = new DefaultConditionFilter(t);
       rc = condition_filter->init(*table, cond);
       if (rc != RC::SUCCESS) {
         delete condition_filter;

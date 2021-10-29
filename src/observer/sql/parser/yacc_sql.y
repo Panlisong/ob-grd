@@ -354,15 +354,6 @@ update:			/*  update 语句的语法解析树*/
 					CONTEXT->conditions, CONTEXT->condition_length);
 			CONTEXT->condition_length = 0;
 		}
-| UPDATE ID SET ID EQ NULL_T where SEMICOLON
-		{
-			CONTEXT->ssql->flag = SCF_UPDATE;//"update";
-			Value *value = &CONTEXT->values[0];
-			value->type = ATTR_NULL;
-			updates_init(&CONTEXT->ssql->sstr.update, $2, $4, value, 
-					CONTEXT->conditions, CONTEXT->condition_length);
-			CONTEXT->condition_length = 0;
-		}
     ;
 select:				/*  select 语句的语法解析树*/
     SELECT select_attr FROM table_ref table_ref_list where SEMICOLON

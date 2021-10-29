@@ -574,6 +574,7 @@ public:
     record->data = new char[table_.table_meta_.record_size()];
 
     memcpy(record->data, old_record->data, table_.table_meta_.record_size());
+
     UpdateTrxEvent *event =
         new UpdateTrxEvent(&table_, record, value_, offset_, len_);
     trx_->pending(event);
@@ -613,7 +614,8 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   std::vector<DefaultConditionFilter *> condition_filters;
   for (size_t i = 0; i < condition_num; i++) {
     const Condition &cond = conditions[i];
-    DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
+    Table &t = *this;
+    DefaultConditionFilter *condition_filter = new DefaultConditionFilter(t);
     // (1) 元数据检查
     // (2) 类型检查和转换
     // 都在condition_filter->init
@@ -654,14 +656,14 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   return rc;
 }
 
-RC Table::commit_update(Record *record, const Value *new_value, int offset,
-                        int len) {
-  if (new_value->type == ATTR_NULL) {
+RC Table::commit_update(Record *record, bool new_null, char *new_value,
+                        int offset, int len) {
+  if (new_null) {
     int column = find_column_by_offset(offset);
     int32_t *null_field = (int32_t *)(record + null_field_offset());
     *null_field |= (1 << column);
   } else {
-    memcpy(record->data + offset, (char *)new_value->data, len);
+    memcpy(record->data + offset, new_value, len);
   }
   // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
   RC rc = RC::SUCCESS;

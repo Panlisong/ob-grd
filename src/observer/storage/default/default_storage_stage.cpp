@@ -260,7 +260,6 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     break;
   }
 
-  LOG_INFO("%d:%s", rc, strrc(rc));
   if (rc == RC::SUCCESS && !session->is_trx_multi_operation_mode()) {
     rc = current_trx->commit();
     if (rc != RC::SUCCESS) {
