@@ -1919,22 +1919,22 @@ bool BplusTreeScanner::satisfy_condition(const char *pkey) {
     switch (attr_type) {
     case INTS:
       i1 = *(int *)pkey;
-      i2 = *(int *)value_;
+      i2 = *(int *)value;
       is_equal = (i1 == i2);
       break;
     case FLOATS:
       f1 = *(float *)pkey;
-      f2 = *(float *)value_;
+      f2 = *(float *)value;
       is_equal = 0 == float_compare(f1, f2);
       break;
     case CHARS:
       s1 = pkey;
-      s2 = value_;
+      s2 = value;
       is_equal = (strncmp(s1, s2, attr_length) == 0);
       break;
     case DATES:
       t1 = *(time_t *)pkey;
-      t2 = *(time_t *)value_;
+      t2 = *(time_t *)value;
       is_equal = t1 == t2;
       break;
     default:
