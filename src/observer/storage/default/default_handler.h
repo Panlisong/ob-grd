@@ -104,8 +104,8 @@ public:
    * @return
    */
   RC create_index(Trx *trx, const char *dbname, const char *relation_name,
-                  const char *index_name, char *attribute_name[MAX_NUM],
-                  size_t attr_num);
+                  const char *index_name, bool unique,
+                  std::vector<std::string> &attrs);
 
   /**
    * 该函数用来删除名为indexName的索引。

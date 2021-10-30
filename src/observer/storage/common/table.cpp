@@ -197,20 +197,25 @@ RC Table::open(const char *meta_file, const char *base_dir) {
   base_dir_ = base_dir;
 
   const int index_num = table_meta_.index_num();
+  std::vector<FieldMeta> fields;
   for (int i = 0; i < index_num; i++) {
     const IndexMeta *index_meta = table_meta_.index(i);
-    const FieldMeta *field_meta = table_meta_.field(index_meta->field());
-    if (field_meta == nullptr) {
-      LOG_PANIC("Found invalid index meta info which has a non-exists field. "
-                "table=%s, index=%s, field=%s",
-                name(), index_meta->name(), index_meta->field());
-      return RC::GENERIC_ERROR;
+    for (int j = 0; j < index_meta->field_num(); j++) {
+      const FieldMeta *field_meta = table_meta_.field(index_meta->field(j));
+      if (field_meta == nullptr) {
+        LOG_PANIC("Found invalid index meta info which has a non-exists field. "
+                  "table=%s, index=%s, field=%s",
+                  name(), index_meta->name(), index_meta->field(j));
+        return RC::GENERIC_ERROR;
+      }
+      fields.push_back(*field_meta);
     }
 
     BplusTreeIndex *index = new BplusTreeIndex();
     std::string index_file =
         index_data_file(base_dir, name(), index_meta->name());
-    rc = index->open(index_file.c_str(), *index_meta, *field_meta);
+
+    rc = index->open(index_file.c_str(), *index_meta, fields);
     if (rc != RC::SUCCESS) {
       delete index;
       LOG_ERROR("Failed to open index. table=%s, index=%s, file=%s, rc=%d:%s",
@@ -251,6 +256,35 @@ RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
 
   Record *new_record = new Record();
   new_record->data = record_data;
+
+  // 判断插入是否违背unique完整性约束
+  // RID一定要插入后才能获得，不应该在B+树的insert_entry中判断
+  // 遍历IndexMeta检查是否有Unique Index
+  // TODO: 是否可以放到commit中处理
+  for (int i = 0; i < table_meta_.index_num(); i++) {
+    auto index_meta = table_meta_.index(i);
+    if (index_meta->is_unique()) {
+      auto index = find_index(index_meta->name());
+
+      // 根据插入record构造search key
+      char value[index->attr_length()];
+      memset(value, 0, sizeof value);
+      index->get_index_column(new_record->data, value);
+
+      // 判断插入索引的search key是否存在
+      auto scanner = index->create_scanner(EQUAL_TO, value);
+      RID *rid = new RID();
+      rc = scanner->next_entry(rid);
+      delete rid;
+      if (rc == RC::SUCCESS) {
+        LOG_ERROR("Failed to insert duplicate key for index %s",
+                  index_meta->name());
+        scanner->destroy();
+        return RC::RECORD_DUPLICATE_KEY;
+      }
+      scanner->destroy();
+    }
+  }
 
   // record.valid = true;
   InsertTrxEvent *event = new InsertTrxEvent(this, new_record);
@@ -444,6 +478,25 @@ public:
   explicit IndexInserter(Index *index) : index_(index) {}
 
   RC insert_index(const Record *record) {
+    auto index_meta = index_->index_meta();
+    if (index_meta.is_unique()) {
+      // 构造search key
+      char values[index_->attr_length()];
+      memset(values, 0, sizeof values);
+      index_->get_index_column(record->data, values);
+      // 判断插入索引的search key是否存在
+      auto scanner = index_->create_scanner(EQUAL_TO, values);
+      RID *rid = new RID();
+      RC rc = scanner->next_entry(rid);
+      delete rid;
+      if (rc == RC::SUCCESS) {
+        LOG_ERROR("Failed to insert duplicate key for index %s",
+                  index_->index_meta().name());
+        scanner->destroy();
+        return RC::RECORD_DUPLICATE_KEY;
+      }
+      scanner->destroy();
+    }
     return index_->insert_entry(record->data, &record->rid);
   }
 
@@ -456,24 +509,57 @@ static RC insert_index_record_reader_adapter(Record *record, void *context) {
   return inserter.insert_index(record);
 }
 
-RC Table::create_index(Trx *trx, const char *index_name,
-                       const char *attribute_name) {
-  if (index_name == nullptr || common::is_blank(index_name) ||
-      attribute_name == nullptr || common::is_blank(attribute_name)) {
+RC Table::create_index(Trx *trx, const char *index_name, bool unique,
+                       std::vector<std::string> &attrs) {
+  if (index_name == nullptr || common::is_blank(index_name)) {
     return RC::INVALID_ARGUMENT;
   }
-  if (table_meta_.index(index_name) != nullptr ||
-      table_meta_.find_index_by_field((attribute_name))) {
+
+  for (size_t i = 0; i < attrs.size(); i++) {
+    if (attrs[i].empty() || common::is_blank(attrs[i].c_str())) {
+      return RC::INVALID_ARGUMENT;
+    }
+  }
+
+  // 1. 是否存在同名索引
+  if (table_meta_.index(index_name) != nullptr) {
     return RC::SCHEMA_INDEX_EXIST;
   }
 
-  const FieldMeta *field_meta = table_meta_.field(attribute_name);
-  if (!field_meta) {
-    return RC::SCHEMA_FIELD_MISSING;
+  // 2. 建立索引字段是否存在
+  std::vector<FieldMeta> fields;
+  for (int i = 0; i < static_cast<int>(attrs.size()); i++) {
+    const FieldMeta *field_meta = table_meta_.field(attrs[i].c_str());
+    if (!field_meta) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+    fields.push_back(*field_meta);
+  }
+
+  // 3. 相同字段索引是否已存在
+  // 不可使用find_index_by_field
+  // 只有某个索引的field完全匹配才认为已创建
+  for (int i = 0; i < table_meta_.index_num(); i++) {
+    auto index_meta = table_meta_.index(i);
+    if (index_meta->field_num() != static_cast<int>(attrs.size())) {
+      // 建立的多列索引和当前遍历到的索引列数不同，它们一定不同
+      break;
+    }
+    // 严格按照顺序匹配
+    bool error = true;
+    for (int j = 0; j < index_meta->field_num(); j++) {
+      if (strcmp(index_meta->field(j), attrs[j].c_str()) != 0) {
+        error = false;
+        break;
+      }
+    }
+    if (error) {
+      return RC::SCHEMA_INDEX_EXIST;
+    }
   }
 
   IndexMeta new_index_meta;
-  RC rc = new_index_meta.init(index_name, *field_meta);
+  RC rc = new_index_meta.init(index_name, attrs, unique);
   if (rc != RC::SUCCESS) {
     return rc;
   }
@@ -482,7 +568,7 @@ RC Table::create_index(Trx *trx, const char *index_name,
   BplusTreeIndex *index = new BplusTreeIndex();
   std::string index_file =
       index_data_file(base_dir_.c_str(), name(), index_name);
-  rc = index->create(index_file.c_str(), new_index_meta, *field_meta);
+  rc = index->create(index_file.c_str(), new_index_meta, fields);
   if (rc != RC::SUCCESS) {
     delete index;
     LOG_ERROR("Failed to create bplus tree index. file name=%s, rc=%d:%s",
@@ -550,23 +636,29 @@ class RecordUpdater {
 public:
   RecordUpdater(Table &table, Trx *trx) : table_(table), trx_(trx) {}
   RC update_record(Record *old_record) {
-    Record *record = new Record();
-    record->rid = old_record->rid;
-    record->data = new char[table_.table_meta_.record_size()];
+    // 拷贝old record和new record
+    Record *old_rec = new Record();
+    old_rec->rid = old_record->rid;
+    old_rec->data = new char[table_.table_meta_.record_size()];
 
-    memcpy(record->data, old_record->data, table_.table_meta_.record_size());
+    Record *new_rec = new Record();
+    new_rec->rid = old_record->rid;
+    new_rec->data = new char[table_.table_meta_.record_size()];
+
+    memcpy(old_rec->data, old_record->data, table_.table_meta_.record_size());
+    memcpy(new_rec->data, old_record->data, table_.table_meta_.record_size());
+    memcpy(new_rec->data + field_meta_.offset(), value_, field_meta_.len());
     UpdateTrxEvent *event =
-        new UpdateTrxEvent(&table_, record, value_, offset_, len_);
+        new UpdateTrxEvent(&table_, old_rec, new_rec, field_meta_);
     trx_->pending(event);
     updated_count_++;
 
     return RC::SUCCESS;
   }
 
-  void set_update_info(const Value *v, int offset, int len) {
+  void set_update_info(const Value *v, FieldMeta field_meta) {
     value_ = v;
-    offset_ = offset;
-    len_ = len;
+    field_meta_ = field_meta;
   }
 
   int updated_count() const { return updated_count_; }
@@ -575,8 +667,7 @@ private:
   Table &table_;
   Trx *trx_;
   const Value *value_;
-  int offset_;
-  int len_;
+  FieldMeta field_meta_;
   int updated_count_ = 0;
 };
 
@@ -592,7 +683,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   // 进入这里说明更新Table一定存在
   // 1. 生成ConditionFilter
   std::vector<DefaultConditionFilter *> condition_filters;
-  for (size_t i = 0; i < condition_num; i++) {
+  for (int i = 0; i < condition_num; i++) {
     const Condition &cond = conditions[i];
     DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
     // (1) 元数据检查
@@ -626,7 +717,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
     return RC::GENERIC_ERROR;
   }
   RecordUpdater updater(*this, trx);
-  updater.set_update_info(value, field_meta->offset(), field_meta->len());
+  updater.set_update_info(value, *field_meta);
   rc = scan_record(trx, &filter, -1, &updater, record_reader_update_adapter);
   if (updated_count != nullptr) {
     *updated_count = updater.updated_count();
@@ -634,44 +725,82 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   return rc;
 }
 
-RC Table::commit_update(Record *record, char *new_value, int offset, int len) {
-  memcpy(record->data + offset, new_value, len);
-  // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
-  RC rc = RC::SUCCESS;
+RC Table::commit_update(Record *old_record, Record *new_record,
+                        const FieldMeta &update_field) {
+  RC rc = update_entry_of_indexes(old_record->data, new_record->data,
+                                  old_record->rid, update_field);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to update indexes of record(rid=%d.%d). rc=%d:%s",
-              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+              old_record->rid.page_num, old_record->rid.slot_num, rc,
+              strrc(rc));
     return rc;
   }
-  return record_handler_->update_record(record);
+  return record_handler_->update_record(new_record);
 }
 
-RC Table::rollback_update(Record *record, char *old_value, int offset,
-                          int len) {
-  memcpy(record->data + offset, old_value, len);
-  // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
-  RC rc = RC::SUCCESS;
+RC Table::rollback_update(Record *old_record, Record *new_record,
+                          const FieldMeta &update_field) {
+  RC rc = update_entry_of_indexes(new_record->data, old_record->data,
+                                  new_record->rid, update_field);
   if (rc != RC::SUCCESS) {
-    LOG_ERROR("Failed to update indexes of record(rid=%d.%d). rc=%d:%s",
-              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+    LOG_ERROR("Failed to rollback for updating indexes of record(rid=%d.%d). "
+              "rc=%d:%s",
+              new_record->rid.page_num, new_record->rid.slot_num, rc,
+              strrc(rc));
     return rc;
   }
-
-  return record_handler_->update_record(record);
+  return record_handler_->update_record(old_record);
 }
 
-// RC Table::update_entry_of_indexes(const char *record, const RID &rid) {
-//   RC rc = RC::SUCCESS;
-//   for (Index *index : indexes_) {
-//     rc = index->update_entry(record, &rid);
-//     if (rc != RC::SUCCESS) {
-//       if (rc != RC::RECORD_INVALID_KEY || !error_on_not_exists) {
-//         break;
-//       }
-//     }
-//   }
-//   return rc;
-// }
+RC Table::update_entry_of_indexes(const char *old_rec, const char *new_rec,
+                                  const RID &rid,
+                                  const FieldMeta &update_field) {
+  RC rc = RC::SUCCESS;
+  for (Index *index : indexes_) {
+    auto index_meta = index->index_meta();
+    // TODO: 是否只有commit时才检测完整性？
+    if (index_meta.is_unique()) {
+      // 判断更新字段是否在索引字段之中
+      bool exist = false;
+      for (int i = 0; i < index_meta.field_num(); i++) {
+        if (strcmp(index_meta.field(i), update_field.name()) == 0) {
+          exist = true;
+          break;
+        }
+      }
+      if (exist) {
+        // 根据插入record构造search key
+        char value[index->attr_length()];
+        memset(value, 0, sizeof value);
+        index->get_index_column(new_rec, value);
+
+        // 判断插入索引的search key是否存在
+        auto scanner = index->create_scanner(EQUAL_TO, value);
+        RID *rid = new RID();
+        rc = scanner->next_entry(rid);
+        delete rid;
+        if (rc == RC::SUCCESS) {
+          rc = RC::RECORD_DUPLICATE_KEY;
+          LOG_ERROR("Failed to update duplicate key for index %s",
+                    index_meta.name());
+          scanner->destroy();
+          return rc;
+        }
+        scanner->destroy();
+      }
+    }
+    // Update某个索引字段可以看作：先删除再插入
+    rc = index->delete_entry(old_rec, &rid);
+    if (rc != RC::SUCCESS) {
+      break;
+    }
+    rc = index->insert_entry(new_rec, &rid);
+    if (rc != RC::SUCCESS) {
+      break;
+    }
+  }
+  return rc;
+}
 class RecordDeleter {
 public:
   RecordDeleter(Table &table, Trx *trx) : table_(table), trx_(trx) {}
@@ -681,7 +810,7 @@ public:
     record->rid = old_record->rid;
     record->data = new char[table_.table_meta_.record_size()];
 
-    memcpy(record->data, old_record->data, strlen(old_record->data));
+    memcpy(record->data, old_record->data, table_.table_meta_.record_size());
     DeleteTrxEvent *event = new DeleteTrxEvent(&table_, record);
     trx_->pending(event);
 
@@ -809,6 +938,7 @@ IndexScanner *Table::find_index_for_scan(const DefaultConditionFilter &filter) {
                                (const char *)value_cond_desc->value);
 }
 
+// TODO: 按照多列索引找最优的index
 IndexScanner *Table::find_index_for_scan(const ConditionFilter *filter) {
   if (nullptr == filter) {
     return nullptr;

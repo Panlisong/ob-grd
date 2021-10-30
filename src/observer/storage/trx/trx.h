@@ -59,31 +59,25 @@ private:
 
 class UpdateTrxEvent : public TrxEvent {
 public:
-  UpdateTrxEvent(Table *table, Record *old_record, const Value *new_value,
-                 int offset, int len)
-      : table_(table), old_record_(old_record), offset_(offset), len_(len) {
-    new_value_ = new char[len_];
-    memcpy(new_value_, new_value->data, len);
-    old_value_ = new char[len_];
-    memcpy(old_value_, old_record->data + offset_, len_);
-  }
+  UpdateTrxEvent(Table *table, Record *old_record, Record *new_record,
+                 const FieldMeta &field_meta)
+      : table_(table), old_record_(old_record), new_record_(new_record),
+        field_meta_(field_meta) {}
   virtual ~UpdateTrxEvent();
 
   const char *get_table_name() { return table_->name(); }
   RC commit() {
-    return table_->commit_update(old_record_, new_value_, offset_, len_);
+    return table_->commit_update(old_record_, new_record_, field_meta_);
   }
   RC rollback() {
-    return table_->rollback_update(old_record_, old_value_, offset_, len_);
+    return table_->rollback_update(old_record_, new_record_, field_meta_);
   }
 
 private:
   Table *table_;
   Record *old_record_;
-  char *new_value_;
-  char *old_value_;
-  int offset_;
-  int len_;
+  Record *new_record_;
+  FieldMeta field_meta_;
 };
 
 class Trx {

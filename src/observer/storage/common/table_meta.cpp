@@ -143,9 +143,11 @@ const IndexMeta *TableMeta::index(const char *name) const {
   return nullptr;
 }
 
+// 只根据一个字段查找index，对于多列索引，只有第一个匹配才可使用
+// TODO: 带拓展成根据(col1, col2, ...)匹配index的方法
 const IndexMeta *TableMeta::find_index_by_field(const char *field) const {
   for (const IndexMeta &index : indexes_) {
-    if (0 == strcmp(index.field(), field)) {
+    if (0 == strcmp(index.field(0), field)) {
       return &index;
     }
   }
