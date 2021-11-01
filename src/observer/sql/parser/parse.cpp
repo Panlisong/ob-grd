@@ -44,24 +44,25 @@ void table_ref_destory(TableRef *ref) {
     condition_destroy(&ref->conditions[i]);
   }
   ref->cond_num = 0;
+  free(ref);
 }
 
-void relation_attr_init(RelAttr *relation_attr, FuncName func_flag,
-                        const char *relation_name, const char *attribute_name) {
+void attr_init(RelAttr *relation_attr, const char *relation_name,
+               const char *attribute_name) {
   if (relation_name != nullptr) {
     relation_attr->relation_name = strdup(relation_name);
   } else {
     relation_attr->relation_name = nullptr;
   }
-  relation_attr->func = func_flag;
   relation_attr->attribute_name = strdup(attribute_name);
 }
 
-void relation_attr_destroy(RelAttr *relation_attr) {
+void attr_destroy(RelAttr *relation_attr) {
   free(relation_attr->relation_name);
   free(relation_attr->attribute_name);
   relation_attr->relation_name = nullptr;
   relation_attr->attribute_name = nullptr;
+  free(relation_attr);
 }
 
 void value_init_integer(Value *value, int v) {
@@ -114,37 +115,100 @@ void tuple_destory(Tuples *tuple) {
   }
 }
 
-void condition_init(Condition *condition, CompOp comp, int left_is_attr,
-                    RelAttr *left_attr, Value *left_value, int right_is_attr,
-                    RelAttr *right_attr, Value *right_value) {
-  condition->comp = comp;
-  condition->left_is_attr = left_is_attr;
-  if (left_is_attr) {
-    condition->left_attr = *left_attr;
+/////////////////////////////////////////////////////////////////////////
+void condition_expr_destory(ConditionExpr *expr) {
+  if (expr->has_subexpr) {
+    condition_expr_destory(expr->left);
+    condition_expr_destory(expr->right);
   } else {
-    condition->left_value = *left_value;
+    if (expr->is_attr) {
+      attr_destroy(expr->attr);
+    } else {
+      value_destroy(&expr->value);
+    }
   }
-
-  condition->right_is_attr = right_is_attr;
-  if (right_is_attr) {
-    condition->right_attr = *right_attr;
-  } else {
-    condition->right_value = *right_value;
-  }
+  free(expr);
 }
+
+void non_subquery_cond_init(Condition *cond, ConditionExpr *left,
+                            ConditionExpr *right, CompOp op) {
+  cond->is_comOp = 1;
+  cond->left = left;
+  cond->right = right;
+  cond->comp = op;
+  ////////////////////////
+  cond->is_subquery = 0;
+  cond->memOp = NO_MEM_OP;
+  cond->subquery = nullptr;
+}
+void com_subquery_init(Condition *cond, ConditionExpr *left, Selects *subquery,
+                       CompOp op) {
+  cond->is_comOp = 1;
+  cond->is_subquery = 1;
+  cond->left = left;
+  cond->subquery = subquery;
+  cond->comp = op;
+  //////////////////////////
+  cond->memOp = NO_MEM_OP;
+  cond->right = nullptr;
+}
+void membership_subquery_init(Condition *cond, ConditionExpr *left,
+                              Selects *subquery, MembershipOp op) {
+  cond->is_subquery = 1;
+  cond->left = left;
+  cond->subquery = subquery;
+  cond->memOp = op;
+  ///////////////////////////
+  cond->is_comOp = 0;
+  cond->comp = NO_OP;
+  cond->right = nullptr;
+}
+
+void append_cond_expr(ConditionExpr *expr, ConditionExpr *left,
+                      ConditionExpr *right, ArithOp op) {
+  expr->has_subexpr = 1;
+  expr->left = left;
+  expr->right = right;
+  expr->op = op;
+  ///////////////////////////
+  expr->is_attr = 0;
+  expr->attr = nullptr;
+  memset(&expr->value, 0, sizeof(Value));
+}
+
+void cond_attr_init(ConditionExpr *expr, RelAttr *attr) {
+  expr->is_attr = 1;
+  expr->attr = attr;
+  ///////////////////////////
+  expr->has_subexpr = 0;
+  expr->left = nullptr;
+  expr->right = nullptr;
+  expr->op = NO_ARITH_OP;
+  memset(&expr->value, 0, sizeof(Value));
+}
+
+void cond_value_init(ConditionExpr *expr, Value *v) {
+  expr->value = *v;
+  ///////////////////////////
+  expr->has_subexpr = 0;
+  expr->left = nullptr;
+  expr->right = nullptr;
+  expr->op = NO_ARITH_OP;
+  expr->is_attr = 0;
+  expr->attr = nullptr;
+}
+
 void condition_destroy(Condition *condition) {
-  if (condition->left_is_attr) {
-    relation_attr_destroy(&condition->left_attr);
+  condition_expr_destory(condition->left);
+  if (condition->is_subquery) {
+    selects_destroy(condition->subquery);
   } else {
-    value_destroy(&condition->left_value);
+    condition_expr_destory(condition->right);
   }
-  if (condition->right_is_attr) {
-    relation_attr_destroy(&condition->right_attr);
-  } else {
-    value_destroy(&condition->right_value);
-  }
+  free(condition);
 }
 
+///////////////////////////////////////////////////////
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type,
                     size_t length, int nullable) {
   attr_info->name = strdup(name);
@@ -157,14 +221,77 @@ void attr_info_destroy(AttrInfo *attr_info) {
   attr_info->name = nullptr;
 }
 
-void selects_init(Selects *selects, ...);
-void selects_append_attribute(Selects *selects, RelAttr *rel_attr) {
-  selects->attributes[selects->attr_num++] = *rel_attr;
-}
-void selects_append_relation(Selects *selects, TableRef *ref) {
-  selects->references[selects->ref_num++] = *ref;
+///////////////////////////////////////////////////////
+void append_subexpr(SelectExpr *expr, SelectExpr *left, SelectExpr *right,
+                    ArithOp op) {
+  expr->has_subexpr = 1;
+  expr->left = left;
+  expr->right = right;
+  expr->arithOp = op;
+  ///////////////////
+  expr->is_attr = 0;
+  memset(&expr->value, 0, sizeof(Value));
+  expr->attr = nullptr;
+  expr->arithOp = NO_ARITH_OP;
+  expr->func = FUNC_NUM;
 }
 
+void select_expr_destroy(SelectExpr *expr) {
+  if (expr->has_subexpr == 1) {
+    select_expr_destroy(expr->left);
+    select_expr_destroy(expr->right);
+  } else {
+    if (expr->is_attr) {
+      attr_destroy(expr->attr);
+    } else {
+      value_destroy(&expr->value);
+    }
+  }
+  free(expr);
+}
+
+void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr) {
+  expr->func = func;
+  expr->attr = attr;
+  expr->is_attr = 1;
+  ///////////////////
+  expr->has_subexpr = 0;
+  expr->arithOp = NO_ARITH_OP;
+  memset(&expr->value, 0, sizeof(Value));
+  expr->left = nullptr;
+  expr->right = nullptr;
+}
+
+void select_attr_init(SelectExpr *expr, RelAttr *attr) {
+  expr->attr = attr;
+  expr->is_attr = 1;
+  ///////////////////
+  expr->has_subexpr = 0;
+  expr->func = COLUMN;
+  expr->arithOp = NO_ARITH_OP;
+  memset(&expr->value, 0, sizeof(Value));
+  expr->left = nullptr;
+  expr->right = nullptr;
+}
+
+void select_value_init(SelectExpr *expr, Value *value) {
+  expr->value = *value;
+  ///////////////////
+  expr->is_attr = 0;
+  expr->attr = nullptr;
+  expr->has_subexpr = 0;
+  expr->func = COLUMN;
+  expr->arithOp = NO_ARITH_OP;
+  expr->left = nullptr;
+  expr->right = nullptr;
+}
+
+void selects_append_expr(Selects *selects, SelectExpr *select_expr) {
+  selects->exprs[selects->expr_num++] = select_expr;
+}
+void selects_append_relation(Selects *selects, TableRef *ref) {
+  selects->references[selects->ref_num++] = ref;
+}
 void selects_append_conditions(Selects *selects, Condition conditions[],
                                size_t condition_num) {
   assert(condition_num <=
@@ -172,24 +299,51 @@ void selects_append_conditions(Selects *selects, Condition conditions[],
   for (size_t i = 0; i < condition_num; i++) {
     selects->conditions[i] = conditions[i];
   }
-  selects->condition_num = condition_num;
+  selects->cond_num = condition_num;
+}
+void selects_append_group(Selects *selects, RelAttr *attr) {
+  selects->groups[selects->group_num++] = attr;
+}
+
+void selects_append_order(Selects *selects, OrderCol *ocol) {
+  selects->orders[selects->order_num++] = ocol;
+}
+
+void order_col_init(OrderCol *col, RelAttr *attr, int asc_flag) {
+  col->attr = attr;
+  col->asc = asc_flag;
+}
+
+void order_col_destroy(OrderCol *col) {
+  attr_destroy(col->attr);
+  free(col);
 }
 
 void selects_destroy(Selects *selects) {
-  for (size_t i = 0; i < selects->attr_num; i++) {
-    relation_attr_destroy(&selects->attributes[i]);
+  for (size_t i = 0; i < selects->expr_num; i++) {
+    select_expr_destroy(selects->exprs[i]);
   }
-  selects->attr_num = 0;
+  selects->expr_num = 0;
 
   for (size_t i = 0; i < selects->ref_num; i++) {
-    table_ref_destory(&selects->references[i]);
+    table_ref_destory(selects->references[i]);
   }
   selects->ref_num = 0;
 
-  for (size_t i = 0; i < selects->condition_num; i++) {
+  for (size_t i = 0; i < selects->cond_num; i++) {
     condition_destroy(&selects->conditions[i]);
   }
-  selects->condition_num = 0;
+  selects->cond_num = 0;
+
+  for (size_t i = 0; i < selects->group_num; i++) {
+    attr_destroy(selects->groups[i]);
+  }
+  selects->group_num = 0;
+
+  for (size_t i = 0; i < selects->order_num; i++) {
+    order_col_destroy(selects->orders[i]);
+  }
+  selects->order_num = 0;
 }
 
 void insert_tuple_init(Inserts *inserts, Value values[], size_t value_num) {

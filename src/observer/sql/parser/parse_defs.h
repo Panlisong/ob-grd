@@ -34,8 +34,7 @@ typedef enum {
 } FuncName;
 
 //属性结构体
-typedef struct {
-  FuncName func;        // 这一属性使用的函数类型
+typedef struct _RelAttr {
   char *relation_name;  // relation name (may be NULL) 表名
   char *attribute_name; // attribute name              属性名
 } RelAttr;
@@ -52,6 +51,20 @@ typedef enum {
   NO_OP
 } CompOp;
 
+typedef enum {
+  ADD, //"+"      0
+  SUB, //"-"      1
+  MUL, //"*"      2
+  DIV, //"*"      3
+  NO_ARITH_OP
+} ArithOp;
+
+typedef enum {
+  MEM_IN,     //"in"      0
+  MEM_NOT_IN, //"not int" 1
+  NO_MEM_OP
+} MembershipOp;
+
 //属性值类型
 typedef enum { UNDEFINED, CHARS, INTS, FLOATS, ATTR_NULL, DATES } AttrType;
 
@@ -61,17 +74,40 @@ typedef struct _Value {
   void *data;    // value
 } Value;
 
+/**
+ * PS: 标志位优先级：has_subexpr > is_attr
+ */
+typedef struct _ConditionExpr {
+  int has_subexpr;
+  struct _ConditionExpr *left;
+  struct _ConditionExpr *right;
+  ArithOp op;
+  /* ConditionExpr叶子节点 */
+  int is_attr;
+  Value value;
+  RelAttr *attr;
+} ConditionExpr;
+
+/**
+ * Condition 有两种情况
+ * 1. is_subquery = 1
+ *    1.1 is_comOp = 0
+ *    => left memOp subquery
+ *    1.2 is_comOp = 1
+ *    => left comOp subquery
+ * 2. is_subquery = 0
+ * => left comOp right
+ *
+ * PS: 其余情况均非法
+ */
 typedef struct _Condition {
-  int left_is_attr;  // TRUE if left-hand side is an attribute
-                     // 1时，操作符左边是属性名，0时，是属性值
-  Value left_value;  // left-hand side value if left_is_attr = FALSE
-  RelAttr left_attr; // left-hand side attribute
-  CompOp comp;       // comparison operator
-  int right_is_attr; // TRUE if right-hand side is an attribute
-                     // 1时，操作符右边是属性名，0时，是属性值
-  RelAttr right_attr; // right-hand side attribute if right_is_attr = TRUE
-                      // 右边的属性
-  Value right_value;  // right-hand side value if right_is_attr = FALSE
+  int is_subquery;
+  int is_comOp;
+  MembershipOp memOp;
+  struct _Selects *subquery;
+  ConditionExpr *left;
+  ConditionExpr *right;
+  CompOp comp; // comparison operator
 } Condition;
 
 /** TableRef结构体
@@ -96,14 +132,38 @@ typedef struct _TableRef {
   Condition conditions[MAX_NUM]; // join condtion
 } TableRef;
 
+/**
+ * PS: 标志位优先级：has_subexpr > is_attr
+ */
+typedef struct _SelectExpr {
+  int has_subexpr;
+  ArithOp arithOp;
+  struct _SelectExpr *left;
+  struct _SelectExpr *right;
+  /* Expression叶子节点 */
+  int is_attr;
+  Value value;
+  FuncName func;
+  RelAttr *attr;
+} SelectExpr;
+
+typedef struct _OrderCol {
+  RelAttr *attr;
+  int asc; // 1: 升序；0：降序
+} OrderCol;
+
 // struct of select
-typedef struct {
-  size_t attr_num;               // Length of attrs in Select clause
-  RelAttr attributes[MAX_NUM];   // attrs in Select clause
-  size_t ref_num;                // Length of table references in Fro clause
-  TableRef references[MAX_NUM];  // Table references in From clause
-  size_t condition_num;          // Length of conditions in Where clause
+typedef struct _Selects {
+  size_t expr_num;               // Length of attrs in Expression clause
+  SelectExpr *exprs[MAX_NUM];    // Select expression in Select clause
+  size_t ref_num;                // Length of table references in From clause
+  TableRef *references[MAX_NUM]; // Table references in From clause
+  size_t cond_num;               // Length of conditions in Where clause
   Condition conditions[MAX_NUM]; // conditions in Where clause
+  size_t group_num;              // Length of groups
+  RelAttr *groups[MAX_NUM];      // cols in Group List
+  size_t order_num;              // Length of orders
+  OrderCol *orders[MAX_NUM];     // cols in OrderBy List
 } Selects;
 
 typedef struct {
@@ -219,13 +279,27 @@ typedef struct Query {
 extern "C" {
 #endif // __cplusplus
 
+//////////////////////////////////////////////////////
 void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
                     TableRef *child, Condition conditions[], int cond_num);
 void table_ref_destory(TableRef *ref);
-void relation_attr_init(RelAttr *relation_attr, FuncName func_flag,
-                        const char *relation_name, const char *attribute_name);
-void relation_attr_destroy(RelAttr *relation_attr);
 
+//////////////////////////////////////////////////////
+void append_subexpr(SelectExpr *expr, SelectExpr *left, SelectExpr *righ,
+                    ArithOp op);
+void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr);
+void select_attr_init(SelectExpr *expr, RelAttr *attr);
+void select_value_init(SelectExpr *expr, Value *value);
+
+//////////////////////////////////////////////////////
+void attr_init(RelAttr *relation_attr, const char *relation_name,
+               const char *attribute_name);
+void attr_destroy(RelAttr *relation_attr);
+
+void order_col_init(OrderCol *col, RelAttr *attr, int asc_flag);
+void order_col_destroy(OrderCol *col);
+
+//////////////////////////////////////////////////////
 void value_init_integer(Value *value, int v);
 void value_init_float(Value *value, float v);
 void value_init_string(Value *value, const char *v);
@@ -236,20 +310,36 @@ int check_date(int year, int month, int day);
 void value_destroy(Value *value);
 void tuple_destory(Tuples *tuple);
 
+//////////////////////////////////////////////////////
+void non_subquery_cond_init(Condition *cond, ConditionExpr *left,
+                            ConditionExpr *right, CompOp op);
+void com_subquery_init(Condition *cond, ConditionExpr *left, Selects *subquery,
+                       CompOp op);
+void membership_subquery_init(Condition *cond, ConditionExpr *left,
+                              Selects *subquery, MembershipOp op);
+
+//////////////////////////////////////////////////////
+void append_cond_expr(ConditionExpr *expr, ConditionExpr *left,
+                      ConditionExpr *right, ArithOp op);
+void cond_attr_init(ConditionExpr *expr, RelAttr *attr);
+void cond_value_init(ConditionExpr *expr, Value *v);
 void condition_init(Condition *condition, CompOp comp, int left_is_attr,
                     RelAttr *left_attr, Value *left_value, int right_is_attr,
                     RelAttr *right_attr, Value *right_value);
 void condition_destroy(Condition *condition);
 
+///////////////////////////////////////////////////////
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type,
                     size_t length, int nullable);
 void attr_info_destroy(AttrInfo *attr_info);
 
-void selects_init(Selects *selects, ...);
-void selects_append_attribute(Selects *selects, RelAttr *rel_attr);
+///////////////////////////////////////////////////////
+void selects_append_expr(Selects *selects, SelectExpr *select_expr);
 void selects_append_relation(Selects *selects, TableRef *ref);
 void selects_append_conditions(Selects *selects, Condition conditions[],
                                size_t condition_num);
+void selects_append_group(Selects *selects, RelAttr *);
+void selects_append_order(Selects *selects, OrderCol *ocol);
 void selects_destroy(Selects *selects);
 
 void insert_tuple_init(Inserts *inserts, Value values[], size_t value_num);
