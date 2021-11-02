@@ -302,8 +302,7 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
                 field->name());
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
-    if (field->type() != value.type &&
-        (field->nullable() == false && value.type == ATTR_NULL)) {
+    if (field->type() != value.type) {
       LOG_ERROR("Invalid value type. field name=%s, type=%d, nullable=%d but "
                 "given=%d",
                 field->name(), field->type(), field->nullable(), value.type);
@@ -330,9 +329,6 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
       memcpy(record + field->offset(), value.data, field->len());
     }
   }
-  int null_field_offset = table_meta_.null_field()->offset();
-  int32_t *null_field = (int32_t *)(record + null_field_offset);
-  LOG_INFO("null_field: %x", *null_field);
 
   record_out = record;
   return RC::SUCCESS;

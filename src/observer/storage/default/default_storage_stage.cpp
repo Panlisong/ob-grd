@@ -267,6 +267,9 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
       current_trx->rollback();
     }
   }
+  if (rc != RC::SUCCESS) {
+    snprintf(response, sizeof(response), "FAILURE\n");
+  }
 
   session_event->set_response(response);
   event->done_immediate();
