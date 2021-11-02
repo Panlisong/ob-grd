@@ -257,35 +257,6 @@ RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
   Record *new_record = new Record();
   new_record->data = record_data;
 
-  // 判断插入是否违背unique完整性约束
-  // RID一定要插入后才能获得，不应该在B+树的insert_entry中判断
-  // 遍历IndexMeta检查是否有Unique Index
-  // TODO: 是否可以放到commit中处理
-  for (int i = 0; i < table_meta_.index_num(); i++) {
-    auto index_meta = table_meta_.index(i);
-    if (index_meta->is_unique()) {
-      auto index = find_index(index_meta->name());
-
-      // 根据插入record构造search key
-      char value[index->attr_length()];
-      memset(value, 0, sizeof value);
-      index->get_index_column(new_record->data, value);
-
-      // 判断插入索引的search key是否存在
-      auto scanner = index->create_scanner(EQUAL_TO, value);
-      RID *rid = new RID();
-      rc = scanner->next_entry(rid);
-      delete rid;
-      if (rc == RC::SUCCESS) {
-        LOG_ERROR("Failed to insert duplicate key for index %s",
-                  index_meta->name());
-        scanner->destroy();
-        return RC::RECORD_DUPLICATE_KEY;
-      }
-      scanner->destroy();
-    }
-  }
-
   // record.valid = true;
   InsertTrxEvent *event = new InsertTrxEvent(this, new_record);
   trx->pending(event);
@@ -306,7 +277,41 @@ RC Table::commit_insert(Record *new_record) {
     return rc;
   }
 
-  return insert_entry_of_indexes(new_record->data, new_record->rid);
+  return insert_entry_of_indexes(new_record);
+}
+
+RC Table::insert_entry_of_indexes(const Record *new_record) {
+  RC rc = RC::SUCCESS;
+  for (int i = 0; i < table_meta_.index_num(); i++) {
+    auto index_meta = table_meta_.index(i);
+    RID *rid = new RID();
+    if (!index_meta->is_unique()) {
+      // not unique index
+      rid->page_num = new_record->rid.page_num;
+      rid->slot_num = new_record->rid.slot_num;
+    }
+
+    auto index = find_index(index_meta->name());
+
+    // 根据插入record构造search key
+    char value[index->attr_length()];
+    memset(value, 0, sizeof(value));
+    index->get_index_column(new_record->data, value);
+
+    // 判断插入索引的search key是否存在
+    auto scanner = index->create_scanner(EQUAL_TO, value);
+    rc = scanner->next_entry(rid);
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to insert duplicate key for index %s",
+                index_meta->name());
+      scanner->destroy();
+      return RC::RECORD_DUPLICATE_KEY;
+    }
+    scanner->destroy();
+    delete rid;
+  }
+
+  return rc;
 }
 
 RC Table::rollback_insert(Record *new_record) {
@@ -855,7 +860,7 @@ RC Table::commit_delete(Record *old_record) {
 }
 
 RC Table::rollback_delete(Record *old_record) {
-  RC rc = insert_entry_of_indexes(old_record->data, old_record->rid);
+  RC rc = insert_entry_of_indexes(old_record);
   if (rc == RC::SCHEMA_INDEX_EXIST) {
     rc = RC::SUCCESS;
   }
@@ -865,17 +870,6 @@ RC Table::rollback_delete(Record *old_record) {
 
   return record_handler_->insert_record(
       old_record->data, table_meta_.record_size(), &old_record->rid);
-}
-
-RC Table::insert_entry_of_indexes(const char *record, const RID &rid) {
-  RC rc = RC::SUCCESS;
-  for (Index *index : indexes_) {
-    rc = index->insert_entry(record, &rid);
-    if (rc != RC::SUCCESS) {
-      break;
-    }
-  }
-  return rc;
 }
 
 RC Table::delete_entry_of_indexes(const char *record, const RID &rid,

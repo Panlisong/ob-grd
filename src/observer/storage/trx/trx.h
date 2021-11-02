@@ -15,11 +15,6 @@ class TrxEvent {
 public:
   TrxEvent() = default;
   virtual ~TrxEvent() = default;
-  enum class Type : int {
-    INSERT,
-    UPDATE,
-    DELETE,
-  };
 
 public:
   virtual const char *get_table_name() { return ""; };
@@ -101,6 +96,7 @@ private:
   int32_t trx_id_ = 0;
   std::vector<TrxEvent *> trx_events;
   int cur_event_index = 0;
+  int last_event_index = 0;
 };
 
 #endif // __OBSERVER_STORAGE_TRX_TRX_H_
