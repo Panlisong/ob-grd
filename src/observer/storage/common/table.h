@@ -78,10 +78,8 @@ public:
   RC update_records(Trx *trx, const char *attribute_name, const Value *value,
                     int condition_num, const Condition conditions[],
                     int *updated_count);
-  RC commit_update(Record *old_record, Record *new_record,
-                   const FieldMeta &update_field);
-  RC rollback_update(Record *old_record, Record *new_record,
-                     const FieldMeta &update_field);
+  RC commit_update(Record *old_record, Record *new_record);
+  RC rollback_update(Record *old_record, Record *new_record);
 
 private:
   RC insert_record(Trx *trx, int value_num, const Value *values);
@@ -111,7 +109,7 @@ private:
   RC delete_entry_of_indexes(const char *record, const RID &rid,
                              bool error_on_not_exists);
   RC update_entry_of_indexes(const char *old_rec, const char *new_rec,
-                             const RID &rid, const FieldMeta &update_field);
+                             const RID &rid);
 
 private:
   RC make_record(int value_num, const Value *values, char *&record_out);

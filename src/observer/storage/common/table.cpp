@@ -257,6 +257,31 @@ RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
   Record *new_record = new Record();
   new_record->data = record_data;
 
+  for (auto index : indexes_) {
+    auto index_meta = index->index_meta();
+    if (index_meta.is_unique()) {
+      auto index = find_index(index_meta.name());
+
+      // 从record提取索引列
+      char value[index->attr_length()];
+      memset(value, 0, sizeof value);
+      index->get_index_column(new_record->data, value);
+
+      // 判断key是否存在
+      auto scanner = index->create_scanner(EQUAL_TO, value);
+      RID *rid = new RID();
+      rc = scanner->next_entry(rid);
+      delete rid;
+      if (rc == RC::SUCCESS) {
+        LOG_ERROR("Failed to insert duplicate key for index %s",
+                  index_meta.name());
+        scanner->destroy();
+        return RC::RECORD_DUPLICATE_KEY;
+      }
+      scanner->destroy();
+    }
+  }
+
   // record.valid = true;
   InsertTrxEvent *event = new InsertTrxEvent(this, new_record);
   trx->pending(event);
@@ -282,35 +307,12 @@ RC Table::commit_insert(Record *new_record) {
 
 RC Table::insert_entry_of_indexes(const Record *new_record) {
   RC rc = RC::SUCCESS;
-  for (int i = 0; i < table_meta_.index_num(); i++) {
-    auto index_meta = table_meta_.index(i);
-    RID *rid = new RID();
-    if (!index_meta->is_unique()) {
-      // not unique index
-      rid->page_num = new_record->rid.page_num;
-      rid->slot_num = new_record->rid.slot_num;
-    }
-
-    auto index = find_index(index_meta->name());
-
-    // 根据插入record构造search key
-    char value[index->attr_length()];
-    memset(value, 0, sizeof(value));
-    index->get_index_column(new_record->data, value);
-
-    // 判断插入索引的search key是否存在
-    auto scanner = index->create_scanner(EQUAL_TO, value);
-    rc = scanner->next_entry(rid);
+  for (Index *index : indexes_) {
+    rc = index->insert_entry(new_record->data, &new_record->rid);
     if (rc != RC::SUCCESS) {
-      LOG_ERROR("Failed to insert duplicate key for index %s",
-                index_meta->name());
-      scanner->destroy();
-      return RC::RECORD_DUPLICATE_KEY;
+      break;
     }
-    scanner->destroy();
-    delete rid;
   }
-
   return rc;
 }
 
@@ -588,6 +590,7 @@ RC Table::create_index(Trx *trx, const char *index_name, bool unique,
   if (rc != RC::SUCCESS) {
     // rollback
     delete index;
+    remove(index_file.c_str());
     LOG_ERROR("Failed to insert index to all records. table=%s, rc=%d:%s",
               name(), rc, strrc(rc));
     return rc;
@@ -641,6 +644,7 @@ class RecordUpdater {
 public:
   RecordUpdater(Table &table, Trx *trx) : table_(table), trx_(trx) {}
   RC update_record(Record *old_record) {
+    RC rc = RC::SUCCESS;
     // 拷贝old record和new record
     Record *old_rec = new Record();
     old_rec->rid = old_record->rid;
@@ -653,6 +657,42 @@ public:
     memcpy(old_rec->data, old_record->data, table_.table_meta_.record_size());
     memcpy(new_rec->data, old_record->data, table_.table_meta_.record_size());
     memcpy(new_rec->data + field_meta_.offset(), value_, field_meta_.len());
+
+    // 检查unique完整性约束
+    for (auto index : table_.indexes_) {
+      auto index_meta = index->index_meta();
+      if (index_meta.is_unique()) {
+        // 判断更新字段是否在索引字段之中
+        bool exist = false;
+        for (int i = 0; i < index_meta.field_num(); i++) {
+          if (strcmp(index_meta.field(i), field_meta_.name()) == 0) {
+            exist = true;
+            break;
+          }
+        }
+        if (exist) {
+          // 从新record中提取索引字段(key)
+          char value[index->attr_length()];
+          memset(value, 0, sizeof value);
+          index->get_index_column(new_rec->data, value);
+
+          // 判断插入B+树的key是否存在
+          auto scanner = index->create_scanner(EQUAL_TO, value);
+          RID *rid = new RID();
+          rc = scanner->next_entry(rid);
+          delete rid;
+          if (rc == RC::SUCCESS) {
+            rc = RC::RECORD_DUPLICATE_KEY;
+            LOG_ERROR("Failed to update duplicate key for index %s",
+                      index_meta.name());
+            scanner->destroy();
+            return rc;
+          }
+          scanner->destroy();
+        }
+      }
+    }
+
     UpdateTrxEvent *event =
         new UpdateTrxEvent(&table_, old_rec, new_rec, field_meta_);
     trx_->pending(event);
@@ -730,10 +770,9 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   return rc;
 }
 
-RC Table::commit_update(Record *old_record, Record *new_record,
-                        const FieldMeta &update_field) {
+RC Table::commit_update(Record *old_record, Record *new_record) {
   RC rc = update_entry_of_indexes(old_record->data, new_record->data,
-                                  old_record->rid, update_field);
+                                  old_record->rid);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to update indexes of record(rid=%d.%d). rc=%d:%s",
               old_record->rid.page_num, old_record->rid.slot_num, rc,
@@ -743,10 +782,9 @@ RC Table::commit_update(Record *old_record, Record *new_record,
   return record_handler_->update_record(new_record);
 }
 
-RC Table::rollback_update(Record *old_record, Record *new_record,
-                          const FieldMeta &update_field) {
+RC Table::rollback_update(Record *old_record, Record *new_record) {
   RC rc = update_entry_of_indexes(new_record->data, old_record->data,
-                                  new_record->rid, update_field);
+                                  new_record->rid);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to rollback for updating indexes of record(rid=%d.%d). "
               "rc=%d:%s",
@@ -758,42 +796,9 @@ RC Table::rollback_update(Record *old_record, Record *new_record,
 }
 
 RC Table::update_entry_of_indexes(const char *old_rec, const char *new_rec,
-                                  const RID &rid,
-                                  const FieldMeta &update_field) {
+                                  const RID &rid) {
   RC rc = RC::SUCCESS;
   for (Index *index : indexes_) {
-    auto index_meta = index->index_meta();
-    // TODO: 是否只有commit时才检测完整性？
-    if (index_meta.is_unique()) {
-      // 判断更新字段是否在索引字段之中
-      bool exist = false;
-      for (int i = 0; i < index_meta.field_num(); i++) {
-        if (strcmp(index_meta.field(i), update_field.name()) == 0) {
-          exist = true;
-          break;
-        }
-      }
-      if (exist) {
-        // 根据插入record构造search key
-        char value[index->attr_length()];
-        memset(value, 0, sizeof value);
-        index->get_index_column(new_rec, value);
-
-        // 判断插入索引的search key是否存在
-        auto scanner = index->create_scanner(EQUAL_TO, value);
-        RID *rid = new RID();
-        rc = scanner->next_entry(rid);
-        delete rid;
-        if (rc == RC::SUCCESS) {
-          rc = RC::RECORD_DUPLICATE_KEY;
-          LOG_ERROR("Failed to update duplicate key for index %s",
-                    index_meta.name());
-          scanner->destroy();
-          return rc;
-        }
-        scanner->destroy();
-      }
-    }
     // Update某个索引字段可以看作：先删除再插入
     rc = index->delete_entry(old_rec, &rid);
     if (rc != RC::SUCCESS) {

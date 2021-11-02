@@ -61,12 +61,8 @@ public:
   virtual ~UpdateTrxEvent();
 
   const char *get_table_name() { return table_->name(); }
-  RC commit() {
-    return table_->commit_update(old_record_, new_record_, field_meta_);
-  }
-  RC rollback() {
-    return table_->rollback_update(old_record_, new_record_, field_meta_);
-  }
+  RC commit() { return table_->commit_update(old_record_, new_record_); }
+  RC rollback() { return table_->rollback_update(old_record_, new_record_); }
 
 private:
   Table *table_;
