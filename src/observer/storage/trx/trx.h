@@ -74,7 +74,7 @@ public:
       new_null_ = false;
       new_value_ = new char[len_];
       char *new_record = (char *)(new_value->data);
-      memcpy(new_value_, new_record + offset_, len_);
+      memcpy(new_value_, new_record, len_);
     }
   }
   virtual ~UpdateTrxEvent();

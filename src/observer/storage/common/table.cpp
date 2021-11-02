@@ -647,6 +647,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
     LOG_WARN("Type dismatching.");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
+
   RecordUpdater updater(*this, trx);
   updater.set_update_info(value, field_meta->offset(), field_meta->len());
   rc = scan_record(trx, &filter, -1, &updater, record_reader_update_adapter);
