@@ -598,7 +598,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
     }
   }
 
-  LOG_INFO("point 3");
   // 3. 重读一边select clasue得到最后的输出范式(out_schema)做映射
   // （程序运行到这里不会有select clause语义错误）
   TupleSchema out_schema;
@@ -630,7 +629,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
     delete tmp_node.second;
   }
   session_event->set_response(ss.str());
-  LOG_INFO("%s", strrc(rc));
+
   return rc;
 }
 
