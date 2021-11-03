@@ -9,12 +9,17 @@
 Trx::Trx() {}
 Trx::~Trx() {}
 
-InsertTrxEvent::~InsertTrxEvent() { delete new_record_; }
-DeleteTrxEvent::~DeleteTrxEvent() { delete old_record_; }
-UpdateTrxEvent::~UpdateTrxEvent() {
+InsertTrxEvent::~InsertTrxEvent() {
+  delete[] new_record_->data;
+  delete new_record_;
+}
+DeleteTrxEvent::~DeleteTrxEvent() {
+  delete[] old_record_->data;
   delete old_record_;
-  delete new_value_;
-  delete old_value_;
+}
+UpdateTrxEvent::~UpdateTrxEvent() {
+  delete[] old_record_->data;
+  delete old_record_;
 }
 
 const char *Trx::trx_field_name() { return "__trx"; }
@@ -43,7 +48,7 @@ RC Trx::commit() {
   int size = trx_events.size();
   while (cur_event_index < size) {
     TrxEvent *trx_event = trx_events[cur_event_index];
-    trx_event->commit();
+    rc = trx_event->commit();
 
     cur_event_index++;
     if (rc != RC::SUCCESS) {
@@ -64,7 +69,7 @@ void Trx::rollback() {
   TrxEvent *trx_event;
   while (cur_event_index >= 0) {
     trx_event = trx_events[cur_event_index];
-    trx_event->rollback();
+    rc = trx_event->rollback();
 
     if (rc != SUCCESS) {
       LOG_PANIC("Failed to rollback, table=%s, rid=%d, rc=%d:%s",

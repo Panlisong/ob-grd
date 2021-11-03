@@ -23,6 +23,8 @@ See the Mulan PSL v2 for more details. */
 #include <unordered_map>
 
 class SessionEvent;
+typedef std::unordered_map<std::string, TupleSchema> RelAttrTable;
+typedef std::unordered_map<std::string, Table *> RelationTable;
 
 class ExecuteStage : public common::Stage {
 public:
@@ -41,10 +43,20 @@ protected:
                       common::CallbackContext *context) override;
 
   void handle_request(common::StageEvent *event);
-  RC resolve_select(const char *db, const Selects &selects,
-                    std::unordered_map<std::string, Table *> &relations,
-                    std::unordered_map<std::string, TupleSchema> &mini_schema);
-  RC do_select(const char *db, Query *sql, SessionEvent *session_event);
+
+  /**
+   * 先收集Select语句中出现的所有关系，建立RelationTable
+   * 关系名->Table Object
+   */
+  RC join_table_relations_init(const TableRef *ref);
+  RC relations_init(const Selects &selects);
+
+  RC resolve_join_table(TableRef *ref, RelationTable &cur);
+  RC resolve_condtions(RelationTable &outer, RelationTable &cur,
+                       const Condition conds[], size_t cond_num);
+  RC resolve_select(Selects &selects, RelationTable &relations);
+
+  RC do_select(Query *sql, SessionEvent *session_event);
   RC do_join_table(const TableRef *ref, Trx *trx, const Selects &selects,
                    std::unordered_map<std::string, SelectExeNode *> &nodes,
                    TupleSet &res);
@@ -53,6 +65,9 @@ protected:
 private:
   Stage *default_storage_stage_ = nullptr;
   Stage *mem_storage_stage_ = nullptr;
+  std::string cur_db_;
+  RelationTable relations_;
+  RelAttrTable mini_schema_;
 };
 
 #endif //__OBSERVER_SQL_EXECUTE_STAGE_H__

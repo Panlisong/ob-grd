@@ -20,7 +20,9 @@ See the Mulan PSL v2 for more details. */
 struct IndexFileHeader {
   int attr_length;
   int key_length;
-  AttrType attr_type;
+  AttrType attr_type[MAX_NUM];
+  int attr_lens[MAX_NUM];
+  int attr_num;
   PageNum root_page; // 初始时，root_page一定是1
   int node_num;
   int order;
@@ -55,7 +57,8 @@ public:
    * 此函数创建一个名为fileName的索引。
    * attrType描述被索引属性的类型，attrLength描述被索引属性的长度
    */
-  RC create(const char *file_name, AttrType attr_type, int attr_length);
+  RC create(const char *file_name, AttrType attr_type[], int attr_lens[],
+            int attr_num, int attr_length);
 
   /**
    * 打开名为fileName的索引文件。

@@ -525,7 +525,6 @@ RC RecordFileScanner::get_next_record(Record *rec) {
   }
 
   while (current_record.rid.page_num < page_count) {
-
     if (current_record.rid.page_num != record_page_handler_.get_page_num()) {
       record_page_handler_.deinit();
       ret = record_page_handler_.init(*disk_buffer_pool_, file_id_,

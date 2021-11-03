@@ -132,13 +132,13 @@ RC DefaultHandler::drop_table(const char *dbname, const char *relation_name) {
 
 RC DefaultHandler::create_index(Trx *trx, const char *dbname,
                                 const char *relation_name,
-                                const char *index_name,
-                                const char *attribute_name) {
+                                const char *index_name, bool unique,
+                                std::vector<std::string> &attrs) {
   Table *table = find_table(dbname, relation_name);
   if (nullptr == table) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
-  return table->create_index(trx, index_name, attribute_name);
+  return table->create_index(trx, index_name, unique, attrs);
 }
 
 RC DefaultHandler::drop_index(Trx *trx, const char *dbname,
@@ -175,17 +175,18 @@ RC DefaultHandler::delete_record(Trx *trx, const char *dbname,
 }
 
 RC DefaultHandler::update_records(Trx *trx, const char *dbname,
-                                 const char *relation_name,
-                                 const char *attribute_name, const Value *value,
-                                 int condition_num, const Condition *conditions,
-                                 int *updated_count) {
+                                  const char *relation_name,
+                                  const char *attribute_name,
+                                  const Value *value, int condition_num,
+                                  const Condition *conditions,
+                                  int *updated_count) {
   Table *table = find_table(dbname, relation_name);
   if (nullptr == table) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
   return table->update_records(trx, attribute_name, value, condition_num,
-                              conditions, updated_count);
+                               conditions, updated_count);
 }
 
 Db *DefaultHandler::find_db(const char *dbname) const {

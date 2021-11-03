@@ -66,6 +66,7 @@ DELI			 [\-\\/\.]
 [Ii][Nn][Dd][Ee][Xx]                  	 		     RETURN_TOKEN(INDEX);
 [Oo][Nn]								             RETURN_TOKEN(ON);
 (?i:in)									             RETURN_TOKEN(IN);
+(?i:unique)										 	 RETURN_TOKEN(UNIQUE);
 [Ss][Hh][Oo][Ww]                         			 RETURN_TOKEN(SHOW);
 [Ss][Yy][Nn][Cc]                         			 RETURN_TOKEN(SYNC);
 [Ss][Ee][Ll][Ee][Cc][Tt]                 			 RETURN_TOKEN(SELECT);
