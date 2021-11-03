@@ -202,9 +202,14 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
   } break;
   case SCF_CREATE_INDEX: {
     const CreateIndex &create_index = sql->sstr.create_index;
+
+    std::vector<std::string> attrs;
+    for (int i = create_index.attr_num - 1; i >= 0; i--) {
+      attrs.push_back(create_index.attribute_name[i]);
+    }
     rc = handler_->create_index(
         current_trx, current_db, create_index.relation_name,
-        create_index.index_name, create_index.attribute_name);
+        create_index.index_name, create_index.unique, attrs);
     snprintf(response, sizeof(response), "%s\n",
              rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
   } break;
@@ -267,6 +272,10 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
       current_trx->rollback();
     }
   }
+  if (rc != RC::SUCCESS) {
+    snprintf(response, sizeof(response), "FAILURE\n");
+  }
+
   if (rc != RC::SUCCESS) {
     snprintf(response, sizeof(response), "FAILURE\n");
   }

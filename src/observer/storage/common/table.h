@@ -62,7 +62,8 @@ public:
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context,
                  void (*record_reader)(const char *data, void *context));
 
-  RC create_index(Trx *trx, const char *index_name, const char *attribute_name);
+  RC create_index(Trx *trx, const char *index_name, bool unique,
+                  std::vector<std::string> &attrs);
 
 public:
   RC insert_records(Trx *trx, int inserted_count, int value_num[],
@@ -77,7 +78,7 @@ public:
   RC update_records(Trx *trx, const char *attribute_name, const Value *value,
                     int condition_num, const Condition conditions[],
                     int *updated_count);
-  RC commit_update(Record *record, bool new_null, char *new_value, int offset,
+ RC commit_update(Record *record, bool new_null, char *new_value, int offset,
                    int len);
   RC rollback_update(Record *record, bool old_null, char *old_value, int offset,
                      int len);
@@ -109,9 +110,11 @@ private:
   friend class RecordUpdater;
   friend class RecordDeleter;
 
-  RC insert_entry_of_indexes(const char *record, const RID &rid);
+  RC insert_entry_of_indexes(const Record *new_record);
   RC delete_entry_of_indexes(const char *record, const RID &rid,
                              bool error_on_not_exists);
+  RC update_entry_of_indexes(const char *old_rec, const char *new_rec,
+                             const RID &rid);
 
 private:
   RC make_record(int value_num, const Value *values, char *&record_out);

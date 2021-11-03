@@ -17,17 +17,26 @@ See the Mulan PSL v2 for more details. */
 BplusTreeIndex::~BplusTreeIndex() noexcept { close(); }
 
 RC BplusTreeIndex::create(const char *file_name, const IndexMeta &index_meta,
-                          const FieldMeta &field_meta) {
+                          const std::vector<FieldMeta> &field_metas) {
   if (inited_) {
     return RC::RECORD_OPENNED;
   }
 
-  RC rc = Index::init(index_meta, field_meta);
+  RC rc = Index::init(index_meta, field_metas);
   if (rc != RC::SUCCESS) {
     return rc;
   }
 
-  rc = index_handler_.create(file_name, field_meta.type(), field_meta.len());
+  AttrType types[field_metas.size()];
+  int lens[field_metas.size()];
+  attr_length_ = 0;
+  for (size_t i = 0; i < field_metas.size(); i++) {
+    types[i] = field_metas.at(i).type();
+    lens[i] = field_metas.at(i).len();
+    attr_length_ += lens[i];
+  }
+  rc = index_handler_.create(file_name, types, lens, field_metas.size(),
+                             attr_length_);
   if (RC::SUCCESS == rc) {
     inited_ = true;
   }
@@ -35,11 +44,11 @@ RC BplusTreeIndex::create(const char *file_name, const IndexMeta &index_meta,
 }
 
 RC BplusTreeIndex::open(const char *file_name, const IndexMeta &index_meta,
-                        const FieldMeta &field_meta) {
+                        const std::vector<FieldMeta> &field_metas) {
   if (inited_) {
     return RC::RECORD_OPENNED;
   }
-  RC rc = Index::init(index_meta, field_meta);
+  RC rc = Index::init(index_meta, field_metas);
   if (rc != RC::SUCCESS) {
     return rc;
   }
@@ -59,12 +68,29 @@ RC BplusTreeIndex::close() {
   return RC::SUCCESS;
 }
 
+void BplusTreeIndex::get_index_column(const char *record, char *values) {
+  int next = 0;
+  for (size_t i = 0; i < field_metas_.size(); i++) {
+    auto field = field_metas_[i];
+    memcpy(values + next, record + field.offset(), field.len());
+    next += field.len();
+  }
+}
+
 RC BplusTreeIndex::insert_entry(const char *record, const RID *rid) {
-  return index_handler_.insert_entry(record + field_meta_.offset(), rid);
+  // 从record中提取索引列
+  char values[attr_length_];
+  memset(values, 0, sizeof values);
+  get_index_column(record, values);
+  return index_handler_.insert_entry(values, rid);
 }
 
 RC BplusTreeIndex::delete_entry(const char *record, const RID *rid) {
-  return index_handler_.delete_entry(record + field_meta_.offset(), rid);
+  // 从record中提取索引列
+  char values[attr_length_];
+  memset(values, 0, sizeof values);
+  get_index_column(record, values);
+  return index_handler_.delete_entry(values, rid);
 }
 
 IndexScanner *BplusTreeIndex::create_scanner(CompOp comp_op,

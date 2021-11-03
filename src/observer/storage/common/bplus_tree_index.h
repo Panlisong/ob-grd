@@ -23,9 +23,9 @@ public:
   virtual ~BplusTreeIndex() noexcept;
 
   RC create(const char *file_name, const IndexMeta &index_meta,
-            const FieldMeta &field_meta);
+            const std::vector<FieldMeta> &field_metas);
   RC open(const char *file_name, const IndexMeta &index_meta,
-          const FieldMeta &field_meta);
+          const std::vector<FieldMeta> &field_metas);
   RC close();
 
   RC insert_entry(const char *record, const RID *rid) override;
@@ -34,6 +34,8 @@ public:
   IndexScanner *create_scanner(CompOp comp_op, const char *value) override;
 
   RC sync() override;
+
+  void get_index_column(const char *record, char *values) override;
 
 private:
   bool inited_ = false;

@@ -56,8 +56,9 @@ private:
 class UpdateTrxEvent : public TrxEvent {
 public:
   UpdateTrxEvent(Table *table, Record *old_record, const Value *new_value,
-                 int offset, int len)
-      : table_(table), old_record_(old_record), offset_(offset), len_(len) {
+                 int offset, int len, const FieldMeta &field_meta)
+      : table_(table), old_record_(old_record), offset_(offset), len_(len),
+        field_meta_(field_meta) {
     int column = table_->find_column_by_offset(offset);
     int null_field_offset = table->null_field_offset();
     int32_t *old_null_field = (int32_t *)(old_record + null_field_offset);
@@ -98,6 +99,7 @@ private:
   bool new_null_;
   int offset_;
   int len_;
+  FieldMeta field_meta_;
 };
 
 class Trx {
@@ -121,6 +123,7 @@ private:
   int32_t trx_id_ = 0;
   std::vector<TrxEvent *> trx_events;
   int cur_event_index = 0;
+  int last_event_index = 0;
 };
 
 #endif // __OBSERVER_STORAGE_TRX_TRX_H_

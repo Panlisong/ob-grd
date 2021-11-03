@@ -36,8 +36,8 @@ RC BplusTreeHandler::sync() {
   return disk_buffer_pool_->flush_all_pages(file_id_);
 }
 
-RC BplusTreeHandler::create(const char *file_name, AttrType attr_type,
-                            int attr_length) {
+RC BplusTreeHandler::create(const char *file_name, AttrType attr_type[],
+                            int attr_lens[], int attr_num, int attr_length) {
   BPPageHandle page_handle;
   IndexNode *root;
   char *pdata;
@@ -78,7 +78,11 @@ RC BplusTreeHandler::create(const char *file_name, AttrType attr_type,
   IndexFileHeader *file_header = (IndexFileHeader *)pdata;
   file_header->attr_length = attr_length;
   file_header->key_length = attr_length + sizeof(RID);
-  file_header->attr_type = attr_type;
+  for (int i = 0; i < attr_num; i++) {
+    file_header->attr_type[i] = attr_type[i];
+    file_header->attr_lens[i] = attr_lens[i];
+  }
+  file_header->attr_num = attr_num;
   file_header->node_num = 1;
   file_header->order =
       ((int)BP_PAGE_DATA_SIZE - sizeof(IndexFileHeader) - sizeof(IndexNode)) /
@@ -164,44 +168,55 @@ static int CmpRid(const RID *rid1, const RID *rid2) {
     return -1;
   return 0;
 }
-int CompareKey(const char *pdata, const char *pkey, AttrType attr_type,
-               int attr_length) { // 简化
+int CompareKey(const char *pdata, const char *pkey, AttrType attr_type[],
+               int attr_lens[], int attr_num) { // 简化
   int i1, i2;
   float f1, f2;
   const char *s1, *s2;
-  switch (attr_type) {
-  case INTS: {
-    i1 = *(int *)pdata;
-    i2 = *(int *)pkey;
-    if (i1 > i2)
-      return 1;
-    if (i1 < i2)
-      return -1;
-    if (i1 == i2)
-      return 0;
-  } break;
-  case FLOATS: {
-    f1 = *(float *)pdata;
-    f2 = *(float *)pkey;
-    return float_compare(f1, f2);
-  } break;
-  case CHARS: {
-    s1 = pdata;
-    s2 = pkey;
-    return strncmp(s1, s2, attr_length);
-  } break;
-  default: {
-    LOG_PANIC("Unknown attr type: %d", attr_type);
+  time_t t1, t2;
+  int flag = -2;
+  for (int i = 0; i < attr_num; i++) {
+    switch (attr_type[i]) {
+    case INTS: {
+      i1 = *(int *)pdata;
+      i2 = *(int *)pkey;
+      flag = i1 == i2 ? 0 : (i1 > i2 ? 1 : -1);
+    } break;
+    case FLOATS: {
+      f1 = *(float *)pdata;
+      f2 = *(float *)pkey;
+      flag = float_compare(f1, f2);
+    } break;
+    case CHARS: {
+      s1 = pdata;
+      s2 = pkey;
+      flag = strncmp(s1, s2, attr_lens[i]);
+    } break;
+    case DATES: {
+      t1 = *(time_t *)pdata;
+      t2 = *(time_t *)pkey;
+      flag = t1 == t2 ? 0 : (t1 > t2 ? 1 : -1);
+    } break;
+    default: {
+      LOG_PANIC("Unknown attr type: %d", attr_type[i]);
+    }
+    }
+    if (flag != 0) {
+      return flag;
+    }
+    // next column
+    pdata += attr_lens[i];
+    pkey += attr_lens[i];
   }
-  }
-  return -2; // This means error happens
+  return flag; // This means error happens
 }
-int CmpKey(AttrType attr_type, int attr_length, const char *pdata,
-           const char *pkey) {
-  int result = CompareKey(pdata, pkey, attr_type, attr_length);
+int CmpKey(AttrType attr_type[], int attr_lens[], int attr_num, int attr_length,
+           const char *pdata, const char *pkey) {
+  int result = CompareKey(pdata, pkey, attr_type, attr_lens, attr_num);
   if (0 != result) {
     return result;
   }
+
   RID *rid1 = (RID *)(pdata + attr_length);
   RID *rid2 = (RID *)(pkey + attr_length);
   return CmpRid(rid1, rid2);
@@ -226,7 +241,8 @@ RC BplusTreeHandler::find_leaf(const char *pkey, PageNum *leaf_page) {
   node = get_index_node(pdata);
   while (0 == node->is_leaf) {
     for (i = 0; i < node->key_num; i++) {
-      tmp = CmpKey(file_header_.attr_type, file_header_.attr_length, pkey,
+      tmp = CmpKey(file_header_.attr_type, file_header_.attr_lens,
+                   file_header_.attr_num, file_header_.attr_length, pkey,
                    node->keys + i * file_header_.key_length);
       if (tmp < 0)
         break;
@@ -277,7 +293,8 @@ RC BplusTreeHandler::insert_into_leaf(PageNum leaf_page, const char *pkey,
   node = get_index_node(pdata);
 
   for (insert_pos = 0; insert_pos < node->key_num; insert_pos++) {
-    tmp = CmpKey(file_header_.attr_type, file_header_.attr_length, pkey,
+    tmp = CmpKey(file_header_.attr_type, file_header_.attr_lens,
+                 file_header_.attr_num, file_header_.attr_length, pkey,
                  node->keys + insert_pos * file_header_.key_length);
     if (tmp == 0) {
       return RC::RECORD_DUPLICATE_KEY;
@@ -404,7 +421,8 @@ RC BplusTreeHandler::insert_into_leaf_after_split(PageNum leaf_page,
   }
 
   for (insert_pos = 0; insert_pos < leaf->key_num; insert_pos++) {
-    tmp = CmpKey(file_header_.attr_type, file_header_.attr_length, pkey,
+    tmp = CmpKey(file_header_.attr_type, file_header_.attr_lens,
+                 file_header_.attr_num, file_header_.attr_length, pkey,
                  leaf->keys + insert_pos * file_header_.key_length);
     if (tmp < 0)
       break;
@@ -929,7 +947,8 @@ RC BplusTreeHandler::get_entry(const char *pkey, RID *rid) {
 
   leaf = get_index_node(pdata);
   for (i = 0; i < leaf->key_num; i++) {
-    if (CmpKey(file_header_.attr_type, file_header_.attr_length, key,
+    if (CmpKey(file_header_.attr_type, file_header_.attr_lens,
+               file_header_.attr_num, file_header_.attr_length, key,
                leaf->keys + (i * file_header_.key_length)) == 0) {
       memcpy(rid, leaf->rids + i, sizeof(RID));
       free(key);
@@ -961,7 +980,8 @@ RC BplusTreeHandler::delete_entry_from_node(PageNum node_page,
   node = get_index_node(pdata);
 
   for (delete_index = 0; delete_index < node->key_num; delete_index++) {
-    tmp = CmpKey(file_header_.attr_type, file_header_.attr_length, pkey,
+    tmp = CmpKey(file_header_.attr_type, file_header_.attr_lens,
+                 file_header_.attr_num, file_header_.attr_length, pkey,
                  node->keys + delete_index * file_header_.key_length);
     if (tmp == 0)
       break;
@@ -1651,7 +1671,8 @@ RC BplusTreeHandler::find_first_index_satisfied(CompOp compop, const char *key,
     node = get_index_node(pdata);
     for (i = 0; i < node->key_num; i++) {
       tmp = CompareKey(node->keys + i * file_header_.key_length, key,
-                       file_header_.attr_type, file_header_.attr_length);
+                       file_header_.attr_type, file_header_.attr_lens,
+                       file_header_.attr_num);
       if (compop == EQUAL_TO || compop == GREAT_EQUAL) {
         if (tmp >= 0) {
           rc = disk_buffer_pool_->get_page_num(&page_handle, page_num);
@@ -1880,128 +1901,156 @@ RC BplusTreeScanner::get_next_idx_in_memory(RID *rid) {
   return RC::RECORD_NO_MORE_IDX_IN_MEM;
 }
 bool BplusTreeScanner::satisfy_condition(const char *pkey) {
+  const char *value = value_;
   int i1 = 0, i2 = 0;
   float f1 = 0, f2 = 0;
   const char *s1 = nullptr, *s2 = nullptr;
+  time_t t1 = 0, t2 = 0;
 
   if (comp_op_ == NO_OP) {
     return true;
   }
 
-  AttrType attr_type = index_handler_.file_header_.attr_type;
-  switch (attr_type) {
-  case INTS:
-    i1 = *(int *)pkey;
-    i2 = *(int *)value_;
-    break;
-  case FLOATS:
-    f1 = *(float *)pkey;
-    f2 = *(float *)value_;
-    break;
-  case CHARS:
-    s1 = pkey;
-    s2 = value_;
-    break;
-  default:
-    LOG_PANIC("Unknown attr type: %d", attr_type);
-  }
-
   bool flag = false;
+  bool is_equal = false;
+  for (int i = 0; i < index_handler_.file_header_.attr_num; i++) {
+    AttrType attr_type = index_handler_.file_header_.attr_type[i];
+    int attr_length = index_handler_.file_header_.attr_lens[i];
+    switch (attr_type) {
+    case INTS:
+      i1 = *(int *)pkey;
+      i2 = *(int *)value;
+      is_equal = (i1 == i2);
+      break;
+    case FLOATS:
+      f1 = *(float *)pkey;
+      f2 = *(float *)value;
+      is_equal = 0 == float_compare(f1, f2);
+      break;
+    case CHARS:
+      s1 = pkey;
+      s2 = value;
+      is_equal = (strncmp(s1, s2, attr_length) == 0);
+      break;
+    case DATES:
+      t1 = *(time_t *)pkey;
+      t2 = *(time_t *)value;
+      is_equal = t1 == t2;
+      break;
+    default:
+      LOG_PANIC("Unknown attr type: %d", attr_type);
+    }
 
-  int attr_length = index_handler_.file_header_.attr_length;
-  switch (comp_op_) {
-  case EQUAL_TO:
-    switch (attr_type) {
-    case INTS:
-      flag = (i1 == i2);
+    switch (comp_op_) {
+    case EQUAL_TO:
+      flag = is_equal;
+      if (!is_equal) {
+        // 有一个不等于，则整个key不同
+        return false;
+      }
       break;
-    case FLOATS:
-      flag = 0 == float_compare(f1, f2);
+    case LESS_THAN:
+      switch (attr_type) {
+      case INTS:
+        flag = (i1 < i2);
+        break;
+      case FLOATS:
+        flag = (f1 < f2);
+        break;
+      case CHARS:
+        flag = (strncmp(s1, s2, attr_length) < 0);
+        break;
+      case DATES:
+        flag = (t1 < t2);
+        break;
+      default:
+        LOG_PANIC("Unknown attr type: %d", attr_type);
+      }
+      if (!is_equal) {
+        // 只要当前列不相等，就能判断答案
+        return flag;
+      }
       break;
-    case CHARS:
-      flag = (strncmp(s1, s2, attr_length) == 0);
+    case GREAT_THAN:
+      switch (attr_type) {
+      case INTS:
+        flag = (i1 > i2);
+        break;
+      case FLOATS:
+        flag = (f1 > f2);
+        break;
+      case CHARS:
+        flag = (strncmp(s1, s2, attr_length) > 0);
+        break;
+      case DATES:
+        flag = (t1 > t2);
+        break;
+      default:
+        LOG_PANIC("Unknown attr type: %d", attr_type);
+      }
+      if (!is_equal) {
+        // 只要当前列不相等，就能判断答案
+        return flag;
+      }
+      break;
+    case LESS_EQUAL:
+      switch (attr_type) {
+      case INTS:
+        flag = (i1 <= i2);
+        break;
+      case FLOATS:
+        flag = (f1 <= f2);
+        break;
+      case CHARS:
+        flag = (strncmp(s1, s2, attr_length) <= 0);
+        break;
+      case DATES:
+        flag = (t1 <= t2);
+      default:
+        LOG_PANIC("Unknown attr type: %d", attr_type);
+      }
+      if (!is_equal) {
+        // 只要当前列不相等，就能判断答案
+        // 否则待定
+        return flag;
+      }
+      break;
+    case GREAT_EQUAL:
+      switch (attr_type) {
+      case INTS:
+        flag = (i1 >= i2);
+        break;
+      case FLOATS:
+        flag = (f1 >= f2);
+        break;
+      case CHARS:
+        flag = (strncmp(s1, s2, attr_length) >= 0);
+        break;
+      case DATES:
+        flag = (t1 >= t2);
+        break;
+      default:
+        LOG_PANIC("Unknown attr type: %d", attr_type);
+      }
+      break;
+      if (!is_equal) {
+        // 只要当前列不相等，就能判断答案
+        // 否则待定
+        return flag;
+      }
+    case NOT_EQUAL:
+      flag = !is_equal;
+      if (!is_equal) {
+        // 只要当前列不相等，则整个key不想等
+        return true;
+      }
       break;
     default:
-      LOG_PANIC("Unknown attr type: %d", attr_type);
+      LOG_PANIC("Unknown comp op: %d", comp_op_);
     }
-    break;
-  case LESS_THAN:
-    switch (attr_type) {
-    case INTS:
-      flag = (i1 < i2);
-      break;
-    case FLOATS:
-      flag = (f1 < f2);
-      break;
-    case CHARS:
-      flag = (strncmp(s1, s2, attr_length) < 0);
-      break;
-    default:
-      LOG_PANIC("Unknown attr type: %d", attr_type);
-    }
-    break;
-  case GREAT_THAN:
-    switch (attr_type) {
-    case INTS:
-      flag = (i1 > i2);
-      break;
-    case FLOATS:
-      flag = (f1 > f2);
-      break;
-    case CHARS:
-      flag = (strncmp(s1, s2, attr_length) > 0);
-      break;
-    default:
-      LOG_PANIC("Unknown attr type: %d", attr_type);
-    }
-    break;
-  case LESS_EQUAL:
-    switch (attr_type) {
-    case INTS:
-      flag = (i1 <= i2);
-      break;
-    case FLOATS:
-      flag = (f1 <= f2);
-      break;
-    case CHARS:
-      flag = (strncmp(s1, s2, attr_length) <= 0);
-      break;
-    default:
-      LOG_PANIC("Unknown attr type: %d", attr_type);
-    }
-    break;
-  case GREAT_EQUAL:
-    switch (attr_type) {
-    case INTS:
-      flag = (i1 >= i2);
-      break;
-    case FLOATS:
-      flag = (f1 >= f2);
-      break;
-    case CHARS:
-      flag = (strncmp(s1, s2, attr_length) >= 0);
-      break;
-    default:
-      LOG_PANIC("Unknown attr type: %d", attr_type);
-    }
-    break;
-  case NOT_EQUAL:
-    switch (attr_type) {
-    case INTS:
-      flag = (i1 != i2);
-      break;
-    case FLOATS:
-      flag = 0 != float_compare(f1, f2);
-      break;
-    case CHARS:
-      flag = (strncmp(s1, s2, attr_length) != 0);
-      break;
-    default:
-      LOG_PANIC("Unknown attr type: %d", attr_type);
-    }
-    break;
-  default:
-    LOG_PANIC("Unknown comp op: %d", comp_op_);
+    // next column
+    pkey += index_handler_.file_header_.attr_lens[i];
+    value += index_handler_.file_header_.attr_lens[i];
   }
   return flag;
 }
