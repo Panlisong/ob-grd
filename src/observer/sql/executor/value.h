@@ -94,7 +94,7 @@ public:
   }
 
   int compare(const TupleValue &other) const override {
-    if (is_null() == other.is_null()) {
+    if (is_null() && other.is_null()) {
       return 0;
     }
     const FloatValue &float_other = (const FloatValue &)other;
@@ -132,7 +132,7 @@ public:
   }
 
   int compare(const TupleValue &other) const override {
-    if (is_null() == other.is_null()) {
+    if (is_null() && other.is_null()) {
       return 0;
     }
     const StringValue &string_other = (const StringValue &)other;
@@ -167,7 +167,7 @@ public:
   }
 
   int compare(const TupleValue &other) const override {
-    if (is_null() == other.is_null()) {
+    if (is_null() && other.is_null()) {
       return 0;
     }
     const DateValue &timestamp_other = (const DateValue &)other;

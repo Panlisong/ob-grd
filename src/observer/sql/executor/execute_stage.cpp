@@ -440,6 +440,7 @@ RC ExecuteStage::resolve_select(
       // normal table reference
       Table *table = DefaultHandler::get_default().find_table(db, table_name);
       if (table == nullptr) {
+        LOG_INFO("%s fuck", table_name);
         return RC::SCHEMA_TABLE_NOT_EXIST;
       }
       relations[table_name] = table;
@@ -525,7 +526,6 @@ RC ExecuteStage::do_join_table(
 // 校验部分也可以放在resolve，不过跟execution放一起也没有关系
 RC ExecuteStage::do_select(const char *db, Query *sql,
                            SessionEvent *session_event) {
-
   RC rc = RC::SUCCESS;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
@@ -543,7 +543,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   // condition部分已在resolve_select中顺便收集
   get_mini_schema(relations, mini_schema, selects);
 
-  LOG_INFO("point 1");
   // 1.1 生成所有出现relation的最简select执行节点
   std::unordered_map<std::string, SelectExeNode *> select_nodes;
   for (auto &p : relations) {
@@ -585,8 +584,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
       tuple_sets.push_back(std::move(tuple_set));
     }
   }
-
-  LOG_INFO("point 2");
 
   std::stringstream ss;
   TupleSet tuple_set = std::move(tuple_sets[0]);
