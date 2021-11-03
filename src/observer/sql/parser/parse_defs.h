@@ -101,6 +101,7 @@ typedef struct _ConditionExpr {
  * PS: 其余情况均非法
  */
 typedef struct _Condition {
+  int is_used = 0; // 生成Filter时避免重复选取
   int is_subquery;
   int is_comOp;
   MembershipOp memOp;

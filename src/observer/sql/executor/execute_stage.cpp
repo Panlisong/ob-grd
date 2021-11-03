@@ -248,16 +248,15 @@ static bool match_field(Table *table, const char *field_name) {
 }
 
 // 用于检查SelectExpr
-static RC
-check_select_expr(const SelectExpr *expr,
-                  const std::unordered_map<std::string, Table *> &relations) {
+static RC check_select_expr(SelectExpr *expr, RelationTable &outer,
+                            RelationTable &cur) {
   RC rc = RC::SUCCESS;
   if (expr->has_subexpr) {
-    rc = check_select_expr(expr->left, relations);
+    rc = check_select_expr(expr->left, outer, cur);
     if (rc != RC::SUCCESS) {
       return rc;
     }
-    rc = check_select_expr(expr->right, relations);
+    rc = check_select_expr(expr->right, outer, cur);
     if (rc != RC::SUCCESS) {
       return rc;
     }
@@ -265,11 +264,11 @@ check_select_expr(const SelectExpr *expr,
   }
 
   if (expr->is_attr) {
-    bool multi_flag = relations.size() > 1;
+    bool multi_flag = cur.size() > 1;
     RelAttr *attr = expr->attr;
     const char *table_name = attr->relation_name;
     const char *field_name = attr->attribute_name;
-    Table *table = relations.begin()->second;
+    Table *table = cur.begin()->second;
     if (multi_flag) {
       // 多表显式写出表名
       if (table_name == nullptr) {
@@ -279,12 +278,20 @@ check_select_expr(const SelectExpr *expr,
     }
     // 如果表名显式出现，一定要存在
     if (table_name != nullptr) {
-      auto res = relations.find(table_name);
-      if (res == relations.end()) {
-        LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
-        return RC::SCHEMA_TABLE_NOT_EXIST;
+      auto res = cur.find(table_name);
+      auto outer_res = outer.find(table_name);
+      if (res == cur.end()) {
+        if (outer_res == outer.end()) {
+          LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
+          return RC::SCHEMA_TABLE_NOT_EXIST;
+        } else {
+          // TODO：将上文信息补充到from clause
+          // cur[table_name] = outer[table_name];
+          table = outer_res->second;
+        }
+      } else {
+        table = res->second;
       }
-      table = res->second;
     } else {
       // 为单表情况补充表名信息，方便最后的映射
       attr->attribute_name = strdup(table->name());
@@ -307,16 +314,15 @@ check_select_expr(const SelectExpr *expr,
   return rc;
 }
 
-static RC
-check_select_clause(const std::unordered_map<std::string, Table *> &relations,
-                    const Selects &selects) {
+RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
+                                       RelationTable &cur) {
   RC rc = RC::SUCCESS;
   int single_star = 0;
   bool error = false;
 
   // 1. 检查 '*' 是否是否使用正确以及普通列名用法
   for (int i = selects.expr_num - 1; i >= 0; i--) {
-    const SelectExpr *expr = selects.exprs[i];
+    SelectExpr *expr = selects.exprs[i];
     if (expr->has_subexpr == 1) {
       continue;
     }
@@ -346,17 +352,23 @@ check_select_clause(const std::unordered_map<std::string, Table *> &relations,
         continue;
       }
       // 'T.*'只需检查T是否存在
-      auto res = relations.find(table_name);
-      if (res == relations.end()) {
-        error = true;
-        LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
-        break;
+      auto res = cur.find(table_name);
+      auto outer_res = outer.find(table_name);
+      if (res == cur.end()) {
+        if (outer_res == outer.end()) {
+          error = true;
+          LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
+          break;
+        } else {
+          // TODO：将上文信息补充到from clause
+          // cur[table_name] = outer[table_name];
+        }
       }
     }
 
     // (3) 'T.A' 或 'A'
     if (!is_star) {
-      check_select_expr(expr, relations);
+      check_select_expr(expr, outer, cur);
     }
   }
 
@@ -365,13 +377,13 @@ check_select_clause(const std::unordered_map<std::string, Table *> &relations,
   }
 
   for (int i = selects.expr_num - 1; i >= 0; i--) {
-    const SelectExpr *expr = selects.exprs[i];
+    SelectExpr *expr = selects.exprs[i];
     if (expr->has_subexpr == 0) {
       continue;
     }
     // 语法层面不会出现：
     // 'T.*' 或 '*' 作为运算的操作数
-    rc = check_select_expr(expr, relations);
+    rc = check_select_expr(expr, outer, cur);
     if (rc != RC::SUCCESS) {
       return rc;
     }
@@ -467,7 +479,20 @@ RC ExecuteStage::resolve_condtions(RelationTable &outer, RelationTable &cur,
 }
 
 /////////////////////////////////////////////////////////////////////////////
-RC ExecuteStage::resolve_join_table(TableRef *ref, RelationTable &cur) {}
+RC ExecuteStage::resolve_join_table(TableRef *ref, RelationTable &outer,
+                                    RelationTable &cur) {
+  RC rc = RC::SUCCESS;
+  if (ref->child == nullptr) {
+    cur[ref->relation_name] = relations_[ref->relation_name];
+    return rc;
+  }
+  // 递归地处理左节点
+  resolve_join_table(ref->child, outer, cur);
+  // 右节点加入本层RelationTable
+  cur[ref->relation_name] = relations_[ref->relation_name];
+
+  return resolve_condtions(outer, cur, ref->conditions, ref->cond_num);
+}
 
 /////////////////////////////////////////////////////////////////////////////
 RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
@@ -478,19 +503,19 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
     TableRef *ref = selects.references[i];
     const char *table_name = ref->relation_name;
     if (ref->is_join) {
-      resolve_join_table(ref, cur);
+      resolve_join_table(ref, outer, cur);
     } else {
       cur[table_name] = relations_[table_name];
     }
   }
 
-  // 2. 优先检查condition，必要时候补充上文信息到from clause
+  // 2. 检查condition，必要时候补充上文信息到from clause
   // ConditionFilter中有类型转换和检查，这里不用做
   rc = resolve_condtions(outer, cur, selects.conditions, selects.cond_num);
-  // 3. 检查 select clause
+  // 3. 检查 select clause，必要时补充上文信息到from clause
   // 属性名：多表必须T.A，T.*；单表A, *，单表情况下不允许多个*
   // 聚合函数参数：另有规定，例如AVG()不能测日期和字符串
-  return check_select_clause(cur, selects);
+  return resolve_select_clause(selects, outer, cur);
 }
 
 static void

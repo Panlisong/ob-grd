@@ -51,7 +51,10 @@ protected:
   RC join_table_relations_init(const TableRef *ref);
   RC relations_init(const Selects &selects);
 
-  RC resolve_join_table(TableRef *ref, RelationTable &cur);
+  RC resolve_select_clause(Selects &selects, RelationTable &outer,
+                           RelationTable &cur);
+  RC resolve_join_table(TableRef *ref, RelationTable &outer,
+                        RelationTable &cur);
   RC resolve_condtions(RelationTable &outer, RelationTable &cur,
                        const Condition conds[], size_t cond_num);
   RC resolve_select(Selects &selects, RelationTable &relations);
@@ -67,7 +70,6 @@ private:
   Stage *mem_storage_stage_ = nullptr;
   std::string cur_db_;
   RelationTable relations_;
-  RelAttrTable mini_schema_;
 };
 
 #endif //__OBSERVER_SQL_EXECUTE_STAGE_H__
