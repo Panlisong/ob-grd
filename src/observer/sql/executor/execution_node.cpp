@@ -183,7 +183,7 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
     for (size_t j = 0; j < out_schema_.fields().size(); j++) {
       const TupleField &field = out_schema_.field(j);
       int column = in_.get_schema().index_of_field(field.table_name(),
-                                                           field.field_name());
+                                                   field.field_name());
       switch (field.func()) {
       case AVG_FUNC: {
         // 上面的初始化确保AVG列一定为float
@@ -206,7 +206,7 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
         if (value.is_null()) {
           continue;
         }
-        if (next.get(column).compare(cur.get(j)) > 0) {
+        if (next.get(column).compare(value) > 0) {
           tmp.add(next.get_pointer(column));
         } else {
           tmp.add(cur.get_pointer(j)); // 保持不变
@@ -217,7 +217,7 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
         if (value.is_null()) {
           continue;
         }
-        if (next.get(column).compare(cur.get(j)) < 0) {
+        if (next.get(column).compare(value) < 0) {
           tmp.add(next.get_pointer(column));
           break;
         }
@@ -247,7 +247,7 @@ RC ProjectExeNode::execute(TupleSet &tuple_set) {
     Tuple tuple;
     for (const TupleField &field : out_schema_.fields()) {
       int column = in_.get_schema().index_of_field(field.table_name(),
-                                                           field.field_name());
+                                                   field.field_name());
       assert(column != -1);
       tuple.add(t.get_pointer(column));
     }

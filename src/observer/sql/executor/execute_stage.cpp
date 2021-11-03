@@ -543,6 +543,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
   // condition部分已在resolve_select中顺便收集
   get_mini_schema(relations, mini_schema, selects);
 
+  LOG_INFO("point 1");
   // 1.1 生成所有出现relation的最简select执行节点
   std::unordered_map<std::string, SelectExeNode *> select_nodes;
   for (auto &p : relations) {
@@ -585,6 +586,8 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
     }
   }
 
+  LOG_INFO("point 2");
+
   std::stringstream ss;
   TupleSet tuple_set = std::move(tuple_sets[0]);
   if (tuple_sets.size() > 1) {
@@ -597,6 +600,8 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
       delete join_node;
     }
   }
+
+  LOG_INFO("point 3");
   // 3. 重读一边select clasue得到最后的输出范式(out_schema)做映射
   // （程序运行到这里不会有select clause语义错误）
   TupleSchema out_schema;
@@ -628,6 +633,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql,
     delete tmp_node.second;
   }
   session_event->set_response(ss.str());
+  LOG_INFO("%s", strrc(rc));
   return rc;
 }
 

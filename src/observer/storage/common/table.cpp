@@ -297,19 +297,12 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    if (field->nullable() == false && value.type == ATTR_NULL) {
-      LOG_ERROR("Invalid value type.field name=%s, not null but given=null",
-                field->name());
-      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-    }
-    if (field->type() != value.type) {
+    if (field->type() != value.type && field->nullable() == false) {
       LOG_ERROR("Invalid value type. field name=%s, type=%d, nullable=%d but "
                 "given=%d",
                 field->name(), field->type(), field->nullable(), value.type);
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
-    LOG_INFO("Field name=%s, type=%d, nullable=%d, given=%d", field->name(),
-             field->type(), field->nullable(), value.type);
   }
 
   // 复制所有字段的值
