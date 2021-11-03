@@ -21,6 +21,7 @@ struct Record;
 class Table;
 
 struct ConDesc {
+	bool is_null;    // value is null.
   bool is_attr;    // 是否属性，false 表示是值
   int attr_length; // 如果是属性，表示属性值长度
   int attr_offset; // 如果是属性，表示在记录中的偏移量
@@ -47,7 +48,7 @@ public:
 
 class DefaultConditionFilter : public ConditionFilter {
 public:
-  DefaultConditionFilter();
+  DefaultConditionFilter(Table &table);
   virtual ~DefaultConditionFilter();
 
   RC init(const ConDesc &left, const ConDesc &right, AttrType attr_type,
@@ -70,6 +71,7 @@ private:
   CompOp comp_op_ = NO_OP;
   bool left_attr_convert_ = false;
   bool right_attr_convert_ = false;
+	Table &table_;
 };
 
 class CompositeConditionFilter : public ConditionFilter {

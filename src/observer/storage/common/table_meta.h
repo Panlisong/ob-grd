@@ -38,6 +38,7 @@ public:
 public:
   const char *name() const;
   const FieldMeta *trx_field() const;
+	const FieldMeta *null_field() const;
   const FieldMeta *field(int index) const;
   const FieldMeta *field(const char *name) const;
   const FieldMeta *find_field_by_offset(int offset) const;
@@ -50,6 +51,9 @@ public:
   int index_num() const;
 
   int record_size() const;
+
+public:
+	int find_column_by_offset(int offset);
 
 public:
   int serialize(std::ostream &os) const override;

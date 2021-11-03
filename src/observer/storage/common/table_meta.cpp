@@ -36,18 +36,29 @@ void TableMeta::swap(TableMeta &other) noexcept {
 }
 
 RC TableMeta::init_sys_fields() {
-  sys_fields_.reserve(1);
-  FieldMeta field_meta;
-  RC rc = field_meta.init(Trx::trx_field_name(), Trx::trx_field_type(), 0,
-                          Trx::trx_field_len(), false);
+  sys_fields_.reserve(2);
+  FieldMeta trx_field_meta;
+  RC rc = trx_field_meta.init(Trx::trx_field_name(), Trx::trx_field_type(), 0,
+                              Trx::trx_field_len(), false, false);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to init trx field. rc = %d:%s", rc, strrc(rc));
     return rc;
   }
 
-  sys_fields_.push_back(field_meta);
+  FieldMeta null_field_meta;
+  int null_field_meta_len = sizeof(int32_t);
+  rc = null_field_meta.init("nullable", INTS, trx_field_meta.len(),
+                            null_field_meta_len, false, false);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to init nullable field. rc = %d:%s", rc, strrc(rc));
+    return rc;
+  }
+
+  sys_fields_.push_back(trx_field_meta);
+  sys_fields_.push_back(null_field_meta);
   return rc;
 }
+
 RC TableMeta::init(const char *name, int field_num,
                    const AttrInfo attributes[]) {
   if (nullptr == name || '\0' == name[0]) {
@@ -82,8 +93,9 @@ RC TableMeta::init(const char *name, int field_num,
 
   for (int i = 0; i < field_num; i++) {
     const AttrInfo &attr_info = attributes[i];
-    rc = fields_[i + sys_fields_.size()].init(
-        attr_info.name, attr_info.type, field_offset, attr_info.length, true);
+    rc = fields_[i + sys_fields_.size()].init(attr_info.name, attr_info.type,
+                                              field_offset, attr_info.length,
+                                              true, attr_info.nullable == 1);
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to init field meta. table name=%s, field name: %s",
                 name, attr_info.name);
@@ -108,6 +120,8 @@ RC TableMeta::add_index(const IndexMeta &index) {
 const char *TableMeta::name() const { return name_.c_str(); }
 
 const FieldMeta *TableMeta::trx_field() const { return &fields_[0]; }
+
+const FieldMeta *TableMeta::null_field() const { return &fields_[1]; }
 
 const FieldMeta *TableMeta::field(int index) const { return &fields_[index]; }
 const FieldMeta *TableMeta::field(const char *name) const {
@@ -292,4 +306,16 @@ void TableMeta::desc(std::ostream &os) const {
     os << std::endl;
   }
   os << ')' << std::endl;
+}
+
+int TableMeta::find_column_by_offset(int offset) {
+  int size = fields_.size();
+  for (int i = 0; i < size; i++) {
+    offset -= fields_[i].len();
+    if (offset == 0) {
+      return i - 1;
+    }
+  }
+
+  return -1;
 }

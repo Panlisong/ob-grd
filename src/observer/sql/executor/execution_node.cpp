@@ -38,6 +38,7 @@ void record_reader(const char *data, void *context) {
   TupleRecordConverter *converter = (TupleRecordConverter *)context;
   converter->add_record(data);
 }
+
 RC SelectExeNode::execute(TupleSet &tuple_set) {
   CompositeConditionFilter condition_filter;
   condition_filter.init((const ConditionFilter **)condition_filters_.data(),
@@ -141,23 +142,30 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
   // 1. 初始化
   for (const TupleField &field : out_schema_.fields()) {
     if (field.func() == COUNT_FUNC) {
-      // TODO：支持NULL时需要修正
-      cur.add(in_.size());
+      if (strcmp(field.field_name(), "*") == 0) {
+        // count(*)
+        cur.add(in_.size(), false);
+      } else {
+        // count(field)
+        int column = in_.get_schema().index_of_field(field.table_name(),
+                                                     field.field_name());
+        cur.add(in_.not_null_size(column), false);
+      }
     } else {
       // max min avg 以及普通列初值都是第一个值
       // 且除count外max min avg参数均不可能为
-      int field_in_tuple = in_.get_schema().index_of_field(field.table_name(),
-                                                           field.field_name());
+      int column = in_.get_schema().index_of_field(field.table_name(),
+                                                   field.field_name());
       auto &t = in_.get(0);
-      assert(field_in_tuple != -1);
+      assert(column != -1);
 
       if (field.func() == AVG_FUNC && field.type() == INTS) {
         // avg()参数为INT时，需要转换
         int v;
-        t.get(field_in_tuple).get_value(&v);
-        cur.add((float)v);
+        t.get(column).get_value(&v);
+        cur.add((float)v, false);
       } else {
-        cur.add(t.get_pointer(field_in_tuple));
+        cur.add(t.get_pointer(column));
       }
     }
   }
@@ -174,33 +182,46 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
     auto &next = in_.get(i);
     for (size_t j = 0; j < out_schema_.fields().size(); j++) {
       const TupleField &field = out_schema_.field(j);
-      int field_in_tuple = in_.get_schema().index_of_field(field.table_name(),
+      int column = in_.get_schema().index_of_field(field.table_name(),
                                                            field.field_name());
       switch (field.func()) {
       case AVG_FUNC: {
         // 上面的初始化确保AVG列一定为float
         float v1;
-        float v2 = get_float_value(next.get(field_in_tuple), field);
-        cur.get(j).get_value(&v1);
+        float v2 = get_float_value(next.get(column), field);
+        const TupleValue &value = cur.get(j);
+        if (value.is_null()) {
+          continue;
+        }
+        value.get_value(&v1);
 
         float ans = v1 + v2;
         if (i + 1 == in_.size()) {
-          ans /= in_.size();
+          ans /= in_.not_null_size(column);
         }
-        tmp.add(ans);
+        tmp.add(ans, false);
       } break;
-      case MAX_FUNC:
-        if (next.get(field_in_tuple).compare(cur.get(j)) > 0) {
-          tmp.add(next.get_pointer(field_in_tuple));
+      case MAX_FUNC: {
+        const TupleValue &value = cur.get(j);
+        if (value.is_null()) {
+          continue;
+        }
+        if (next.get(column).compare(cur.get(j)) > 0) {
+          tmp.add(next.get_pointer(column));
         } else {
           tmp.add(cur.get_pointer(j)); // 保持不变
         }
-        break;
-      case MIN_FUNC:
-        if (next.get(field_in_tuple).compare(cur.get(j)) < 0) {
-          tmp.add(next.get_pointer(field_in_tuple));
+      } break;
+      case MIN_FUNC: {
+        const TupleValue &value = cur.get(j);
+        if (value.is_null()) {
+          continue;
+        }
+        if (next.get(column).compare(cur.get(j)) < 0) {
+          tmp.add(next.get_pointer(column));
           break;
         }
+      }
       case COUNT_FUNC:
       case COLUMN:
         tmp.add(cur.get_pointer(j)); // 保持不变
@@ -225,10 +246,10 @@ RC ProjectExeNode::execute(TupleSet &tuple_set) {
   for (auto &t : in_.tuples()) {
     Tuple tuple;
     for (const TupleField &field : out_schema_.fields()) {
-      int field_in_tuple = in_.get_schema().index_of_field(field.table_name(),
+      int column = in_.get_schema().index_of_field(field.table_name(),
                                                            field.field_name());
-      assert(field_in_tuple != -1);
-      tuple.add(t.get_pointer(field_in_tuple));
+      assert(column != -1);
+      tuple.add(t.get_pointer(column));
     }
     tuple_set.add(std::move(tuple));
   }

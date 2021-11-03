@@ -6,6 +6,7 @@
 #include <mutex>
 #include <stddef.h>
 
+#include "common/log/log.h"
 #include "rc.h"
 #include "sql/parser/parse.h"
 #include "storage/common/record_manager.h"
@@ -54,20 +55,50 @@ private:
 
 class UpdateTrxEvent : public TrxEvent {
 public:
-  UpdateTrxEvent(Table *table, Record *old_record, Record *new_record,
-                 const FieldMeta &field_meta)
-      : table_(table), old_record_(old_record), new_record_(new_record),
-        field_meta_(field_meta) {}
+  UpdateTrxEvent(Table *table, Record *old_record, const Value *new_value,
+                 int offset, int len, const FieldMeta &field_meta)
+      : table_(table), old_record_(old_record), offset_(offset), len_(len),
+        field_meta_(field_meta) {
+    int column = table_->find_column_by_offset(offset);
+    int null_field_offset = table->null_field_offset();
+    int32_t *old_null_field = (int32_t *)(old_record + null_field_offset);
+    old_null_ = ((*old_null_field) & (1 << column)) != 0;
+
+    if (!old_null_) {
+      old_value_ = new char[len_];
+      memcpy(old_value_, old_record->data + offset_, len_);
+    }
+
+    if (new_value->data == nullptr) {
+      new_null_ = true;
+    } else {
+      new_null_ = false;
+      new_value_ = new char[len_];
+      char *new_record = (char *)(new_value->data);
+      memcpy(new_value_, new_record, len_);
+    }
+  }
   virtual ~UpdateTrxEvent();
 
   const char *get_table_name() { return table_->name(); }
-  RC commit() { return table_->commit_update(old_record_, new_record_); }
-  RC rollback() { return table_->rollback_update(old_record_, new_record_); }
+  RC commit() {
+    return table_->commit_update(old_record_, new_null_, new_value_, offset_,
+                                 len_);
+  }
+  RC rollback() {
+    return table_->rollback_update(old_record_, old_null_, old_value_, offset_,
+                                   len_);
+  }
 
 private:
   Table *table_;
   Record *old_record_;
-  Record *new_record_;
+  char *new_value_;
+  char *old_value_;
+  bool old_null_;
+  bool new_null_;
+  int offset_;
+  int len_;
   FieldMeta field_meta_;
 };
 

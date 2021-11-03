@@ -89,6 +89,10 @@ ParserContext *get_context(yyscan_t scanner)
         FLOAT_T
         HELP
         EXIT
+		IS
+		NOT
+		NULL_T
+		NULLABLE
         DOT //QUOTE
         INTO
         VALUES
@@ -125,6 +129,7 @@ ParserContext *get_context(yyscan_t scanner)
 %token <string> STRING_V
 //非终结符
 
+%type <number> is_nullable;
 %type <ref>	table_ref
 %type <ref>	join_table
 %type <number> type;
@@ -252,16 +257,16 @@ attr_def_list:
     ;
     
 attr_def:
-    ID_get type LBRACE number RBRACE 
+    ID_get type LBRACE number RBRACE is_nullable
 		{
 			AttrInfo attribute;
-			attr_info_init(&attribute, CONTEXT->id, $2, $4);
+			attr_info_init(&attribute, CONTEXT->id, $2, $4, $6);
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 		}
-    |ID_get type
+    |ID_get type is_nullable
 		{
 			AttrInfo attribute;
-			attr_info_init(&attribute, CONTEXT->id, $2, $2 == DATES ? sizeof(time_t) : 4);
+			attr_info_init(&attribute, CONTEXT->id, $2, $2 == DATES ? 8 : 4, $3);
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 		}
     ;
@@ -281,7 +286,11 @@ ID_get:
 		snprintf(CONTEXT->id, sizeof(CONTEXT->id), "%s", temp);
 	}
 	;
-
+is_nullable:
+  NOT NULL_T{ $$ = 0; } 
+| NULLABLE{ $$ = 1; }
+| {$$ = 0; }
+	;
 	
 insert:				/*insert   语句的语法解析树*/
 	INSERT INTO ID VALUES tuple tuple_list SEMICOLON
@@ -334,6 +343,9 @@ value:
 			t.tm_hour = 12;		// 防止0点有一天的换算偏差
 			value_init_date(&CONTEXT->values[CONTEXT->value_length++], mktime(&t));
 		}
+	}
+	|NULL_T {
+			value_init_null(&CONTEXT->values[CONTEXT->value_length++]);
 	}
     ;
     
@@ -595,6 +607,8 @@ comOp:
     | LE { CONTEXT->comp = LESS_EQUAL; }
     | GE { CONTEXT->comp = GREAT_EQUAL; }
     | NE { CONTEXT->comp = NOT_EQUAL; }
+		| IS { CONTEXT->comp = OP_IS; }
+		| IS NOT { CONTEXT->comp = OP_IS_NOT; }
     ;
 
 load_data:

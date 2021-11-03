@@ -38,13 +38,19 @@ void Tuple::add(TupleValue *value) { values_.emplace_back(value); }
 void Tuple::add(const std::shared_ptr<TupleValue> &other) {
   values_.emplace_back(other);
 }
-void Tuple::add(int value) { add(new IntValue(value)); }
+void Tuple::add(int value, bool is_null) { add(new IntValue(value, is_null)); }
 
-void Tuple::add(float value) { add(new FloatValue(value)); }
+void Tuple::add(float value, bool is_null) {
+  add(new FloatValue(value, is_null));
+}
 
-void Tuple::add(time_t value) { add(new DateValue(value)); }
+void Tuple::add(time_t value, bool is_null) {
+  add(new DateValue(value, is_null));
+}
 
-void Tuple::add(const char *s, int len) { add(new StringValue(s, len)); }
+void Tuple::add(const char *s, int len, bool is_null) {
+  add(new StringValue(s, len, is_null));
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -197,6 +203,17 @@ const TupleSchema &TupleSet::get_schema() const { return schema_; }
 bool TupleSet::is_empty() const { return tuples_.empty(); }
 
 int TupleSet::size() const { return tuples_.size(); }
+
+int TupleSet::not_null_size(int column) const {
+  int not_null_size = 0;
+  for (auto iter = tuples_.begin(), end = tuples_.end(); iter != end; iter++) {
+    if ((*iter).get(column).is_null() == false) {
+      not_null_size++;
+    }
+  }
+
+  return not_null_size;
+}
 
 const Tuple &TupleSet::get(int index) const { return tuples_[index]; }
 

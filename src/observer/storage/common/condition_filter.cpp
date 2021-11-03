@@ -21,7 +21,7 @@ using namespace common;
 
 ConditionFilter::~ConditionFilter() {}
 
-DefaultConditionFilter::DefaultConditionFilter() {
+DefaultConditionFilter::DefaultConditionFilter(Table &table) : table_(table) {
   left_.is_attr = false;
   left_.attr_length = 0;
   left_.attr_offset = 0;
@@ -64,6 +64,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   AttrType type_right = UNDEFINED;
 
   if (1 == condition.left_is_attr) {
+    left.is_null = false;
     left.is_attr = true;
     const FieldMeta *field_left =
         table_meta.field(condition.left_attr.attribute_name);
@@ -79,6 +80,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
     type_left = field_left->type();
   } else {
+    left.is_null = condition.left_value.type == ATTR_NULL;
     left.is_attr = false;
     left.value = condition.left_value.data; // 校验type 或者转换类型
     type_left = condition.left_value.type;
@@ -88,6 +90,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   }
 
   if (1 == condition.right_is_attr) {
+    right.is_null = false;
     right.is_attr = true;
     const FieldMeta *field_right =
         table_meta.field(condition.right_attr.attribute_name);
@@ -102,6 +105,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
     right.value = nullptr;
   } else {
+    right.is_null = condition.right_value.type == ATTR_NULL;
     right.is_attr = false;
     right.value = condition.right_value.data;
     type_right = condition.right_value.type;
@@ -117,7 +121,8 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   //  }
   // NOTE：这里没有实现不同类型的数据比较，比如整数跟浮点数之间的对比
   // 但是选手们还是要实现。这个功能在预选赛中会出现
-  if (!isComparable(type_left, type_right)) {
+  if (!isComparable(type_left, type_right) &&
+      (!left.is_null && !right.is_null)) {
     LOG_ERROR("Type dismatching.");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
@@ -158,6 +163,27 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 }
 
 bool DefaultConditionFilter::filter(const Record &rec) const {
+  // null op null
+  if (left_.is_null && right_.is_null) {
+    return comp_op_ == OP_IS;
+  }
+
+  if (left_.is_null || right_.is_null) {
+    if (comp_op_ != OP_IS && comp_op_ != OP_IS_NOT) {
+      // return false unless is/is not.
+      return false;
+    }
+    if (left_.is_null) {
+      // null is/is not attr.
+      return false;
+    }
+    // attr is/is not attr.
+    int column = table_.find_column_by_offset(left_.attr_offset);
+    int32_t *null_field = (int32_t *)(rec.data + table_.null_field_offset());
+    bool is_null = (((*null_field) & (1 << column)) != 0);
+    return comp_op_ == OP_IS ? is_null : !is_null;
+  }
+
   char *lvalue = nullptr;
   char *rvalue = nullptr;
 
@@ -269,7 +295,7 @@ RC CompositeConditionFilter::init(Table &table, const Condition *conditions,
   ConditionFilter **condition_filters = new ConditionFilter *[condition_num];
   for (int i = 0; i < condition_num; i++) {
     DefaultConditionFilter *default_condition_filter =
-        new DefaultConditionFilter();
+        new DefaultConditionFilter(table);
     rc = default_condition_filter->init(table, conditions[i]);
     if (rc != RC::SUCCESS) {
       delete default_condition_filter;

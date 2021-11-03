@@ -157,18 +157,6 @@ RC Db::sync() {
   return rc;
 }
 
-std::string Db::show_tables() {
-  std::vector<std::string> all_table_names;
-  all_tables(all_table_names);
-
-  std::string result = "all tables:\n";
-  for (auto table_name : all_table_names) {
-    result += table_name + "\n";
-  }
-
-  return result;
-}
-
 RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,
                       int value_num[], Value *values[]) {
   auto res = opened_tables_.find(table_name);

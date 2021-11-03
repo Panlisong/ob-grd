@@ -22,6 +22,8 @@ See the Mulan PSL v2 for more details. */
 #include <ostream>
 #include <string>
 
+#include "common/log/log.h"
+
 class TupleValue {
 public:
   TupleValue() = default;
@@ -30,34 +32,53 @@ public:
   virtual void get_value(void *data) const = 0;
   virtual void to_string(std::ostream &os) const = 0;
   virtual int compare(const TupleValue &other) const = 0;
+  virtual bool is_null() const = 0;
 
 private:
 };
 
 class IntValue : public TupleValue {
 public:
-  explicit IntValue(int value) : value_(value) {}
+  explicit IntValue(int value, bool is_null)
+      : value_(value), is_null_(is_null) {}
 
   void get_value(void *data) const override { *(int *)data = value_; }
 
-  void to_string(std::ostream &os) const override { os << value_; }
+  void to_string(std::ostream &os) const override {
+    if (is_null_) {
+      os << "null";
+      return;
+    }
+    os << value_;
+  }
 
   int compare(const TupleValue &other) const override {
+    if (is_null() && other.is_null()) {
+      return 0;
+    }
     const IntValue &int_other = (const IntValue &)other;
     return value_ - int_other.value_;
   }
 
+  bool is_null() const override { return is_null_; }
+
 private:
   int value_;
+  bool is_null_;
 };
 
 class FloatValue : public TupleValue {
 public:
-  explicit FloatValue(float value) : value_(value) {}
+  explicit FloatValue(float value, bool is_null)
+      : value_(value), is_null_(is_null) {}
 
   void get_value(void *data) const override { *(float *)data = value_; }
 
   void to_string(std::ostream &os) const override {
+    if (is_null_) {
+      os << "null";
+      return;
+    }
     std::stringstream ss;
     ss << std::fixed << std::setprecision(2) << value_;
     std::string str = ss.str();
@@ -73,6 +94,9 @@ public:
   }
 
   int compare(const TupleValue &other) const override {
+    if (is_null() == other.is_null()) {
+      return 0;
+    }
     const FloatValue &float_other = (const FloatValue &)other;
     float result = value_ - float_other.value_;
     if (result > 0) { // 浮点数没有考虑精度问题
@@ -84,35 +108,56 @@ public:
     return 0;
   }
 
+  bool is_null() const override { return is_null_; }
+
 private:
   float value_;
+  bool is_null_;
 };
 
 class StringValue : public TupleValue {
 public:
-  StringValue(const char *value, int len) : value_(value, len) {}
+  StringValue(const char *value, int len, int is_null)
+      : value_(value, len), is_null_(is_null) {}
   explicit StringValue(const char *value) : value_(value) {}
 
   void get_value(void *data) const override { *(std::string *)data = value_; }
 
-  void to_string(std::ostream &os) const override { os << value_; }
+  void to_string(std::ostream &os) const override {
+    if (is_null_) {
+      os << "null";
+      return;
+    }
+    os << value_;
+  }
 
   int compare(const TupleValue &other) const override {
+    if (is_null() == other.is_null()) {
+      return 0;
+    }
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
   }
 
+  bool is_null() const override { return is_null_; }
+
 private:
   std::string value_;
+  bool is_null_;
 };
 
 class DateValue : public TupleValue {
 public:
-  explicit DateValue(time_t value) : value_(value) {}
+  explicit DateValue(time_t value, bool is_null)
+      : value_(value), is_null_(is_null) {}
 
   void get_value(void *data) const override { *(time_t *)data = value_; }
 
   void to_string(std::ostream &os) const override {
+    if (is_null_) {
+      os << "null";
+      return;
+    }
     tm *tp = gmtime(&value_);
     char s[36];
     memset(s, 0, sizeof s);
@@ -122,6 +167,9 @@ public:
   }
 
   int compare(const TupleValue &other) const override {
+    if (is_null() == other.is_null()) {
+      return 0;
+    }
     const DateValue &timestamp_other = (const DateValue &)other;
     long long res = value_ - timestamp_other.value_;
     if (res > 0LL) {
@@ -132,8 +180,11 @@ public:
     return 0;
   }
 
+  bool is_null() const override { return is_null_; }
+
 private:
   time_t value_;
+  bool is_null_;
 };
 
 #endif //__OBSERVER_SQL_EXECUTOR_VALUE_H_

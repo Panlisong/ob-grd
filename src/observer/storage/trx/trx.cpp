@@ -19,9 +19,7 @@ DeleteTrxEvent::~DeleteTrxEvent() {
 }
 UpdateTrxEvent::~UpdateTrxEvent() {
   delete[] old_record_->data;
-  delete[] new_record_->data;
   delete old_record_;
-  delete new_record_;
 }
 
 const char *Trx::trx_field_name() { return "__trx"; }

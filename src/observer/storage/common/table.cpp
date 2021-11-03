@@ -338,11 +338,19 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    if (field->type() != value.type) {
-      LOG_ERROR("Invalid value type. field name=%s, type=%d, but given=%d",
-                field->name(), field->type(), value.type);
+    if (field->nullable() == false && value.type == ATTR_NULL) {
+      LOG_ERROR("Invalid value type.field name=%s, not null but given=null",
+                field->name());
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
+    if (field->type() != value.type) {
+      LOG_ERROR("Invalid value type. field name=%s, type=%d, nullable=%d but "
+                "given=%d",
+                field->name(), field->type(), field->nullable(), value.type);
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
+    LOG_INFO("Field name=%s, type=%d, nullable=%d, given=%d", field->name(),
+             field->type(), field->nullable(), value.type);
   }
 
   // 复制所有字段的值
@@ -353,7 +361,14 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    memcpy(record + field->offset(), value.data, field->len());
+    if (value.type == ATTR_NULL) {
+      // bit i means value[i] is null.
+      int null_field_offset = table_meta_.null_field()->offset();
+      int32_t *null_field = (int32_t *)(record + null_field_offset);
+      *null_field |= (1 << i);
+    } else {
+      memcpy(record + field->offset(), value.data, field->len());
+    }
   }
 
   record_out = record;
@@ -693,16 +708,19 @@ public:
       }
     }
 
-    UpdateTrxEvent *event =
-        new UpdateTrxEvent(&table_, old_rec, new_rec, field_meta_);
+    UpdateTrxEvent *event = new UpdateTrxEvent(&table_, new_rec, value_,
+                                               offset_, len_, field_meta_);
     trx_->pending(event);
     updated_count_++;
 
     return RC::SUCCESS;
   }
 
-  void set_update_info(const Value *v, FieldMeta field_meta) {
+  void set_update_info(const Value *v, int offset, int len,
+                       FieldMeta field_meta) {
     value_ = v;
+    offset_ = offset;
+    len_ = len;
     field_meta_ = field_meta;
   }
 
@@ -712,6 +730,8 @@ private:
   Table &table_;
   Trx *trx_;
   const Value *value_;
+  int offset_;
+  int len_;
   FieldMeta field_meta_;
   int updated_count_ = 0;
 };
@@ -730,12 +750,12 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   std::vector<DefaultConditionFilter *> condition_filters;
   for (int i = 0; i < condition_num; i++) {
     const Condition &cond = conditions[i];
-    DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
+    Table &t = *this;
+    DefaultConditionFilter *condition_filter = new DefaultConditionFilter(t);
     // (1) 元数据检查
     // (2) 类型检查和转换
     // 都在condition_filter->init
     rc = condition_filter->init(*this, cond);
-    condition_filters.push_back(condition_filter);
     if (rc != RC::SUCCESS) {
       delete condition_filter;
       for (DefaultConditionFilter *&filter : condition_filters) {
@@ -743,6 +763,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
       }
       return rc;
     }
+    condition_filters.push_back(condition_filter);
   }
   CompositeConditionFilter filter;
   filter.init((const ConditionFilter **)condition_filters.data(),
@@ -757,12 +778,15 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   }
   // (2) 检查类型是否匹配
   // 目前实现类型不同则报错
-  if (field_meta->type() != value->type) {
+  if (field_meta->type() != value->type &&
+      (field_meta->nullable() == false && value->type == ATTR_NULL)) {
     LOG_WARN("Type dismatching.");
-    return RC::GENERIC_ERROR;
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
+
   RecordUpdater updater(*this, trx);
-  updater.set_update_info(value, *field_meta);
+  updater.set_update_info(value, field_meta->offset(), field_meta->len(),
+                          *field_meta);
   rc = scan_record(trx, &filter, -1, &updater, record_reader_update_adapter);
   if (updated_count != nullptr) {
     *updated_count = updater.updated_count();
@@ -770,29 +794,45 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   return rc;
 }
 
-RC Table::commit_update(Record *old_record, Record *new_record) {
-  RC rc = update_entry_of_indexes(old_record->data, new_record->data,
-                                  old_record->rid);
+RC Table::commit_update(Record *record, bool new_null, char *new_value,
+                        int offset, int len) {
+  if (new_null) {
+    int column = find_column_by_offset(offset);
+    int32_t *null_field = (int32_t *)(record + null_field_offset());
+    *null_field |= (1 << column);
+  } else {
+    memcpy(record->data + offset, new_value, len);
+  }
+  // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
+  RC rc = RC::SUCCESS;
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to update indexes of record(rid=%d.%d). rc=%d:%s",
-              old_record->rid.page_num, old_record->rid.slot_num, rc,
-              strrc(rc));
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
     return rc;
   }
-  return record_handler_->update_record(new_record);
+  return record_handler_->update_record(record);
 }
 
-RC Table::rollback_update(Record *old_record, Record *new_record) {
-  RC rc = update_entry_of_indexes(new_record->data, old_record->data,
-                                  new_record->rid);
+RC Table::rollback_update(Record *record, bool old_null, char *old_value,
+                          int offset, int len) {
+  int column = table_meta_.find_column_by_offset(offset);
+  int null_field_offset = table_meta_.null_field()->offset();
+  int32_t *null_field = (int32_t *)(record + null_field_offset);
+  if (old_null) {
+    *null_field &= (1 << column);
+  } else {
+    *null_field &= 0xFFFFFFFF - (1 << column);
+    memcpy(record->data + offset, old_value, len);
+  }
+  // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
+  RC rc = RC::SUCCESS;
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to rollback for updating indexes of record(rid=%d.%d). "
               "rc=%d:%s",
-              new_record->rid.page_num, new_record->rid.slot_num, rc,
-              strrc(rc));
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
     return rc;
   }
-  return record_handler_->update_record(old_record);
+  return record_handler_->update_record(record);
 }
 
 RC Table::update_entry_of_indexes(const char *old_rec, const char *new_rec,
@@ -984,3 +1024,9 @@ RC Table::sync() {
   LOG_INFO("Sync table over. table=%s", name());
   return rc;
 }
+
+int Table::find_column_by_offset(int offset) {
+  return table_meta_.find_column_by_offset(offset);
+}
+
+int Table::null_field_offset() { return table_meta_.null_field()->offset(); }

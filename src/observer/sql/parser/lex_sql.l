@@ -42,6 +42,10 @@ DELI			 [\-\\/\.]
 ";"                 	 				           RETURN_TOKEN(SEMICOLON);
 {DOT}                 					         RETURN_TOKEN(DOT);
 "*"                   					         RETURN_TOKEN(STAR);
+(?i:is) 														 RETURN_TOKEN(IS);
+(?i:not)        								     RETURN_TOKEN(NOT);
+(?i:null)        								     RETURN_TOKEN(NULL_T);
+(?i:nullable) 									 RETURN_TOKEN(NULLABLE);
 [Ee][Xx][Ii][Tt]						             RETURN_TOKEN(EXIT);
 [Hh][Ee][Ll][Pp]                    	   RETURN_TOKEN(HELP);
 [Dd][Ee][Ss][Cc]                         RETURN_TOKEN(DESC);

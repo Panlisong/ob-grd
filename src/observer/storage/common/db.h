@@ -45,7 +45,6 @@ public:
 
   RC sync();
 
-  std::string show_tables();
   RC insert_records(Trx *trx, const char *table_name, int inserted_count,
                     int value_num[], Value *values[]);
 
