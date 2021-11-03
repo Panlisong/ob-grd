@@ -205,6 +205,13 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+
+typedef std::unordered_map<std::string, TupleSchema> RelAttrTable;
+RelAttrTable conditionRAT[MAX_NUM];
+RelAttrTable miniSchema;
+int cur_condition;
+
 static RC schema_add_field(Table *table, FuncName func, const char *field_name,
                            TupleSchema &schema) {
   // '*'的情况在外面考虑了，一定是最简SelectExeNode+JoinExeNode结果的schema
@@ -266,15 +273,19 @@ check_select_expr(const SelectExpr *expr,
 
   if (expr->is_attr) {
     bool multi_flag = relations.size() > 1;
-    const RelAttr *attr = expr->attr;
+    RelAttr *attr = expr->attr;
     const char *table_name = attr->relation_name;
     const char *field_name = attr->attribute_name;
-    Table *table = nullptr;
+    Table *table = relations.begin()->second;
     if (multi_flag) {
+      // 多表显式写出表名
       if (table_name == nullptr) {
         LOG_ERROR("SQL syntax error: need to write relation name explicitly");
         return RC::SQL_SYNTAX;
       }
+    }
+    // 如果表名显式出现，一定要存在
+    if (table_name != nullptr) {
       auto res = relations.find(table_name);
       if (res == relations.end()) {
         LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
@@ -282,26 +293,20 @@ check_select_expr(const SelectExpr *expr,
       }
       table = res->second;
     } else {
-      if (table_name != nullptr) {
-        auto res = relations.find(table_name);
-        if (res == relations.end()) {
-          LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
-          return RC::SCHEMA_TABLE_NOT_EXIST;
-        }
-        table = res->second;
-      }
-      // 至此 Table Object 和 field_name 已找到
-      if (!match_field(table, field_name)) {
-        return RC::SCHEMA_FIELD_MISSING;
-      }
-      // AVG参数要匹配
-      if (expr->func == AVG_FUNC) { /* 聚合函数 */
-        const FieldMeta *field_meta = table->table_meta().field(field_name);
-        if (field_meta->type() != INTS && field_meta->type() != FLOATS) {
-          LOG_ERROR("SQL syntax error: AVG's arg cannot be %d",
-                    field_meta->type());
-          return RC::GENERIC_ERROR;
-        }
+      // 为单表情况补充表名信息，方便最后的映射
+      attr->attribute_name = strdup(table->name());
+    }
+    // 至此 Table Object 和 field_name 已找到
+    if (!match_field(table, field_name)) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+    // AVG参数要匹配
+    if (expr->func == AVG_FUNC) { /* 聚合函数 */
+      const FieldMeta *field_meta = table->table_meta().field(field_name);
+      if (field_meta->type() != INTS && field_meta->type() != FLOATS) {
+        LOG_ERROR("SQL syntax error: AVG's arg cannot be %d",
+                  field_meta->type());
+        return RC::GENERIC_ERROR;
       }
     }
   }
@@ -325,8 +330,9 @@ check_select_clause(const std::unordered_map<std::string, Table *> &relations,
     const RelAttr *attr = expr->attr;
     const char *table_name = attr->relation_name;
     const char *field_name = attr->attribute_name;
+    bool is_star = strcmp(field_name, "*") == 0;
     // (1) '*'或'func(*)'
-    if (table_name == nullptr && strcmp(field_name, "*") == 0) {
+    if (table_name == nullptr && is_star) {
       if (expr->func != COLUMN) {
         // 'COUNT(*)'在任何时候一定正确
         // 其余函数在语法层面禁止参数为'*'
@@ -341,7 +347,7 @@ check_select_clause(const std::unordered_map<std::string, Table *> &relations,
       }
     }
     // (2) 'T.*'或'func(T.*)'
-    if (table_name != nullptr && strcmp(field_name, "*") == 0) {
+    if (table_name != nullptr && is_star) {
       if (expr->func != COLUMN) {
         // 同上
         continue;
@@ -356,7 +362,7 @@ check_select_clause(const std::unordered_map<std::string, Table *> &relations,
     }
 
     // (3) 'T.A' 或 'A'
-    if (strcmp(field_name, "*") != 0) {
+    if (!is_star) {
       check_select_expr(expr, relations);
     }
   }
@@ -436,16 +442,17 @@ check_condtions(std::unordered_map<std::string, Table *> &relations,
   bool error = false;
   for (size_t i = 0; i < cond_num; i++) {
     const Condition &cond = conds[i];
+    cur_condition = i;
     // 1. 先检查left ConditionExpr
     if (!check_condition_expr(cond.left, relations)) {
       error = true;
       break;
     }
     // 2. 子查询或右表达式
-    if (cond.is_subquery == 1) {
+    if (cond.is_subquery == 1) { // 子查询
       // TODO: 符号表
 
-    } else {
+    } else { // 右表达式
       if (!check_condition_expr(cond.right, relations)) {
         error = true;
         break;
