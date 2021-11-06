@@ -39,6 +39,8 @@ RC create_selection_executor(Trx *trx, Selects &selects, Table *table,
 RC create_join_executor(Trx *trx, RelationTable &relations, Condition conds[],
                         size_t cond_num, TupleSet &tl, TupleSet &tr,
                         JoinExeNode &join_node);
+RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
+                              TupleSchema &product, ProjectExeNode &project);
 
 RC do_join_table(TableRef *ref, Trx *trx, RelationTable &relations,
                  std::unordered_map<std::string, SelectExeNode *> &nodes,
@@ -808,11 +810,8 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
 
   // 3 根据select clause生成输出schema
   TupleSchema out_schema;
-  for (int i = selects.expr_num - 1; i >= 0; i--) {
-    // TODO
-  }
+
   ProjectExeNode project_node;
-  project_node.init(trx, tuple_set, std::move(out_schema));
   project_node.execute(tuple_set);
   res = std::move(tuple_set);
 
@@ -845,8 +844,43 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
   TupleSet tuple_set;
   ::do_select(trx, selects, tuple_set);
 
+  tuple_set.print(ss, selects.context->size() > 1);
   session_event->set_response(ss.str());
   return rc;
+}
+/////////////////////////////////////////////////////////////////////////////////
+RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
+                              TupleSchema &product, ProjectExeNode &project) {
+  RC rc = RC::SUCCESS;
+  TupleSchema out_schema;
+  std::vector<ProjectionDesc *> descs;
+  for (int i = selects.expr_num - 1; i >= 0; i--) {
+    SelectExpr *expr = selects.exprs[i];
+    ProjectionDesc *desc = new ProjectionDesc();
+    rc = desc->init(expr, product, selects.context->size() > 1);
+    if (rc != RC::SUCCESS) {
+      delete desc;
+      for (ProjectionDesc *&d : descs) {
+        delete d;
+      }
+      return rc;
+    }
+    descs.push_back(desc);
+    if (expr->has_subexpr == 1) {
+      out_schema.add(desc->type(), EXPR, nullptr, nullptr,
+                     desc->to_string().c_str());
+    } else {
+      // select expression 不可能出现单独值
+      assert(expr->is_attr != 1);
+      RelAttr *attr = expr->attr;
+      const char *table_name = attr->relation_name;
+      const char *field_name = attr->attribute_name;
+      schema_add_field(selects.context->at(table_name), expr->func, field_name,
+                       out_schema);
+    }
+  }
+  return project.init(std::move(tuple_set), std::move(out_schema),
+                      std::move(descs));
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -912,7 +946,7 @@ RC create_join_executor(Trx *trx, RelationTable &relations, Condition conds[],
     }
     filters.push_back(filter);
   }
-  return join_node.init(trx, std::move(tl), std::move(tr), std::move(filters));
+  return join_node.init(std::move(tl), std::move(tr), std::move(filters));
 }
 
 /////////////////////////////////////////////////////////////////////////////////

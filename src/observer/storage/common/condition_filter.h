@@ -142,11 +142,12 @@ public:
   DefaultConditionFilter(Table &table);
   virtual ~DefaultConditionFilter();
 
-  RC init(ConDescNode *left, ConDescNode *right, AttrType attr_type,
-          CompOp comp_op);
+  RC init(ConDescNode *left, ConDescNode *right, CompOp comp_op);
   RC init(Table &table, const Condition &condition, TupleSet &&subquery);
 
   virtual bool filter(const Record &rec) const;
+  bool subquery_filter(const Record &rec) const;
+  bool non_subquery_filter(const Record &rec) const;
 
 public:
   const ConDescNode *left() const { return left_; }

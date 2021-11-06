@@ -53,17 +53,31 @@ public:
   JoinExeNode();
   virtual ~JoinExeNode();
 
-  RC init(Trx *trx, TupleSet &&tl, TupleSet &&tr,
+  RC init(TupleSet &&tl, TupleSet &&tr,
           std::vector<TupleFilter *> &&tuple_filters);
 
   RC execute(TupleSet &tuple_set) override;
 
 private:
-  Trx *trx_ = nullptr;
   TupleSet tl_;              //   left tuple set: 待合并的左TupleSet
   TupleSet tr_;              //  right tuple set: 待合并的右TupleSet
   TupleSchema tuple_schema_; //    output schema：输出按照tuple_schema映射
   std::vector<TupleFilter *> tuple_filters_; // Tuple过滤器
+};
+
+class ProjectionDesc {
+public:
+  ProjectionDesc() = default;
+  virtual ~ProjectionDesc();
+
+  RC init(SelectExpr *expr, TupleSchema &product, bool multi);
+  const std::string to_string() const { return alias_; }
+  const AttrType type() const { return desc_->type(); }
+  TupleValue *execute(const Tuple &tuple) { return desc_->execute(tuple); }
+
+private:
+  TupleConDescNode *desc_;
+  std::string alias_;
 };
 
 class ProjectExeNode : public ExecutionNode {
@@ -71,16 +85,17 @@ public:
   ProjectExeNode() = default;
   ~ProjectExeNode() = default;
 
-  RC init(Trx *trx, TupleSet &in, TupleSchema &&tuple_schema);
+  RC init(TupleSet &&in, TupleSchema &&output,
+          std::vector<ProjectionDesc *> &&descs);
 
   RC execute(TupleSet &tuple_set) override;
 
 private:
   RC execute_aggregate(TupleSet &tuple_set);
 
-  Trx *trx_ = nullptr;
   TupleSet in_;            //  input tuple set：待映射的TupleSet
   TupleSchema out_schema_; //  output schema：输出按照tuple_schema映射
+  std::vector<ProjectionDesc *> descs_;
   bool has_aggregate_ = false; //  select clasue 中是否有聚合函数
   bool only_count_ = true;
 };

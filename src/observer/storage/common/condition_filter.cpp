@@ -25,22 +25,6 @@ extern RC do_select(Trx *trx, Selects &selects, TupleSet &res);
 ConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                    const TableMeta &table_meta);
 
-static bool isComputable(AttrType left, AttrType right) {
-  if (left == ATTR_NULL || right == ATTR_NULL) {
-    return false;
-  }
-  if (left == DATES || right == DATES || left == CHARS || right == CHARS) {
-    return false;
-  }
-  return true;
-}
-
-static bool isComparable(AttrType lt, AttrType rt) {
-  if (lt == DATES || rt == DATES || lt == CHARS || rt == CHARS) {
-    return lt == rt;
-  }
-  return true;
-}
 //////////////////////////////////////////////////////////////////////////////
 ConDescNode::~ConDescNode() {
   if (value_ != nullptr) {
@@ -53,18 +37,16 @@ ConDescInternal::ConDescInternal(ArithOp op, ConDescNode *left,
     : op_(op), left_(left), right_(right) {
   auto left_type = left->type();
   auto right_type = right->type();
-  if (!isComputable(left_type, right_type)) {
+  if (!is_computable(left_type, right_type)) {
     // TODO: 不可计算类型如何处理
     set_type(ATTR_NULL);
     return;
   }
 
-  // 当前处理：
-  // 操作数出现一个float则整个表达式为float
-  if (left_type == FLOATS || right_type == FLOATS) {
-    set_type(FLOATS);
+  if (left_type == right_type) {
+    set_type(left_type);
   } else {
-    set_type(INTS);
+    set_type(FLOATS);
   }
 }
 
@@ -246,9 +228,44 @@ RC ConDescSubquery::init(TupleSet &&subquery) {
 void *ConDescSubquery::execute(const Record &rec) { return nullptr; }
 
 bool ConDescSubquery::is_contains(int i) {
-  // TODO: 当前实现默认非null值
-  IntValue v = IntValue(i, false);
-  for (const auto &value : values_) {
+  // 在这里进行类型转换
+  TupleValue *v = nullptr;
+  if (type() == FLOATS) {
+    v = new FloatValue((float)i, false);
+  } else {
+    v = new IntValue(i, false);
+  }
+  for (auto value : values_) {
+    if (v->compare(*value) == 0) {
+      return true;
+    }
+  }
+  delete v;
+  return false;
+}
+
+bool ConDescSubquery::is_contains(float f) {
+  FloatValue v = FloatValue(f, false);
+  for (auto value : values_) {
+    if (type() == INTS) {
+      int i;
+      value->get_value(&i);
+      FloatValue fv = FloatValue((float)i, false);
+      if (v.compare(fv) == 0) {
+        return true;
+      }
+    } else {
+      if (v.compare(*value) == 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool ConDescSubquery::is_contains(time_t t) {
+  DateValue v = DateValue(t, false);
+  for (auto value : values_) {
     if (v.compare(*value) == 0) {
       return true;
     }
@@ -256,37 +273,18 @@ bool ConDescSubquery::is_contains(int i) {
   return false;
 }
 
-bool ConDescSubquery::is_contains(float f) {
-  FloatValue v = FloatValue(f, false);
-  for (const auto &value : values_) {
-    if (v.compare(*value) == 0) {
-      return true;
-    }
-  }
-  return true;
-}
-
-bool ConDescSubquery::is_contains(time_t t) {
-  DateValue v = DateValue(t, false);
-  for (const auto &value : values_) {
-    if (v.compare(*value) == 0) {
-      return true;
-    }
-  }
-  return true;
-}
-
 bool ConDescSubquery::is_contains(const char *s, int len) {
   StringValue v = StringValue(s, len, false);
-  for (const auto &value : values_) {
+  for (auto value : values_) {
     if (v.compare(*value) == 0) {
       return true;
     }
   }
-  return true;
+  return false;
 }
 
 int ConDescSubquery::is_contains(AttrType type, const char *value) {
+  // TODO: 所以is_contains未考虑null
   int res = 0;
   switch (type) {
   case CHARS: {
@@ -323,10 +321,15 @@ DefaultConditionFilter::~DefaultConditionFilter() {
 }
 
 RC DefaultConditionFilter::init(ConDescNode *left, ConDescNode *right,
-                                AttrType attr_type, CompOp comp_op) {
-  if (attr_type < CHARS || attr_type > DATES) {
+                                CompOp comp_op) {
+  if (left->type() < CHARS || left->type() > DATES) {
     LOG_ERROR("Invalid condition with unsupported attribute type: %d",
-              attr_type);
+              left->type());
+    return RC::INVALID_ARGUMENT;
+  }
+  if (right->type() < CHARS || right->type() > DATES) {
+    LOG_ERROR("Invalid condition with unsupported attribute type: %d",
+              right->type());
     return RC::INVALID_ARGUMENT;
   }
 
@@ -338,7 +341,6 @@ RC DefaultConditionFilter::init(ConDescNode *left, ConDescNode *right,
 
   left_ = left;
   right_ = right;
-  attr_type_ = attr_type;
   comp_op_ = comp_op;
   return RC::SUCCESS;
 }
@@ -380,7 +382,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   //  }
   // NOTE：这里没有实现不同类型的数据比较，比如整数跟浮点数之间的对比
   // 但是选手们还是要实现。这个功能在预选赛中会出现
-  if (!isComparable(type_left, type_right)) {
+  if (!is_comparable(type_left, type_right)) {
     LOG_ERROR("Type dismatching.");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
@@ -420,7 +422,104 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
     type_left = FLOATS;
   }
 
-  return init(left, right, type_left, condition.comp);
+  return init(left, right, condition.comp);
+}
+
+bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
+  char *lvalue = (char *)left_->execute(rec);
+  char *rvalue = (char *)right_->execute(rec);
+  int cmp_result = 0;
+  // TODO: 需考虑null
+  if (left_->type() != right_->type()) {
+    int i;
+    if (left_->type() == FLOATS) {
+      i = *(int *)right_->value();
+      float *f = (float *)malloc(sizeof(float));
+      *f = (float)i;
+      right_->set_value(f);
+      right_->set_type(FLOATS);
+    } else {
+      i = *(int *)left_->value();
+      float *f = (float *)malloc(sizeof(float));
+      *f = (float)i;
+      left_->set_value(f);
+      left_->set_type(FLOATS);
+    }
+    lvalue = (char *)left_->value();
+    rvalue = (char *)right_->value();
+  }
+  switch (attr_type_) {
+  case CHARS: {
+    // 字符串都是定长的，直接比较
+    // 按照C字符串风格来定
+    cmp_result = strcmp(lvalue, rvalue);
+  } break;
+  case INTS: {
+    // 没有考虑大小端问题
+    // 对int和float，要考虑字节对齐问题,有些平台下直接转换可能会跪
+    int left = *(int *)lvalue;
+    int right = *(int *)rvalue;
+    cmp_result = left - right;
+  } break;
+  case FLOATS: {
+    float left = *(float *)lvalue;
+    float right = *(float *)rvalue;
+    double res = (double)left - right;
+    double ep = 1e-6;
+    cmp_result = fabs(res) < ep ? 0 : (res < -ep ? -1 : 1);
+  } break;
+  case DATES: {
+    time_t left = *(time_t *)lvalue;
+    time_t right = *(time_t *)rvalue;
+    long long res = left - right;
+    cmp_result = res == 0LL ? 0 : (res < 0LL ? -1 : 1);
+  }
+  default:
+    break;
+  }
+  switch (comp_op_) {
+  case EQUAL_TO:
+    return 0 == cmp_result;
+  case LESS_EQUAL:
+    return cmp_result <= 0;
+  case NOT_EQUAL:
+    return cmp_result != 0;
+  case LESS_THAN:
+    return cmp_result < 0;
+  case GREAT_EQUAL:
+    return cmp_result >= 0;
+  case GREAT_THAN:
+    return cmp_result > 0;
+  default:
+    LOG_PANIC("Unkown compOp type: %d", comp_op_);
+    break;
+  }
+
+  LOG_PANIC("Never should print this.");
+  return cmp_result; // should not go here
+}
+
+bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
+  char *lvalue = (char *)left_->execute(rec);
+  auto cond_desc_subquery = dynamic_cast<ConDescSubquery *>(right_);
+  switch (comp_op_) {
+  case EQUAL_TO:
+  case LESS_EQUAL:
+  case NOT_EQUAL:
+  case LESS_THAN:
+  case GREAT_EQUAL:
+  case GREAT_THAN:
+    // TODO: 子查询的比较
+    break;
+  case MEM_IN:
+    return cond_desc_subquery->is_contains(left_->type(), lvalue);
+  case MEM_NOT_IN:
+    return !cond_desc_subquery->is_contains(left_->type(), lvalue);
+  default:
+    LOG_PANIC("Unkown operator type: %d", comp_op_);
+    break;
+  }
+  return false;
 }
 
 bool DefaultConditionFilter::filter(const Record &rec) const {
@@ -445,71 +544,14 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
   //   bool is_null = (((*null_field) & (1 << column)) != 0);
   //   return comp_op_ == OP_IS ? is_null : !is_null;
   // }
-
-  char *lvalue = (char *)left_->execute(rec);
-  char *rvalue = (char *)right_->execute(rec);
-
-  int cmp_result = 0;
-  if (rvalue == nullptr) {
-    auto subquery_node = dynamic_cast<ConDescSubquery *>(right_);
-    assert(subquery_node != nullptr);
-    cmp_result = subquery_node->is_contains(attr_type_, lvalue);
+  bool res = false;
+  auto is_subquery = dynamic_cast<ConDescSubquery *>(right_);
+  if (is_subquery != nullptr) {
+    res = subquery_filter(rec);
   } else {
-    switch (attr_type_) {
-    case CHARS: { // 字符串都是定长的，直接比较
-      // 按照C字符串风格来定
-      cmp_result = strcmp(lvalue, rvalue);
-    } break;
-    case INTS: {
-      // 没有考虑大小端问题
-      // 对int和float，要考虑字节对齐问题,有些平台下直接转换可能会跪
-      int left = *(int *)lvalue;
-      int right = *(int *)rvalue;
-      cmp_result = left - right;
-    } break;
-    case FLOATS: {
-      bool left_convert = left_attr_convert_;
-      bool right_convert = right_attr_convert_;
-      float left = left_convert ? *(int *)lvalue : *(float *)lvalue;
-      float right = right_convert ? *(int *)rvalue : *(float *)rvalue;
-      double res = (double)left - right;
-      double ep = 1e-6;
-      cmp_result = fabs(res) < ep ? 0 : (res < -ep ? -1 : 1);
-    } break;
-    case DATES: {
-      time_t left = *(time_t *)lvalue;
-      time_t right = *(time_t *)rvalue;
-      long long res = left - right;
-      cmp_result = res == 0LL ? 0 : (res < 0LL ? -1 : 1);
-    }
-    default: {
-    }
-    }
+    res = non_subquery_filter(rec);
   }
-
-  switch (comp_op_) {
-  case EQUAL_TO:
-    return 0 == cmp_result;
-  case LESS_EQUAL:
-    return cmp_result <= 0;
-  case NOT_EQUAL:
-    return cmp_result != 0;
-  case LESS_THAN:
-    return cmp_result < 0;
-  case GREAT_EQUAL:
-    return cmp_result >= 0;
-  case GREAT_THAN:
-    return cmp_result > 0;
-  case MEM_IN:
-    return cmp_result == 1;
-  case MEM_NOT_IN:
-    return cmp_result == 0;
-  default:
-    break;
-  }
-
-  LOG_PANIC("Never should print this.");
-  return cmp_result; // should not go here
+  return res;
 }
 
 CompositeConditionFilter::~CompositeConditionFilter() {

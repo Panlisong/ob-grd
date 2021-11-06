@@ -63,15 +63,17 @@ private:
 class TupleField {
 public:
   TupleField(AttrType type, FuncName func, const char *table_name,
-             const char *field_name)
+             const char *field_name, const char *alias = nullptr)
       : type_(type), func_(func), table_name_(table_name),
-        field_name_(field_name) {}
+        field_name_(field_name), alias_(alias) {}
 
   AttrType type() const { return type_; }
   FuncName func() const { return func_; }
 
   const char *table_name() const { return table_name_.c_str(); }
   const char *field_name() const { return field_name_.c_str(); }
+  const char *alias() const { return alias_.c_str(); }
+  void set_alias(std::string alias) { alias_ = alias; }
 
   std::string to_string() const;
 
@@ -80,6 +82,7 @@ private:
   FuncName func_;
   std::string table_name_;
   std::string field_name_;
+  std::string alias_;
 };
 
 class TupleSchema {
@@ -88,9 +91,9 @@ public:
   ~TupleSchema() = default;
 
   void add(AttrType type, FuncName func, const char *table_name,
-           const char *field_name);
+           const char *field_name, const char *alias = nullptr);
   void add_if_not_exists(AttrType type, FuncName func, const char *table_name,
-                         const char *field_name);
+                         const char *field_name, const char *alias = nullptr);
 
   void merge(const TupleSchema &other);
 
@@ -104,9 +107,7 @@ public:
   int index_of_field(const char *table_name, const char *field_name) const;
   void clear() { fields_.clear(); }
 
-  void print(std::ostream &os) const;
-
-  void set_multi_flag(bool flag) { multi_flag_ = flag; }
+  void print(std::ostream &os, bool multi) const;
 
 public:
   static void from_table(const Table *table, TupleSchema &schema,
@@ -114,7 +115,6 @@ public:
 
 private:
   std::vector<TupleField> fields_;
-  bool multi_flag_ = false;
 };
 
 class TupleSet {
@@ -141,7 +141,7 @@ public:
   const Tuple &get(int index) const;
   const std::vector<Tuple> &tuples() const;
 
-  void print(std::ostream &os) const;
+  void print(std::ostream &os, bool multi) const;
 
 public:
   const TupleSchema &schema() const { return schema_; }
@@ -203,8 +203,12 @@ public:
   TupleConDescNode() = default;
   virtual ~TupleConDescNode() = 0;
   virtual TupleValue *execute(const Tuple &tuple) = 0;
+
+  const AttrType type() const { return type_; }
+  void set_type(AttrType type) { type_ = type; }
+
   TupleValue *value() const { return value_; }
-  const void set_value(TupleValue *value) {
+  void set_value(TupleValue *value) {
     if (value_ != nullptr) {
       delete value_;
     }
@@ -212,14 +216,14 @@ public:
   }
 
 private:
+  AttrType type_;
   TupleValue *value_ = nullptr;
 };
 
 class TupleConDescInternal : public TupleConDescNode {
 public:
   TupleConDescInternal(ArithOp op, TupleConDescNode *left,
-                       TupleConDescNode *right)
-      : op_(op), left_(left), right_(right) {}
+                       TupleConDescNode *right);
   virtual ~TupleConDescInternal();
   TupleValue *execute(const Tuple &tuple) override;
 
@@ -231,7 +235,7 @@ private:
 
 class TupleConDescAttr : public TupleConDescNode {
 public:
-  TupleConDescAttr(int index) : index_(index) {}
+  TupleConDescAttr(AttrType type, int index);
   virtual ~TupleConDescAttr();
   TupleValue *execute(const Tuple &tuple) override;
 
@@ -244,6 +248,7 @@ public:
   TupleConDescValue(Value *value);
   virtual ~TupleConDescValue();
   TupleValue *execute(const Tuple &tuple) override;
+  std::string to_string() { return value()->to_string(); }
 
 private:
 };

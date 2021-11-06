@@ -32,6 +32,7 @@ typedef std::unordered_map<std::string, Table *> RelationTable;
 // Built-in Function类型
 typedef enum _FuncName {
   COLUMN,
+  EXPR,
   MAX_FUNC,
   MIN_FUNC,
   COUNT_FUNC,
@@ -280,6 +281,10 @@ typedef struct Query {
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+//////////////////////////////////////////////////////
+bool is_computable(AttrType left, AttrType right);
+bool is_comparable(AttrType lt, AttrType rt);
 
 //////////////////////////////////////////////////////
 void table_ref_init(TableRef *ref, int is_join, const char *relation_name,

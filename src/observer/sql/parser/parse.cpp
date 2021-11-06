@@ -22,6 +22,22 @@ RC parse(char *st, Query *sqln);
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+bool is_comparable(AttrType lt, AttrType rt) {
+  if (lt == DATES || rt == DATES || lt == CHARS || rt == CHARS) {
+    return lt == rt;
+  }
+  return true;
+}
+bool is_computable(AttrType left, AttrType right) {
+  if (left == ATTR_NULL || right == ATTR_NULL) {
+    return false;
+  }
+  if (left == DATES || right == DATES || left == CHARS || right == CHARS) {
+    return false;
+  }
+  return true;
+}
+
 void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
                     TableRef *child, Condition conditions[], int cond_num) {
   ref->is_join = is_join;

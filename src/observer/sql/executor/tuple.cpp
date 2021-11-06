@@ -15,6 +15,9 @@ See the Mulan PSL v2 for more details. */
 #include "sql/executor/value.h"
 #include <string>
 
+TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
+                                        TupleSchema &product);
+
 Tuple::Tuple(const Tuple &other) {
   LOG_PANIC("Copy constructor of tuple is not supported");
   exit(1);
@@ -85,13 +88,13 @@ void TupleSchema::from_table(const Table *table, TupleSchema &schema,
 }
 
 void TupleSchema::add(AttrType type, FuncName func, const char *table_name,
-                      const char *field_name) {
-  fields_.emplace_back(type, func, table_name, field_name);
+                      const char *field_name, const char *alias) {
+  fields_.emplace_back(type, func, table_name, field_name, alias);
 }
 
 void TupleSchema::add_if_not_exists(AttrType type, FuncName func,
                                     const char *table_name,
-                                    const char *field_name) {
+                                    const char *field_name, const char *alias) {
   for (const auto &field : fields_) {
     if (func == field.func() && 0 == strcmp(field.table_name(), table_name) &&
         0 == strcmp(field.field_name(), field_name)) {
@@ -99,7 +102,7 @@ void TupleSchema::add_if_not_exists(AttrType type, FuncName func,
     }
   }
 
-  add(type, func, table_name, field_name);
+  add(type, func, table_name, field_name, alias);
 }
 
 void TupleSchema::append(const TupleSchema &other) {
@@ -138,35 +141,29 @@ int TupleSchema::index_of_field(const char *table_name,
   return -1;
 }
 
-void TupleSchema::print(std::ostream &os) const {
+void TupleSchema::print(std::ostream &os, bool multi) const {
   if (fields_.empty()) {
     os << "No schema";
     return;
   }
 
   // 判断有多张表还是只有一张表
-  bool multi_flag = multi_flag_;
-
-  std::string func[FUNC_NUM] = {"", "MAX", "MIN", "COUNT", "AVG"};
-  std::string pre;
+  std::string func[FUNC_NUM] = {"", "", "MAX", "MIN", "COUNT", "AVG"};
   for (std::vector<TupleField>::const_iterator iter = fields_.begin(),
                                                end = --fields_.end();
        iter != end; ++iter) {
-    pre = multi_flag ? iter->table_name() + std::string(".") : "";
     if (iter->func() != COLUMN) {
-      os << func[iter->func()] << "(" << pre << iter->field_name() << ") | ";
+      os << func[iter->func()] << "(" << iter->alias() << ") | ";
       continue;
     }
-    os << pre << iter->field_name() << " | ";
+    os << iter->alias() << " | ";
   }
 
   auto last = fields_.back();
-  pre = multi_flag ? last.table_name() + std::string(".") : "";
   if (last.func() != COLUMN) {
-    os << func[last.func()] << "(" << pre << last.field_name() << ")"
-       << std::endl;
+    os << func[last.func()] << "(" << last.alias() << ")" << std::endl;
   } else {
-    os << pre << last.field_name() << std::endl;
+    os << last.alias() << std::endl;
   }
 }
 
@@ -197,13 +194,13 @@ void TupleSet::clear() {
   schema_.clear();
 }
 
-void TupleSet::print(std::ostream &os) const {
+void TupleSet::print(std::ostream &os, bool multi) const {
   if (schema_.fields().empty()) {
     LOG_WARN("Got empty schema");
     return;
   }
 
-  schema_.print(os);
+  schema_.print(os, multi);
 
   for (const Tuple &item : tuples_) {
     const std::vector<std::shared_ptr<TupleValue>> &values = item.values();
@@ -258,10 +255,48 @@ TupleConDescNode::~TupleConDescNode() {
   }
 }
 
+TupleConDescInternal::TupleConDescInternal(ArithOp op, TupleConDescNode *left,
+                                           TupleConDescNode *right)
+    : op_(op), left_(left), right_(right) {
+  AttrType lt = left_->type();
+  AttrType rt = right_->type();
+  if (!is_computable(lt, rt)) {
+    // TODO: 不可计算类型如何处理
+    set_type(ATTR_NULL);
+    return;
+  }
+
+  if (lt == rt) {
+    set_type(lt);
+  } else {
+    set_type(FLOATS);
+  }
+}
+
 TupleValue *TupleConDescInternal::execute(const Tuple &tuple) {
   TupleValue *lv = left_->execute(tuple);
   TupleValue *rv = right_->execute(tuple);
   TupleValue *res = nullptr;
+  // TODO: 需考虑出现ATTR_NULL的情况
+  // 以下实现仅考虑INT和FLOAT
+  if (left_->type() != right_->type()) {
+    // 通知子节点类型转换
+    int i;
+    if (left_->type() == FLOATS) {
+      right_->value()->get_value(&i);
+      FloatValue *fv = new FloatValue((float)i, false);
+      right_->set_value(fv);
+      right_->set_type(FLOATS);
+    } else {
+      left_->value()->get_value(&i);
+      FloatValue *fv = new FloatValue((float)i, false);
+      left_->set_value(fv);
+      left_->set_type(FLOATS);
+    }
+    set_type(FLOATS);
+    lv = left_->value();
+    rv = right_->value();
+  }
   lv->compute(rv, res, op_);
   set_value(res);
   return res;
@@ -272,7 +307,12 @@ TupleConDescInternal::~TupleConDescInternal() {
   delete right_;
 }
 
+TupleConDescAttr::TupleConDescAttr(AttrType type, int index) : index_(index) {
+  set_type(type);
+}
+
 TupleValue *TupleConDescAttr::execute(const Tuple &tuple) {
+  // TODO: 智能指针
   set_value(tuple.get_pointer(index_).get());
   return tuple.get_pointer(index_).get();
 }
@@ -303,6 +343,7 @@ TupleConDescValue::TupleConDescValue(Value *value) {
     break;
   }
   set_value(v);
+  set_type(value->type);
 }
 
 TupleValue *TupleConDescValue::execute(const Tuple &tuple) { return value(); }
@@ -315,6 +356,7 @@ RC TupleConDescSubquery::init(TupleSet &&subquery) {
     // TODO: 子查询列数>1
     return RC::GENERIC_ERROR;
   }
+  set_type(schema.fields().begin()->type());
   for (auto &tuple : subquery.tuples()) {
     values_.emplace_back(tuple.get_pointer(0));
   }
@@ -326,7 +368,9 @@ TupleValue *TupleConDescSubquery::execute(const Tuple &tuple) {
 }
 
 bool TupleConDescSubquery::is_contains(TupleValue *value) {
-  // TODO
+  // TODO: 这里生成新的TupleVaule或在compare中判断类型
+  // compare
+
   return false;
 }
 
@@ -337,8 +381,9 @@ TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                         TupleSchema &product) {
   if (expr->has_subexpr == 0) {
     if (expr->is_attr) {
-      return new TupleConDescAttr(product.index_of_field(
-          expr->attr->relation_name, expr->attr->attribute_name));
+      RelAttr *attr = expr->attr;
+      int i = product.index_of_field(attr->relation_name, attr->attribute_name);
+      return new TupleConDescAttr(product.field(i).type(), i);
     } else {
       return new TupleConDescValue(&expr->value);
     }
@@ -367,12 +412,33 @@ RC TupleFilter::init(TupleSchema &product, const Condition &cond,
   } else {
     right_ = create_cond_desc_node(cond.right, product);
   }
+  if (!is_comparable(left_->type(), right_->type())) {
+    LOG_ERROR("Type dismatching.");
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
   return rc;
 }
 
 bool TupleFilter::non_subquery_filter(const Tuple &t) {
   TupleValue *lv = left_->execute(t);
   TupleValue *rv = right_->execute(t);
+  // TODO: 需考虑ATTR_NULL
+  if (left_->type() != right_->type()) {
+    int i;
+    if (left_->type() == FLOATS) {
+      right_->value()->get_value(&i);
+      FloatValue *fv = new FloatValue((float)i, false);
+      right_->set_value(fv);
+      right_->set_type(FLOATS);
+    } else {
+      left_->value()->get_value(&i);
+      FloatValue *fv = new FloatValue((float)i, false);
+      left_->set_value(fv);
+      left_->set_type(FLOATS);
+    }
+    lv = left_->value();
+    rv = right_->value();
+  }
   int cmp_result = lv->compare(*rv);
   switch (op_) {
   case EQUAL_TO:
@@ -397,6 +463,12 @@ bool TupleFilter::non_subquery_filter(const Tuple &t) {
 bool TupleFilter::subquery_filter(const Tuple &t) {
   TupleValue *lv = left_->execute(t);
   auto cond_desc_subquery = dynamic_cast<TupleConDescSubquery *>(right_);
+  // TODO: 需考虑ATTR_NULL
+  if (left_->type() != right_->type()) {
+    // TODO: 子查询的类型转换
+    if (left_->type() == FLOATS) {
+    }
+  }
   switch (op_) {
   case EQUAL_TO:
   case LESS_EQUAL:
@@ -404,7 +476,7 @@ bool TupleFilter::subquery_filter(const Tuple &t) {
   case LESS_THAN:
   case GREAT_EQUAL:
   case GREAT_THAN:
-    // TODO
+    // TODO: 子查询的比较
     break;
   case MEM_IN:
     return cond_desc_subquery->is_contains(lv);

@@ -32,6 +32,7 @@ public:
 
   virtual void get_value(void *data) const = 0;
   virtual void to_string(std::ostream &os) const = 0;
+  virtual std::string to_string() const = 0;
   virtual int compare(const TupleValue &other) const = 0;
   virtual bool is_null() const = 0;
   virtual void compute(TupleValue *rhs, TupleValue *res, ArithOp op) = 0;
@@ -52,6 +53,12 @@ public:
       return;
     }
     os << value_;
+  }
+  std::string to_string() const override {
+    if (is_null_) {
+      return "null";
+    }
+    return std::to_string(value_);
   }
 
   int compare(const TupleValue &other) const override {
@@ -78,11 +85,7 @@ public:
 
   void get_value(void *data) const override { *(float *)data = value_; }
 
-  void to_string(std::ostream &os) const override {
-    if (is_null_) {
-      os << "null";
-      return;
-    }
+  std::string float_string() const {
     std::stringstream ss;
     ss << std::fixed << std::setprecision(2) << value_;
     std::string str = ss.str();
@@ -94,7 +97,20 @@ public:
     if (str.find('.') == str.size() - 1) {
       str = str.substr(0, str.size() - 1);
     }
-    os << str;
+    return str;
+  }
+  void to_string(std::ostream &os) const override {
+    if (is_null_) {
+      os << "null";
+      return;
+    }
+    os << float_string();
+  }
+  std::string to_string() const override {
+    if (is_null_) {
+      return "null";
+    }
+    return float_string();
   }
 
   int compare(const TupleValue &other) const override {
@@ -136,6 +152,12 @@ public:
     }
     os << value_;
   }
+  std::string to_string() const override {
+    if (is_null_) {
+      return "null";
+    }
+    return value_;
+  }
 
   int compare(const TupleValue &other) const override {
     if (is_null() == other.is_null()) {
@@ -161,17 +183,26 @@ public:
 
   void get_value(void *data) const override { *(time_t *)data = value_; }
 
-  void to_string(std::ostream &os) const override {
-    if (is_null_) {
-      os << "null";
-      return;
-    }
+  std::string date_string() const {
     tm *tp = gmtime(&value_);
     char s[36];
     memset(s, 0, sizeof s);
     std::snprintf(s, sizeof(s), "%04d-%02d-%02d", tp->tm_year + 1900,
                   tp->tm_mon + 1, tp->tm_mday);
-    os << s;
+    return std::string(s);
+  }
+  void to_string(std::ostream &os) const override {
+    if (is_null_) {
+      os << "null";
+      return;
+    }
+    os << date_string();
+  }
+  std::string to_string() const override {
+    if (is_null_) {
+      return "null";
+    }
+    return date_string();
   }
 
   int compare(const TupleValue &other) const override {

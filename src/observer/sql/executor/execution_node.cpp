@@ -15,6 +15,10 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "storage/common/table.h"
 
+TupleConDescNode *create_project_desc_node(SelectExpr *expr,
+                                           TupleSchema &product,
+                                           std::string &alias, bool multi);
+
 SelectExeNode::SelectExeNode() : table_(nullptr) {}
 
 SelectExeNode::~SelectExeNode() {
@@ -61,9 +65,8 @@ JoinExeNode::~JoinExeNode() {
   tuple_filters_.clear();
 }
 
-RC JoinExeNode::init(Trx *trx, TupleSet &&tl, TupleSet &&tr,
+RC JoinExeNode::init(TupleSet &&tl, TupleSet &&tr,
                      std::vector<TupleFilter *> &&tuple_filters) {
-  trx_ = trx;
   tl_ = std::move(tl);
   tr_ = std::move(tr);
   TupleSchema scm = tl_.get_schema();
@@ -109,23 +112,50 @@ RC JoinExeNode::execute(TupleSet &tuple_set) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-RC ProjectExeNode::init(Trx *trx, TupleSet &in, TupleSchema &&tuple_schema) {
-  trx_ = trx;
-  in_ = std::move(in);
-  out_schema_ = tuple_schema;
-  for (size_t i = 0; i < out_schema_.fields().size(); i++) {
-    auto func = out_schema_.field(i).func();
-    if (func != COLUMN) {
-      has_aggregate_ = true;
-      if (func != COUNT_FUNC) {
-        only_count_ = false;
-        break;
-      }
+ProjectionDesc::~ProjectionDesc() { delete desc_; }
+
+static const char *op_str_table[NO_ARITH_OP] = {"+", "-", "*", "/"};
+
+TupleConDescNode *create_project_desc_node(SelectExpr *expr,
+                                           TupleSchema &product,
+                                           std::string &alias, bool multi) {
+  if (expr->has_subexpr == 0) {
+    if (expr->is_attr) {
+      RelAttr *attr = expr->attr;
+      const char *table_name = attr->relation_name;
+      const char *field_name = attr->attribute_name;
+      // 初始化别名
+      std::string pre = multi ? table_name + std::string(".") : "";
+      alias += pre + expr->attr->attribute_name;
+      int idx = product.index_of_field(table_name, field_name);
+      return new TupleConDescAttr(product.field(idx).type(), idx);
+    } else {
+      TupleConDescValue *node = new TupleConDescValue(&expr->value);
+      alias += node->to_string();
+      return node;
     }
   }
-  return RC::SUCCESS;
+  TupleConDescNode *left =
+      create_project_desc_node(expr->left, product, alias, multi);
+  alias += op_str_table[expr->arithOp];
+  TupleConDescNode *right =
+      create_project_desc_node(expr->right, product, alias, multi);
+  return new TupleConDescInternal(expr->arithOp, left, right);
 }
 
+RC ProjectionDesc::init(SelectExpr *expr, TupleSchema &product, bool multi) {
+  desc_ = create_project_desc_node(expr, product, alias_, multi);
+  return RC::SUCCESS;
+}
+/////////////////////////////////////////////////////////////////////////////
+RC ProjectExeNode::init(TupleSet &&in, TupleSchema &&output,
+                        std::vector<ProjectionDesc *> &&descs) {
+  RC rc = RC::SUCCESS;
+  in_ = std::move(in);
+  out_schema_ = std::move(output);
+  descs_ = std::move(descs);
+  return rc;
+}
 static float get_float_value(const TupleValue &tuple, const TupleField &field) {
   if (field.func() == AVG_FUNC && field.type() == INTS) {
     // avg()参数为INT时，需要转换
@@ -247,11 +277,8 @@ RC ProjectExeNode::execute(TupleSet &tuple_set) {
 
   for (auto &t : in_.tuples()) {
     Tuple tuple;
-    for (const TupleField &field : out_schema_.fields()) {
-      int column = in_.get_schema().index_of_field(field.table_name(),
-                                                   field.field_name());
-      assert(column != -1);
-      tuple.add(t.get_pointer(column));
+    for (auto *&desc : descs_) {
+      tuple.add(desc->execute(t));
     }
     tuple_set.add(std::move(tuple));
   }
