@@ -4,7 +4,7 @@
 
 struct ParserContext;
 
-#include "yacc_sql.tab.h"
+#include "yacc_sql.tab.hpp"
 extern int atoi();
 extern double atof();
 
@@ -21,6 +21,7 @@ extern double atof();
 %option noyywrap
 %option bison-bridge
 %option reentrant
+%option outfile="lex.yy.cpp"
 
 WHITE_SAPCE      [\ \t\b\f]
 DIGIT            [0-9]+

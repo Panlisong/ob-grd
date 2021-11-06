@@ -42,6 +42,8 @@ public:
   void add(time_t value, bool is_null);
   void add(const char *s, int len, bool is_null);
 
+  void append(const Tuple &other);
+
   const std::vector<std::shared_ptr<TupleValue>> &values() const {
     return values_;
   }
@@ -89,13 +91,16 @@ public:
            const char *field_name);
   void add_if_not_exists(AttrType type, FuncName func, const char *table_name,
                          const char *field_name);
-  // void merge(const TupleSchema &other);
+
+  void merge(const TupleSchema &other);
+
   void append(const TupleSchema &other);
 
   const std::vector<TupleField> &fields() const { return fields_; }
 
   const TupleField &field(int index) const { return fields_[index]; }
 
+  bool contains_all(const TupleSchema &other) const;
   int index_of_field(const char *table_name, const char *field_name) const;
   void clear() { fields_.clear(); }
 
@@ -193,17 +198,88 @@ private:
   TupleSet &tuple_set_;
 };
 
+class TupleConDescNode {
+public:
+  TupleConDescNode() = default;
+  virtual ~TupleConDescNode() = 0;
+  virtual TupleValue *execute(const Tuple &tuple) = 0;
+  TupleValue *value() const { return value_; }
+  const void set_value(TupleValue *value) {
+    if (value_ != nullptr) {
+      delete value_;
+    }
+    value_ = value;
+  }
+
+private:
+  TupleValue *value_ = nullptr;
+};
+
+class TupleConDescInternal : public TupleConDescNode {
+public:
+  TupleConDescInternal(ArithOp op, TupleConDescNode *left,
+                       TupleConDescNode *right)
+      : op_(op), left_(left), right_(right) {}
+  virtual ~TupleConDescInternal();
+  TupleValue *execute(const Tuple &tuple) override;
+
+private:
+  ArithOp op_;
+  TupleConDescNode *left_;
+  TupleConDescNode *right_;
+};
+
+class TupleConDescAttr : public TupleConDescNode {
+public:
+  TupleConDescAttr(int index) : index_(index) {}
+  virtual ~TupleConDescAttr();
+  TupleValue *execute(const Tuple &tuple) override;
+
+private:
+  int index_;
+};
+
+class TupleConDescValue : public TupleConDescNode {
+public:
+  TupleConDescValue(Value *value);
+  virtual ~TupleConDescValue();
+  TupleValue *execute(const Tuple &tuple) override;
+
+private:
+};
+
+class TupleConDescSubquery : public TupleConDescNode {
+public:
+  TupleConDescSubquery() = default;
+  virtual ~TupleConDescSubquery();
+  TupleValue *execute(const Tuple &tuple) override;
+
+  RC init(TupleSet &&subquery);
+
+  bool is_contains(int i);
+  bool is_contains(float f);
+  bool is_contains(time_t t);
+  bool is_contains(const char *s, int len);
+  bool is_contains(TupleValue *value);
+
+private:
+  std::vector<std::shared_ptr<TupleValue>> values_;
+};
+
 class TupleFilter {
 public:
-  TupleFilter(int left_index, int right_index, CompOp op);
-  bool filter(const Tuple &tl, const Tuple &tr);
+  TupleFilter();
+  RC init(TupleSchema &product, const Condition &cond, TupleSet &&tuple_set);
+  bool filter(const Tuple &t);
+  bool non_subquery_filter(const Tuple &tuple);
+  bool subquery_filter(const Tuple &tuple);
 
 private:
   // 一个TupleFilter处理一个Condition，类似ConditionFilter
   // 用于处理形如"R.x op S.y"这样的Condition
 
-  int left_index_;  // 属性x在左Tuple中的索引
-  int right_index_; // 属性y在右Tuple中的索引
   CompOp op_;
+  TupleConDescNode *left_;
+  TupleConDescNode *right_;
 };
 #endif //__OBSERVER_SQL_EXECUTOR_TUPLE_H_

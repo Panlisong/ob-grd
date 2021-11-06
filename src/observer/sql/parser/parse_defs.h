@@ -15,7 +15,13 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_PARSER_PARSE_DEFS_H__
 
 #include <stddef.h>
+#include <string>
 #include <time.h>
+#include <unordered_map>
+#include <vector>
+
+class Table;
+typedef std::unordered_map<std::string, Table *> RelationTable;
 
 #define MAX_NUM 20
 #define MAX_REL_NAME 20
@@ -24,7 +30,7 @@ See the Mulan PSL v2 for more details. */
 #define MAX_DATA 50
 
 // Built-in Function类型
-typedef enum {
+typedef enum _FuncName {
   COLUMN,
   MAX_FUNC,
   MIN_FUNC,
@@ -39,31 +45,27 @@ typedef struct _RelAttr {
   char *attribute_name; // attribute name              属性名
 } RelAttr;
 
-typedef enum {
-  EQUAL_TO,    //"="     0
-  LESS_EQUAL,  //"<="    1
-  NOT_EQUAL,   //"<>"    2
-  LESS_THAN,   //"<"     3
-  GREAT_EQUAL, //">="    4
-  GREAT_THAN,  //">"     5
-  OP_IS,       //"is"    6
-  OP_IS_NOT,   //"is not"7
+typedef enum _CompOp {
+  EQUAL_TO,    //"="       0
+  LESS_EQUAL,  //"<="      1
+  NOT_EQUAL,   //"<>"      2
+  LESS_THAN,   //"<"       3
+  GREAT_EQUAL, //">="      4
+  GREAT_THAN,  //">"       5
+  OP_IS,       //"is"      6
+  OP_IS_NOT,   //"is not"  7
+  MEM_IN,      //"in"      8
+  MEM_NOT_IN,  //"not in"  9
   NO_OP
 } CompOp;
 
-typedef enum {
+typedef enum _ArithOp {
   ADD, //"+"      0
   SUB, //"-"      1
   MUL, //"*"      2
   DIV, //"*"      3
-  NO_ARITH_OP
+  NO_ARITH_OP,
 } ArithOp;
-
-typedef enum {
-  MEM_IN,     //"in"      0
-  MEM_NOT_IN, //"not int" 1
-  NO_MEM_OP
-} MembershipOp;
 
 //属性值类型
 typedef enum { UNDEFINED, CHARS, INTS, FLOATS, ATTR_NULL, DATES } AttrType;
@@ -91,10 +93,7 @@ typedef struct _ConditionExpr {
 /**
  * Condition 有两种情况
  * 1. is_subquery = 1
- *    1.1 is_comOp = 0
- *    => left memOp subquery
- *    1.2 is_comOp = 1
- *    => left comOp subquery
+ *    left op subquery
  * 2. is_subquery = 0
  * => left comOp right
  *
@@ -103,8 +102,6 @@ typedef struct _ConditionExpr {
 typedef struct _Condition {
   int is_used = 0; // 生成Filter时避免重复选取
   int is_subquery;
-  int is_comOp;
-  MembershipOp memOp;
   struct _Selects *subquery;
   ConditionExpr *left;
   ConditionExpr *right;
@@ -165,6 +162,8 @@ typedef struct _Selects {
   RelAttr *groups[MAX_NUM];      // cols in Group List
   size_t order_num;              // Length of orders
   OrderCol *orders[MAX_NUM];     // cols in OrderBy List
+  ///////////////////////////////////////////////////////////////////////////
+  RelationTable *context;
 } Selects;
 
 typedef struct {
@@ -248,7 +247,7 @@ union Queries {
   DropIndex drop_index;
   DescTable desc_table;
   LoadData load_data;
-  char *errors;
+  const char *errors;
 };
 
 // 修改yacc中相关数字编码为宏定义
@@ -319,7 +318,7 @@ void non_subquery_cond_init(Condition *cond, ConditionExpr *left,
 void com_subquery_init(Condition *cond, ConditionExpr *left, Selects *subquery,
                        CompOp op);
 void membership_subquery_init(Condition *cond, ConditionExpr *left,
-                              Selects *subquery, MembershipOp op);
+                              Selects *subquery, CompOp op);
 
 //////////////////////////////////////////////////////
 void append_cond_expr(ConditionExpr *expr, ConditionExpr *left,

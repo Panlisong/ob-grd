@@ -747,27 +747,8 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   RC rc = RC::SUCCESS;
   // 进入这里说明更新Table一定存在
   // 1. 生成ConditionFilter
-  std::vector<DefaultConditionFilter *> condition_filters;
-  for (int i = 0; i < condition_num; i++) {
-    const Condition &cond = conditions[i];
-    Table &t = *this;
-    DefaultConditionFilter *condition_filter = new DefaultConditionFilter(t);
-    // (1) 元数据检查
-    // (2) 类型检查和转换
-    // 都在condition_filter->init
-    rc = condition_filter->init(*this, cond);
-    if (rc != RC::SUCCESS) {
-      delete condition_filter;
-      for (DefaultConditionFilter *&filter : condition_filters) {
-        delete filter;
-      }
-      return rc;
-    }
-    condition_filters.push_back(condition_filter);
-  }
-  CompositeConditionFilter filter;
-  filter.init((const ConditionFilter **)condition_filters.data(),
-              condition_filters.size());
+  CompositeConditionFilter filter = CompositeConditionFilter();
+  rc = filter.init(trx, *this, conditions, condition_num);
 
   // 2. 创建Updater（获取Attr在Record中的实际偏移和大小）
   // (1) 检查更新字段是否存在
@@ -943,13 +924,14 @@ Index *Table::find_index(const char *index_name) const {
 IndexScanner *Table::find_index_for_scan(const DefaultConditionFilter &filter) {
   const ConDesc *field_cond_desc = nullptr;
   const ConDesc *value_cond_desc = nullptr;
-  if (filter.left().is_attr && !filter.right().is_attr) {
-    field_cond_desc = &filter.left();
-    value_cond_desc = &filter.right();
-  } else if (filter.right().is_attr && !filter.left().is_attr) {
-    field_cond_desc = &filter.right();
-    value_cond_desc = &filter.left();
-  }
+  // TODO: find_index_for_scan
+  // if (filter.left().is_attr && !filter.right().is_attr) {
+  //   field_cond_desc = &filter.left();
+  //   value_cond_desc = &filter.right();
+  // } else if (filter.right().is_attr && !filter.left().is_attr) {
+  //   field_cond_desc = &filter.right();
+  //   value_cond_desc = &filter.left();
+  // }
   if (field_cond_desc == nullptr || value_cond_desc == nullptr) {
     return nullptr;
   }

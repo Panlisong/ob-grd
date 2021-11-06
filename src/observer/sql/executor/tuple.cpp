@@ -12,6 +12,7 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "sql/executor/tuple.h"
+#include "sql/executor/value.h"
 #include <string>
 
 Tuple::Tuple(const Tuple &other) {
@@ -50,6 +51,12 @@ void Tuple::add(time_t value, bool is_null) {
 
 void Tuple::add(const char *s, int len, bool is_null) {
   add(new StringValue(s, len, is_null));
+}
+
+void Tuple::append(const Tuple &other) {
+  for (auto value : other.values_) {
+    add(value);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,6 +107,22 @@ void TupleSchema::append(const TupleSchema &other) {
   for (const auto &field : other.fields_) {
     fields_.emplace_back(field);
   }
+}
+
+void TupleSchema::merge(const TupleSchema &other) {
+  for (const auto &field : other.fields_) {
+    add_if_not_exists(field.type(), field.func(), field.table_name(),
+                      field.field_name());
+  }
+}
+
+bool TupleSchema::contains_all(const TupleSchema &other) const {
+  for (const auto &field : other.fields_) {
+    if (-1 == index_of_field(field.table_name(), field.field_name())) {
+      return false;
+    }
+  }
+  return true;
 }
 
 int TupleSchema::index_of_field(const char *table_name,
@@ -229,11 +252,128 @@ void TupleRecordConverter::add_record(const char *record) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-TupleFilter::TupleFilter(int left_index, int right_index, CompOp op)
-    : left_index_(left_index), right_index_(right_index), op_(op) {}
+TupleConDescNode::~TupleConDescNode() {
+  if (value_ != nullptr) {
+    delete value_;
+  }
+}
 
-bool TupleFilter::filter(const Tuple &tl, const Tuple &tr) {
-  int cmp_result = tl.get(left_index_).compare(tr.get(right_index_));
+TupleValue *TupleConDescInternal::execute(const Tuple &tuple) {
+  TupleValue *lv = left_->execute(tuple);
+  TupleValue *rv = right_->execute(tuple);
+  TupleValue *res = nullptr;
+  lv->compute(rv, res, op_);
+  set_value(res);
+  return res;
+}
+
+TupleConDescInternal::~TupleConDescInternal() {
+  delete left_;
+  delete right_;
+}
+
+TupleValue *TupleConDescAttr::execute(const Tuple &tuple) {
+  set_value(tuple.get_pointer(index_).get());
+  return tuple.get_pointer(index_).get();
+}
+
+TupleConDescAttr::~TupleConDescAttr() {}
+
+TupleConDescValue::TupleConDescValue(Value *value) {
+  TupleValue *v = nullptr;
+  switch (value->type) {
+  case INTS:
+    v = new IntValue(*(int *)value->data, false);
+    break;
+  case FLOATS:
+    v = new FloatValue(*(float *)value->data, false);
+    break;
+  case CHARS: {
+    const char *str = (char *)value->data;
+    v = new StringValue(str, strlen(str), false);
+  } break;
+  case DATES:
+    v = new DateValue(*(time_t *)value->data, false);
+    break;
+  case ATTR_NULL:
+    // TODO: null value
+    break;
+  default:
+    LOG_PANIC("Unkown attr type: %d", value->type);
+    break;
+  }
+  set_value(v);
+}
+
+TupleValue *TupleConDescValue::execute(const Tuple &tuple) { return value(); }
+
+TupleConDescValue::~TupleConDescValue() {}
+
+RC TupleConDescSubquery::init(TupleSet &&subquery) {
+  const auto schema = subquery.get_schema();
+  if (schema.fields().size() > 1) {
+    // TODO: 子查询列数>1
+    return RC::GENERIC_ERROR;
+  }
+  for (auto &tuple : subquery.tuples()) {
+    values_.emplace_back(tuple.get_pointer(0));
+  }
+  return RC::SUCCESS;
+}
+
+TupleValue *TupleConDescSubquery::execute(const Tuple &tuple) {
+  return nullptr;
+}
+
+bool TupleConDescSubquery::is_contains(TupleValue *value) {
+  // TODO
+  return false;
+}
+
+TupleConDescSubquery::~TupleConDescSubquery() {}
+
+/////////////////////////////////////////////////////////////////////////////
+TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
+                                        TupleSchema &product) {
+  if (expr->has_subexpr == 0) {
+    if (expr->is_attr) {
+      return new TupleConDescAttr(product.index_of_field(
+          expr->attr->relation_name, expr->attr->attribute_name));
+    } else {
+      return new TupleConDescValue(&expr->value);
+    }
+  }
+  TupleConDescNode *left = create_cond_desc_node(expr->left, product);
+  TupleConDescNode *right = create_cond_desc_node(expr->right, product);
+  return new TupleConDescInternal(expr->op, left, right);
+}
+
+TupleFilter::TupleFilter() {}
+
+RC TupleFilter::init(TupleSchema &product, const Condition &cond,
+                     TupleSet &&tuple_set) {
+  RC rc = RC::SUCCESS;
+  op_ = cond.comp;
+  left_ = create_cond_desc_node(cond.left, product);
+  right_ = nullptr;
+  if (cond.is_subquery == 1) {
+    TupleConDescSubquery *right_node = new TupleConDescSubquery();
+    rc = right_node->init(std::move(tuple_set));
+    if (rc != RC::SUCCESS) {
+      delete right_node;
+      return rc;
+    }
+    right_ = right_node;
+  } else {
+    right_ = create_cond_desc_node(cond.right, product);
+  }
+  return rc;
+}
+
+bool TupleFilter::non_subquery_filter(const Tuple &t) {
+  TupleValue *lv = left_->execute(t);
+  TupleValue *rv = right_->execute(t);
+  int cmp_result = lv->compare(*rv);
   switch (op_) {
   case EQUAL_TO:
     return 0 == cmp_result;
@@ -247,10 +387,43 @@ bool TupleFilter::filter(const Tuple &tl, const Tuple &tr) {
     return cmp_result >= 0;
   case GREAT_THAN:
     return cmp_result > 0;
-
   default:
+    LOG_PANIC("Unkown compOp type: %d", op_);
     break;
   }
-  LOG_PANIC("Never should print this.");
-  return cmp_result; // should not go here
+  return false;
+}
+
+bool TupleFilter::subquery_filter(const Tuple &t) {
+  TupleValue *lv = left_->execute(t);
+  auto cond_desc_subquery = dynamic_cast<TupleConDescSubquery *>(right_);
+  switch (op_) {
+  case EQUAL_TO:
+  case LESS_EQUAL:
+  case NOT_EQUAL:
+  case LESS_THAN:
+  case GREAT_EQUAL:
+  case GREAT_THAN:
+    // TODO
+    break;
+  case MEM_IN:
+    return cond_desc_subquery->is_contains(lv);
+  case MEM_NOT_IN:
+    return !cond_desc_subquery->is_contains(lv);
+  default:
+    LOG_PANIC("Unkown operator type: %d", op_);
+    break;
+  }
+  return false;
+}
+
+bool TupleFilter::filter(const Tuple &t) {
+  bool res = false;
+  auto is_subquery = dynamic_cast<TupleConDescSubquery *>(right_);
+  if (is_subquery != nullptr) {
+    res = subquery_filter(t);
+  } else {
+    res = non_subquery_filter(t);
+  }
+  return res;
 }

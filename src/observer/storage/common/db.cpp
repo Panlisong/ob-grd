@@ -175,7 +175,7 @@ RC Db::delete_records(Trx *trx, const char *table_name, int condition_num,
   }
   Table *table = res->second;
   CompositeConditionFilter *condition_filter = new CompositeConditionFilter();
-  RC rc = condition_filter->init(*table, conditions, condition_num);
+  RC rc = condition_filter->init(trx, *table, conditions, condition_num);
   if (rc != RC::SUCCESS) {
     return rc;
   }

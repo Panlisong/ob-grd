@@ -78,28 +78,30 @@ RC JoinExeNode::execute(TupleSet &tuple_set) {
   tuple_set.set_schema(tuple_schema_);
   for (auto &outer : tl_.tuples()) {
     for (auto &inner : tr_.tuples()) {
+      Tuple product = outer;
+      product.append(inner);
       bool is_result = true;
       // 遍历所有与两个TupleSet相关的过滤条件
       for (auto &tuple_filter : tuple_filters_) {
-        if (!tuple_filter->filter(outer, inner)) {
+        if (!tuple_filter->filter(product)) {
           is_result = false;
           break;
         }
       }
       if (is_result) {
-        Tuple tuple;
-        for (const TupleField &field : tuple_schema_.fields()) {
-          int field_idx_in_outer = tl_.get_schema().index_of_field(
-              field.table_name(), field.field_name());
-          int feild_idx_in_inner = tr_.get_schema().index_of_field(
-              field.table_name(), field.field_name());
-          if (field_idx_in_outer != -1) {
-            tuple.add(outer.get_pointer(field_idx_in_outer));
-          } else {
-            tuple.add(inner.get_pointer(feild_idx_in_inner));
-          }
-        }
-        tuple_set.add(std::move(tuple));
+        // Tuple tuple;
+        // for (const TupleField &field : tuple_schema_.fields()) {
+        //   int field_idx_in_outer = tl_.get_schema().index_of_field(
+        //       field.table_name(), field.field_name());
+        //   int feild_idx_in_inner = tr_.get_schema().index_of_field(
+        //       field.table_name(), field.field_name());
+        //   if (field_idx_in_outer != -1) {
+        //     tuple.add(outer.get_pointer(field_idx_in_outer));
+        //   } else {
+        //     tuple.add(inner.get_pointer(feild_idx_in_inner));
+        //   }
+        // }
+        tuple_set.add(std::move(product));
       }
     }
   }
@@ -183,7 +185,7 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
     for (size_t j = 0; j < out_schema_.fields().size(); j++) {
       const TupleField &field = out_schema_.field(j);
       int column = in_.get_schema().index_of_field(field.table_name(),
-                                                           field.field_name());
+                                                   field.field_name());
       switch (field.func()) {
       case AVG_FUNC: {
         // 上面的初始化确保AVG列一定为float
@@ -247,7 +249,7 @@ RC ProjectExeNode::execute(TupleSet &tuple_set) {
     Tuple tuple;
     for (const TupleField &field : out_schema_.fields()) {
       int column = in_.get_schema().index_of_field(field.table_name(),
-                                                           field.field_name());
+                                                   field.field_name());
       assert(column != -1);
       tuple.add(t.get_pointer(column));
     }

@@ -132,35 +132,29 @@ void condition_expr_destory(ConditionExpr *expr) {
 
 void non_subquery_cond_init(Condition *cond, ConditionExpr *left,
                             ConditionExpr *right, CompOp op) {
-  cond->is_comOp = 1;
   cond->left = left;
   cond->right = right;
   cond->comp = op;
   ////////////////////////
   cond->is_subquery = 0;
-  cond->memOp = NO_MEM_OP;
   cond->subquery = nullptr;
 }
 void com_subquery_init(Condition *cond, ConditionExpr *left, Selects *subquery,
                        CompOp op) {
-  cond->is_comOp = 1;
   cond->is_subquery = 1;
   cond->left = left;
   cond->subquery = subquery;
   cond->comp = op;
   //////////////////////////
-  cond->memOp = NO_MEM_OP;
   cond->right = nullptr;
 }
 void membership_subquery_init(Condition *cond, ConditionExpr *left,
-                              Selects *subquery, MembershipOp op) {
+                              Selects *subquery, CompOp op) {
   cond->is_subquery = 1;
   cond->left = left;
   cond->subquery = subquery;
-  cond->memOp = op;
+  cond->comp = op;
   ///////////////////////////
-  cond->is_comOp = 0;
-  cond->comp = NO_OP;
   cond->right = nullptr;
 }
 
@@ -580,7 +574,7 @@ void query_destroy(Query *query) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-extern "C" int sql_parse(const char *st, Query *sqls);
+extern int sql_parse(const char *st, Query *sqls);
 
 RC parse(const char *st, Query *sqln) {
   sql_parse(st, sqln);

@@ -35,11 +35,11 @@
    especially those whose name start with YY_ or yy_.  They are
    private implementation details that can be changed or removed.  */
 
-#ifndef YY_YY_YACC_SQL_TAB_H_INCLUDED
-# define YY_YY_YACC_SQL_TAB_H_INCLUDED
+#ifndef YY_YY_YACC_SQL_TAB_HPP_INCLUDED
+# define YY_YY_YACC_SQL_TAB_HPP_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
-# define YYDEBUG 1
+# define YYDEBUG 0
 #endif
 #if YYDEBUG
 extern int yydebug;
@@ -107,23 +107,22 @@ extern int yydebug;
     ASC = 308,                     /* ASC  */
     ADD_OP = 309,                  /* ADD_OP  */
     SUB_OP = 310,                  /* SUB_OP  */
-    MUL_OP = 311,                  /* MUL_OP  */
-    DIV_OP = 312,                  /* DIV_OP  */
-    EQ = 313,                      /* EQ  */
-    LT = 314,                      /* LT  */
-    GT = 315,                      /* GT  */
-    LE = 316,                      /* LE  */
-    GE = 317,                      /* GE  */
-    NE = 318,                      /* NE  */
-    IN = 319,                      /* IN  */
-    NUMBER = 320,                  /* NUMBER  */
-    FLOAT = 321,                   /* FLOAT  */
-    ID = 322,                      /* ID  */
-    PATH = 323,                    /* PATH  */
-    SSS = 324,                     /* SSS  */
-    DATE = 325,                    /* DATE  */
-    STAR = 326,                    /* STAR  */
-    STRING_V = 327                 /* STRING_V  */
+    DIV_OP = 311,                  /* DIV_OP  */
+    EQ = 312,                      /* EQ  */
+    LT = 313,                      /* LT  */
+    GT = 314,                      /* GT  */
+    LE = 315,                      /* LE  */
+    GE = 316,                      /* GE  */
+    NE = 317,                      /* NE  */
+    IN = 318,                      /* IN  */
+    NUMBER = 319,                  /* NUMBER  */
+    FLOAT = 320,                   /* FLOAT  */
+    ID = 321,                      /* ID  */
+    PATH = 322,                    /* PATH  */
+    SSS = 323,                     /* SSS  */
+    DATE = 324,                    /* DATE  */
+    STAR = 325,                    /* STAR  */
+    STRING_V = 326                 /* STRING_V  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -132,7 +131,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 159 "yacc_sql.y"
+#line 157 "yacc_sql.y"
 
   struct _Selects *select;
   struct _TableRef *ref;		// Table reference
@@ -145,7 +144,7 @@ union YYSTYPE
   float floats;
   char *position;
 
-#line 149 "yacc_sql.tab.h"
+#line 148 "yacc_sql.tab.hpp"
 
 };
 typedef union YYSTYPE YYSTYPE;
@@ -159,4 +158,4 @@ typedef union YYSTYPE YYSTYPE;
 int yyparse (void *scanner);
 
 
-#endif /* !YY_YY_YACC_SQL_TAB_H_INCLUDED  */
+#endif /* !YY_YY_YACC_SQL_TAB_HPP_INCLUDED  */

@@ -25,6 +25,7 @@ See the Mulan PSL v2 for more details. */
 class SessionEvent;
 typedef std::unordered_map<std::string, TupleSchema> RelAttrTable;
 typedef std::unordered_map<std::string, Table *> RelationTable;
+typedef std::unordered_map<std::string, SelectExeNode *> NodeTable;
 
 class ExecuteStage : public common::Stage {
 public:
@@ -56,13 +57,11 @@ protected:
   RC resolve_join_table(TableRef *ref, RelationTable &outer,
                         RelationTable &cur);
   RC resolve_condtions(RelationTable &outer, RelationTable &cur,
-                       const Condition conds[], size_t cond_num);
+                       std::vector<TableRef *> &refs, const Condition conds[],
+                       size_t cond_num);
   RC resolve_select(Selects &selects, RelationTable &relations);
 
   RC do_select(Query *sql, SessionEvent *session_event);
-  RC do_join_table(const TableRef *ref, Trx *trx, const Selects &selects,
-                   std::unordered_map<std::string, SelectExeNode *> &nodes,
-                   TupleSet &res);
 
 protected:
 private:

@@ -2,32 +2,31 @@
 %{
 
 #include "sql/parser/parse_defs.h"
-#include "sql/parser/yacc_sql.tab.h"
+#include "sql/parser/yacc_sql.tab.hpp"
 #include "sql/parser/lex.yy.h"
 // #include "common/log/log.h" // 包含C++中的头文件
 
-#include<stdio.h>
+#include<cstdio>
 #include<stdlib.h>
-#include<string.h>
+#include<cstring>
 
 typedef struct QueryContext{
   Query *ssql;
-  size_t value_length;
-  size_t condition_length;
-  Value values[MAX_NUM];
-  Condition conditions[MAX_NUM];
-  char id[MAX_NUM];
+  size_t value_length{};
+  size_t condition_length{};
+  Value values[MAX_NUM]{};
+  Condition conditions[MAX_NUM]{};
 } QueryContext;
 
 typedef struct ParserContext {
   Query *ssql;
-  QueryContext context_stack[MAX_NUM]; // 只允许嵌套深度不超过20
-  int top;							   // 栈顶指针
+  QueryContext context_stack[MAX_NUM]{}; // 只允许嵌套深度不超过20
+  int top{};							   // 栈顶指针
 } ParserContext;
 
 void init(Query *query, yyscan_t scanner) {
 	ParserContext *global = (ParserContext *)yyget_extra(scanner);
-	global->top = 0;
+	global->top = -1;
 	global->context_stack[0].ssql = query;
 }
 
@@ -146,7 +145,6 @@ ParserContext *get_context(yyscan_t scanner)
 		ASC
 		ADD_OP
 		SUB_OP
-		MUL_OP
 		DIV_OP
         EQ
         LT
@@ -182,7 +180,6 @@ ParserContext *get_context(yyscan_t scanner)
 %type <select> select
 %type <select> subquery
 
-%type <number> arithOp
 %type <number> membershipOp
 %type <number> comOp
 
@@ -200,6 +197,11 @@ ParserContext *get_context(yyscan_t scanner)
 %type <number> is_nullable
 %type <number> aggregate_func
 %type <number> number
+
+// 优先级以及结合性
+// 优先级：按照声明顺序优先级由低到高
+%left ADD_OP SUB_OP
+%left STAR DIV_OP
 
 %%
 
@@ -323,12 +325,14 @@ attr_def_list:
 attr_def:
     ID type LBRACE number RBRACE is_nullable{
 		AttrInfo attribute;
-		attr_info_init(&attribute, $1, $2, $4, $6);
+		AttrType type = static_cast<AttrType>($2);
+		attr_info_init(&attribute, $1, type, $4, $6);
 		create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 	}
     |ID type is_nullable {
 		AttrInfo attribute;
-		attr_info_init(&attribute, $1, $2, $2 == DATES ? 8 : 4, $3);
+		AttrType type = static_cast<AttrType>($2);
+		attr_info_init(&attribute, $1, type, type == DATES ? 8 : 4, $3);
 		create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 	}
     ;
@@ -429,13 +433,13 @@ selects:				/*  select 语句的语法解析树*/
 		CONTEXT->ssql->flag = SCF_SELECT; //"select";
 	}
 select:
-	SELECT select_expr select_expr_list FROM table_ref table_ref_list where group order
+	SELECT start_select select_expr select_expr_list FROM table_ref table_ref_list where group order
 	{
 		// 1. append select_expr $2
-		selects_append_expr(&TOP->ssql->sstr.selection, $2);
+		selects_append_expr(&TOP->ssql->sstr.selection, $3);
 
 		// 2. append table_ref $5
-		selects_append_relation(&TOP->ssql->sstr.selection, $5);
+		selects_append_relation(&TOP->ssql->sstr.selection, $6);
 
 		// 3. append condtion_list(可选项，可能为空)
 		selects_append_conditions(&TOP->ssql->sstr.selection, TOP->conditions, TOP->condition_length);
@@ -444,7 +448,7 @@ select:
 
 		// 5. append order_list(可选项，可能为空)
 		
-
+		TOP->ssql->sstr.selection.context = new RelationTable();
 		//临时变量清零
 		TOP->condition_length=0;
 		TOP->value_length = 0;
@@ -453,6 +457,12 @@ select:
 	}
 	;
 
+start_select: {
+		PUSH;
+		if (TOP->ssql == NULL) {
+			TOP->ssql = (Query *)malloc(sizeof(Query));
+		}
+	}
 /*************************** SELECT CLAUSE ****************************/
 select_expr_list:
 	/* empty */
@@ -484,9 +494,21 @@ select_expr:
  * 'T.*'和'*'出现在select输出列的运算中  
  */
 select_arith_expr: 
-	select_arith_expr arithOp select_arith_expr {
+	select_arith_expr ADD_OP select_arith_expr {
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
-		append_subexpr($$, $1, $3, $2);
+		append_subexpr($$, $1, $3, ADD);
+	}
+	| select_arith_expr SUB_OP select_arith_expr {
+		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
+		append_subexpr($$, $1, $3, SUB);
+	}
+	| select_arith_expr STAR select_arith_expr {
+		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
+		append_subexpr($$, $1, $3, MUL);
+	}
+	| select_arith_expr DIV_OP select_arith_expr {
+		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
+		append_subexpr($$, $1, $3, DIV);
 	}
 	| col {
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
@@ -499,39 +521,39 @@ select_arith_expr:
 		// 释放临时变量
 		TOP->value_length --;
 	}
+	| LBRACE select_arith_expr RBRACE {
+		$$ = $2;
+	}
 	;
 
-arithOp:
-	  ADD_OP { $$ = ADD; }
-	| SUB_OP { $$ = SUB; }
-	| STAR   { $$ = MUL; }
-	| DIV_OP { $$ = DIV; }
-	;
 
 select_func: 
 	aggregate_func LBRACE col RBRACE {
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
-		aggregate_function_init($$, $1, $3);
+		FuncName func = static_cast<FuncName>($1);
+		aggregate_function_init($$, func, $3);
 	}
 	| aggregate_func LBRACE STAR RBRACE {
-		if ($1 != COUNT_FUNC) {
+		FuncName func = static_cast<FuncName>($1);
+		if (func != COUNT_FUNC) {
 			CONTEXT->ssql->sstr.errors = "Invalid args of aggregate function";
 			YYERROR;
 		}
 		RelAttr *attr = (RelAttr *)malloc(sizeof(RelAttr));
 		attr_init(attr, NULL, "*");
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
-		aggregate_function_init($$, $1, attr);
+		aggregate_function_init($$, func, attr);
 	}
 	| aggregate_func LBRACE ID DOT STAR RBRACE {
-		if ($1 != COUNT_FUNC) {
+		FuncName func = static_cast<FuncName>($1);
+		if (func != COUNT_FUNC) {
 			CONTEXT->ssql->sstr.errors = "Invalid args of aggregate function";
 			YYERROR;
 		}
 		RelAttr *attr = (RelAttr *)malloc(sizeof(RelAttr));
 		attr_init(attr, $3, "*");
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
-		aggregate_function_init($$, $1, attr);
+		aggregate_function_init($$, func, attr);
 	}
 	;
 
@@ -599,13 +621,16 @@ condition_list:
 
 condition:
 	non_subquery comOp non_subquery {
-		non_subquery_cond_init(&TOP->conditions[TOP->condition_length++], $1, $3, $2);
+		CompOp op = static_cast<CompOp>($2);
+		non_subquery_cond_init(&TOP->conditions[TOP->condition_length++], $1, $3, op);
 	}
 	| non_subquery comOp subquery {
-		com_subquery_init(&TOP->conditions[TOP->condition_length++], $1, $3, $2);
+		CompOp op = static_cast<CompOp>($2);
+		com_subquery_init(&TOP->conditions[TOP->condition_length++], $1, $3, op);
 	}
 	| non_subquery membershipOp subquery {
-		membership_subquery_init(&TOP->conditions[TOP->condition_length++], $1, $3, $2);
+		CompOp op = static_cast<CompOp>($2);
+		membership_subquery_init(&TOP->conditions[TOP->condition_length++], $1, $3, op);
 	}
 	;
 
@@ -614,9 +639,21 @@ membershipOp:
 	| NOT IN { $$ = MEM_NOT_IN; }
 
 non_subquery: 
-	non_subquery arithOp non_subquery {
+	non_subquery ADD_OP non_subquery {
 		$$ = (ConditionExpr *)malloc(sizeof(ConditionExpr));
-		append_cond_expr($$, $1, $3, $2);
+		append_cond_expr($$, $1, $3, ADD);
+	}
+	| non_subquery SUB_OP non_subquery {
+		$$ = (ConditionExpr *)malloc(sizeof(ConditionExpr));
+		append_cond_expr($$, $1, $3, SUB);
+	}
+	| non_subquery STAR non_subquery {
+		$$ = (ConditionExpr *)malloc(sizeof(ConditionExpr));
+		append_cond_expr($$, $1, $3, MUL);
+	}
+	| non_subquery DIV_OP non_subquery {
+		$$ = (ConditionExpr *)malloc(sizeof(ConditionExpr));
+		append_cond_expr($$, $1, $3, DIV);
 	}
 	| col {
 		$$ = (ConditionExpr *)malloc(sizeof(ConditionExpr));
@@ -628,6 +665,9 @@ non_subquery:
 
 		// 释放临时变量
 		TOP->value_length --;
+	}
+	| LBRACE non_subquery RBRACE {
+		$$ = $2;
 	}
 	;
 
@@ -643,15 +683,10 @@ comOp:
     ;
 
 subquery:
-	subquery_start LBRACE select RBRACE {
-		$$ = $3;
+	LBRACE select RBRACE {
+		$$ = $2;
 		POP;
 	}
-
-subquery_start: {
-	PUSH;
-	TOP->ssql = (Query *)malloc(sizeof(Query));
-}
 
 /*************************** GROUP BY ****************************/
 group: 
@@ -711,7 +746,7 @@ extern void scan_string(const char *str, yyscan_t scanner);
 
 int sql_parse(const char *s, Query *sqls){
 	ParserContext context;
-	memset(&context, 0, sizeof(context));
+	// memset(&context, 0, sizeof(ParserContext));
 
 	yyscan_t scanner;
 	yylex_init_extra(&context, &scanner);
