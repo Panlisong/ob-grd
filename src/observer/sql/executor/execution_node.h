@@ -70,10 +70,12 @@ public:
   ProjectionDesc() = default;
   virtual ~ProjectionDesc();
 
-  RC init(SelectExpr *expr, TupleSchema &product, bool multi);
+  RC init(SelectExpr *expr, const TupleSchema &product, bool multi);
   const std::string to_string() const { return alias_; }
   const AttrType type() const { return desc_->type(); }
-  TupleValue *execute(const Tuple &tuple) { return desc_->execute(tuple); }
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) {
+    return desc_->execute(tuple);
+  }
 
 private:
   TupleConDescNode *desc_;

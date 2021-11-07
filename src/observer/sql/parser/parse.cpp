@@ -238,12 +238,11 @@ void append_subexpr(SelectExpr *expr, SelectExpr *left, SelectExpr *right,
   expr->left = left;
   expr->right = right;
   expr->arithOp = op;
+  expr->func = EXPR;
   ///////////////////
   expr->is_attr = 0;
   memset(&expr->value, 0, sizeof(Value));
   expr->attr = nullptr;
-  expr->arithOp = NO_ARITH_OP;
-  expr->func = FUNC_NUM;
 }
 
 void select_expr_destroy(SelectExpr *expr) {

@@ -435,10 +435,10 @@ selects:				/*  select 语句的语法解析树*/
 select:
 	SELECT start_select select_expr select_expr_list FROM table_ref table_ref_list where group order
 	{
-		// 1. append select_expr $2
+		// 1. append select_expr $3
 		selects_append_expr(&TOP->ssql->sstr.selection, $3);
 
-		// 2. append table_ref $5
+		// 2. append table_ref $6
 		selects_append_relation(&TOP->ssql->sstr.selection, $6);
 
 		// 3. append condtion_list(可选项，可能为空)

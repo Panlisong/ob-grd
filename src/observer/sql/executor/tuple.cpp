@@ -148,23 +148,12 @@ void TupleSchema::print(std::ostream &os, bool multi) const {
   }
 
   // 判断有多张表还是只有一张表
-  std::string func[FUNC_NUM] = {"", "", "MAX", "MIN", "COUNT", "AVG"};
-  for (std::vector<TupleField>::const_iterator iter = fields_.begin(),
-                                               end = --fields_.end();
-       iter != end; ++iter) {
-    if (iter->func() != COLUMN) {
-      os << func[iter->func()] << "(" << iter->alias() << ") | ";
-      continue;
-    }
-    os << iter->alias() << " | ";
+  for (auto it = fields_.begin(), end = --fields_.end(); it != end; ++it) {
+    os << it->alias() << " | ";
   }
 
   auto last = fields_.back();
-  if (last.func() != COLUMN) {
-    os << func[last.func()] << "(" << last.alias() << ")" << std::endl;
-  } else {
-    os << last.alias() << std::endl;
-  }
+  os << last.alias() << std::endl;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -249,11 +238,7 @@ void TupleRecordConverter::add_record(const char *record) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-TupleConDescNode::~TupleConDescNode() {
-  if (value_ != nullptr) {
-    delete value_;
-  }
-}
+TupleConDescNode::~TupleConDescNode() {}
 
 TupleConDescInternal::TupleConDescInternal(ArithOp op, TupleConDescNode *left,
                                            TupleConDescNode *right)
@@ -273,9 +258,9 @@ TupleConDescInternal::TupleConDescInternal(ArithOp op, TupleConDescNode *left,
   }
 }
 
-TupleValue *TupleConDescInternal::execute(const Tuple &tuple) {
-  TupleValue *lv = left_->execute(tuple);
-  TupleValue *rv = right_->execute(tuple);
+std::shared_ptr<TupleValue> TupleConDescInternal::execute(const Tuple &tuple) {
+  auto lv = left_->execute(tuple);
+  auto rv = right_->execute(tuple);
   TupleValue *res = nullptr;
   // TODO: 需考虑出现ATTR_NULL的情况
   // 以下实现仅考虑INT和FLOAT
@@ -297,9 +282,9 @@ TupleValue *TupleConDescInternal::execute(const Tuple &tuple) {
     lv = left_->value();
     rv = right_->value();
   }
-  lv->compute(rv, res, op_);
+  lv->compute(rv.get(), res, op_);
   set_value(res);
-  return res;
+  return value();
 }
 
 TupleConDescInternal::~TupleConDescInternal() {
@@ -311,10 +296,9 @@ TupleConDescAttr::TupleConDescAttr(AttrType type, int index) : index_(index) {
   set_type(type);
 }
 
-TupleValue *TupleConDescAttr::execute(const Tuple &tuple) {
-  // TODO: 智能指针
-  set_value(tuple.get_pointer(index_).get());
-  return tuple.get_pointer(index_).get();
+std::shared_ptr<TupleValue> TupleConDescAttr::execute(const Tuple &tuple) {
+  set_value(tuple.get_pointer(index_));
+  return value();
 }
 
 TupleConDescAttr::~TupleConDescAttr() {}
@@ -346,7 +330,9 @@ TupleConDescValue::TupleConDescValue(Value *value) {
   set_type(value->type);
 }
 
-TupleValue *TupleConDescValue::execute(const Tuple &tuple) { return value(); }
+std::shared_ptr<TupleValue> TupleConDescValue::execute(const Tuple &tuple) {
+  return value();
+}
 
 TupleConDescValue::~TupleConDescValue() {}
 
@@ -363,11 +349,11 @@ RC TupleConDescSubquery::init(TupleSet &&subquery) {
   return RC::SUCCESS;
 }
 
-TupleValue *TupleConDescSubquery::execute(const Tuple &tuple) {
+std::shared_ptr<TupleValue> TupleConDescSubquery::execute(const Tuple &tuple) {
   return nullptr;
 }
 
-bool TupleConDescSubquery::is_contains(TupleValue *value) {
+bool TupleConDescSubquery::is_contains(const TupleValue *value) {
   // TODO: 这里生成新的TupleVaule或在compare中判断类型
   // compare
 
@@ -420,8 +406,8 @@ RC TupleFilter::init(TupleSchema &product, const Condition &cond,
 }
 
 bool TupleFilter::non_subquery_filter(const Tuple &t) {
-  TupleValue *lv = left_->execute(t);
-  TupleValue *rv = right_->execute(t);
+  auto lv = left_->execute(t);
+  auto rv = right_->execute(t);
   // TODO: 需考虑ATTR_NULL
   if (left_->type() != right_->type()) {
     int i;
@@ -461,7 +447,7 @@ bool TupleFilter::non_subquery_filter(const Tuple &t) {
 }
 
 bool TupleFilter::subquery_filter(const Tuple &t) {
-  TupleValue *lv = left_->execute(t);
+  auto lv = left_->execute(t);
   auto cond_desc_subquery = dynamic_cast<TupleConDescSubquery *>(right_);
   // TODO: 需考虑ATTR_NULL
   if (left_->type() != right_->type()) {
@@ -479,9 +465,9 @@ bool TupleFilter::subquery_filter(const Tuple &t) {
     // TODO: 子查询的比较
     break;
   case MEM_IN:
-    return cond_desc_subquery->is_contains(lv);
+    return cond_desc_subquery->is_contains(lv.get());
   case MEM_NOT_IN:
-    return !cond_desc_subquery->is_contains(lv);
+    return !cond_desc_subquery->is_contains(lv.get());
   default:
     LOG_PANIC("Unkown operator type: %d", op_);
     break;

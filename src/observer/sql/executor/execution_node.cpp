@@ -114,19 +114,27 @@ RC JoinExeNode::execute(TupleSet &tuple_set) {
 /////////////////////////////////////////////////////////////////////////////
 ProjectionDesc::~ProjectionDesc() { delete desc_; }
 
-static const char *op_str_table[NO_ARITH_OP] = {"+", "-", "*", "/"};
+static std::string op_str_table[NO_ARITH_OP] = {"+", "-", "*", "/"};
+static std::string func[FUNC_NUM] = {"", "", "MAX", "MIN", "COUNT", "AVG"};
 
 TupleConDescNode *create_project_desc_node(SelectExpr *expr,
-                                           TupleSchema &product,
+                                           const TupleSchema &product,
                                            std::string &alias, bool multi) {
   if (expr->has_subexpr == 0) {
+    // 非表达式 不可能为EXPR
+    // COLUMN: 'T.A' 'A'
+    // FUNC: 'func(T.A)' 'func(A)'
     if (expr->is_attr) {
       RelAttr *attr = expr->attr;
       const char *table_name = attr->relation_name;
       const char *field_name = attr->attribute_name;
       // 初始化别名
       std::string pre = multi ? table_name + std::string(".") : "";
-      alias += pre + expr->attr->attribute_name;
+      if (expr->func != COLUMN) {
+        alias += func[expr->func] + "(" + pre + field_name + ")";
+      } else {
+        alias += pre + field_name;
+      }
       int idx = product.index_of_field(table_name, field_name);
       return new TupleConDescAttr(product.field(idx).type(), idx);
     } else {
@@ -143,7 +151,8 @@ TupleConDescNode *create_project_desc_node(SelectExpr *expr,
   return new TupleConDescInternal(expr->arithOp, left, right);
 }
 
-RC ProjectionDesc::init(SelectExpr *expr, TupleSchema &product, bool multi) {
+RC ProjectionDesc::init(SelectExpr *expr, const TupleSchema &product,
+                        bool multi) {
   desc_ = create_project_desc_node(expr, product, alias_, multi);
   return RC::SUCCESS;
 }

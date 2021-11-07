@@ -387,41 +387,6 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
 
-  if (type_left != type_right) {
-    // 可比较且类型不同，说明要发生类型转换
-    // 目前实现只有INF和FLOAT类型转换
-    // R(F) op V(I) / V(I) op R(F) => V(I) 转 V(F)
-    // R(I) op V(F) / V(F) op R(I) => R(I) 转 R(F)
-    // R(F) op R(I) / R(I) op R(F) => R(I) 转 R(F)
-    // V(F) op V(I) / V(I) op V(F) => V(I) 转 V(F)
-    if (type_left == INTS) {
-    }
-    if (type_right == INTS) {
-    }
-    //   // 1. 常量直接更改
-    //   if (condition.left_is_attr == 0 && type_left == INTS) {
-    //     float v = *(int *)left.value;
-    //     // memcpy(left.value, &v, sizeof(v));
-    //     // // 同步cond
-    //     // condition.left_value.type = FLOATS;
-    //     // 由于cond为const， 无法同步类型转换，所以上面的写法不推荐
-    //     left.value = new float(v); // WARNING：注意释放内存
-    //   }
-    //   if (condition.right_is_attr == 0 && type_right == INTS) {
-    //     float v = *(int *)right.value;
-    //     // memcpy(right.value, &v, sizeof(v));
-    //     right.value = new float(v); // WARNING：注意释放内存
-    //   }
-    //   // 2. 属性，做标记延后转换
-    //   if (condition.left_is_attr == 1 && type_left == INTS) {
-    //     left_attr_convert_ = true;
-    //   }
-    //   if (condition.right_is_attr == 1 && type_right == INTS) {
-    //     right_attr_convert_ = true;
-    //   }
-    type_left = FLOATS;
-  }
-
   return init(left, right, condition.comp);
 }
 

@@ -63,7 +63,7 @@ private:
 class TupleField {
 public:
   TupleField(AttrType type, FuncName func, const char *table_name,
-             const char *field_name, const char *alias = nullptr)
+             const char *field_name, const char *alias = "")
       : type_(type), func_(func), table_name_(table_name),
         field_name_(field_name), alias_(alias) {}
 
@@ -91,9 +91,9 @@ public:
   ~TupleSchema() = default;
 
   void add(AttrType type, FuncName func, const char *table_name,
-           const char *field_name, const char *alias = nullptr);
+           const char *field_name, const char *alias = "");
   void add_if_not_exists(AttrType type, FuncName func, const char *table_name,
-                         const char *field_name, const char *alias = nullptr);
+                         const char *field_name, const char *alias = "");
 
   void merge(const TupleSchema &other);
 
@@ -202,22 +202,18 @@ class TupleConDescNode {
 public:
   TupleConDescNode() = default;
   virtual ~TupleConDescNode() = 0;
-  virtual TupleValue *execute(const Tuple &tuple) = 0;
+  virtual std::shared_ptr<TupleValue> execute(const Tuple &tuple) = 0;
 
   const AttrType type() const { return type_; }
   void set_type(AttrType type) { type_ = type; }
 
-  TupleValue *value() const { return value_; }
-  void set_value(TupleValue *value) {
-    if (value_ != nullptr) {
-      delete value_;
-    }
-    value_ = value;
-  }
+  std::shared_ptr<TupleValue> value() const { return value_; }
+  void set_value(TupleValue *value) { value_.reset(value); }
+  void set_value(std::shared_ptr<TupleValue> value) { value_ = value; }
 
 private:
   AttrType type_;
-  TupleValue *value_ = nullptr;
+  std::shared_ptr<TupleValue> value_ = nullptr;
 };
 
 class TupleConDescInternal : public TupleConDescNode {
@@ -225,7 +221,7 @@ public:
   TupleConDescInternal(ArithOp op, TupleConDescNode *left,
                        TupleConDescNode *right);
   virtual ~TupleConDescInternal();
-  TupleValue *execute(const Tuple &tuple) override;
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override;
 
 private:
   ArithOp op_;
@@ -237,7 +233,7 @@ class TupleConDescAttr : public TupleConDescNode {
 public:
   TupleConDescAttr(AttrType type, int index);
   virtual ~TupleConDescAttr();
-  TupleValue *execute(const Tuple &tuple) override;
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override;
 
 private:
   int index_;
@@ -247,7 +243,7 @@ class TupleConDescValue : public TupleConDescNode {
 public:
   TupleConDescValue(Value *value);
   virtual ~TupleConDescValue();
-  TupleValue *execute(const Tuple &tuple) override;
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override;
   std::string to_string() { return value()->to_string(); }
 
 private:
@@ -257,15 +253,11 @@ class TupleConDescSubquery : public TupleConDescNode {
 public:
   TupleConDescSubquery() = default;
   virtual ~TupleConDescSubquery();
-  TupleValue *execute(const Tuple &tuple) override;
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override;
 
   RC init(TupleSet &&subquery);
 
-  bool is_contains(int i);
-  bool is_contains(float f);
-  bool is_contains(time_t t);
-  bool is_contains(const char *s, int len);
-  bool is_contains(TupleValue *value);
+  bool is_contains(const TupleValue *value);
 
 private:
   std::vector<std::shared_ptr<TupleValue>> values_;

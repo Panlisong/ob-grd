@@ -11,7 +11,7 @@ See the Mulan PSL v2 for more details. */
 #include <climits>
 #include <cmath>
 
-void IntValue::compute(TupleValue *rhs, TupleValue *res, ArithOp op) {
+void IntValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
   auto int_value = dynamic_cast<IntValue *>(rhs);
   if (int_value != nullptr) {
     // rhs为Int
@@ -33,7 +33,7 @@ void IntValue::compute(TupleValue *rhs, TupleValue *res, ArithOp op) {
         res = new IntValue(value_ > 0 ? INT_MAX : INT_MIN, true);
         return;
       }
-      result = value_ * int_value->value_;
+      result = value_ / int_value->value_;
       break;
     default:
       LOG_PANIC("Unkown arithop type: %d", op);
@@ -43,7 +43,7 @@ void IntValue::compute(TupleValue *rhs, TupleValue *res, ArithOp op) {
   }
 }
 
-void FloatValue::compute(TupleValue *rhs, TupleValue *res, ArithOp op) {
+void FloatValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
   auto float_value = dynamic_cast<FloatValue *>(rhs);
   if (float_value != nullptr) {
     // rhs为float
@@ -65,7 +65,7 @@ void FloatValue::compute(TupleValue *rhs, TupleValue *res, ArithOp op) {
         res = new FloatValue(value_ > 0 ? INFINITY : -INFINITY, true);
         return;
       }
-      result = value_ * float_value->value_;
+      result = value_ / float_value->value_;
       break;
     default:
       LOG_PANIC("Unkown arithop type: %d", op);
@@ -75,10 +75,10 @@ void FloatValue::compute(TupleValue *rhs, TupleValue *res, ArithOp op) {
   }
 }
 
-void StringValue::compute(TupleValue *rhs, TupleValue *res, ArithOp op) {
+void StringValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
   // TODO: 运算异常
 }
 
-void DateValue::compute(TupleValue *rhs, TupleValue *res, ArithOp op) {
+void DateValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
   // TODO: 运算异常
 }

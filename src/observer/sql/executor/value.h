@@ -35,7 +35,7 @@ public:
   virtual std::string to_string() const = 0;
   virtual int compare(const TupleValue &other) const = 0;
   virtual bool is_null() const = 0;
-  virtual void compute(TupleValue *rhs, TupleValue *res, ArithOp op) = 0;
+  virtual void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) = 0;
 
 private:
 };
@@ -71,7 +71,7 @@ public:
 
   bool is_null() const override { return is_null_; }
 
-  void compute(TupleValue *rhs, TupleValue *res, ArithOp op) override;
+  void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
 
 private:
   int value_;
@@ -130,7 +130,7 @@ public:
 
   bool is_null() const override { return is_null_; }
 
-  void compute(TupleValue *rhs, TupleValue *res, ArithOp op) override;
+  void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
 
 private:
   float value_;
@@ -169,7 +169,7 @@ public:
 
   bool is_null() const override { return is_null_; }
 
-  void compute(TupleValue *rhs, TupleValue *res, ArithOp op) override;
+  void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
 
 private:
   std::string value_;
@@ -221,7 +221,7 @@ public:
 
   bool is_null() const override { return is_null_; }
 
-  void compute(TupleValue *rhs, TupleValue *res, ArithOp op) override;
+  void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
 
 private:
   time_t value_;
