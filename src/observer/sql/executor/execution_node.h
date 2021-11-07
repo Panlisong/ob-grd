@@ -77,6 +77,10 @@ public:
     return desc_->execute(tuple);
   }
 
+public:
+  static RC from_table(Table *table, const TupleSchema &product,
+                       std::vector<ProjectionDesc *> &descs, bool multi);
+
 private:
   TupleConDescNode *desc_;
   std::string alias_;
@@ -87,8 +91,7 @@ public:
   ProjectExeNode() = default;
   ~ProjectExeNode() = default;
 
-  RC init(TupleSet &&in, TupleSchema &&output,
-          std::vector<ProjectionDesc *> &&descs);
+  RC init(TupleSet &&in, std::vector<ProjectionDesc *> &&descs);
 
   RC execute(TupleSet &tuple_set) override;
 

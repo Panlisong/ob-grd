@@ -23,14 +23,6 @@ class Table;
 
 typedef enum ConvertFlag { NO_CONVERT, INT_TO_FLOATS } ConvertFlag;
 
-struct ConDesc {
-  bool is_null;    // value is null.
-  bool is_attr;    // 是否属性，false 表示是值
-  int attr_length; // 如果是属性，表示属性值长度
-  int attr_offset; // 如果是属性，表示在记录中的偏移量
-  void *value;     // 如果是值类型，这里记录值的数据
-};
-
 class ConDescNode {
 public:
   ConDescNode() = default;
@@ -44,6 +36,7 @@ public:
   void set_value(void *value) {
     if (value_ != nullptr) {
       free(value_);
+      value_ = nullptr;
     }
     value_ = value;
   }
@@ -159,10 +152,7 @@ public:
 private:
   ConDescNode *left_;
   ConDescNode *right_;
-  AttrType attr_type_ = UNDEFINED;
   CompOp comp_op_ = NO_OP;
-  bool left_attr_convert_ = false;
-  bool right_attr_convert_ = false;
   Table &table_;
 };
 

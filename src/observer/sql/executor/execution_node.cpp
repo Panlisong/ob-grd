@@ -156,15 +156,44 @@ RC ProjectionDesc::init(SelectExpr *expr, const TupleSchema &product,
   desc_ = create_project_desc_node(expr, product, alias_, multi);
   return RC::SUCCESS;
 }
-/////////////////////////////////////////////////////////////////////////////
-RC ProjectExeNode::init(TupleSet &&in, TupleSchema &&output,
-                        std::vector<ProjectionDesc *> &&descs) {
+
+RC ProjectionDesc::from_table(Table *table, const TupleSchema &product,
+                              std::vector<ProjectionDesc *> &descs,
+                              bool multi) {
   RC rc = RC::SUCCESS;
-  in_ = std::move(in);
-  out_schema_ = std::move(output);
-  descs_ = std::move(descs);
+  const char *table_name = table->name();
+  const TableMeta &table_meta = table->table_meta();
+  const int field_num = table_meta.field_num();
+  for (int i = 0; i < field_num; i++) {
+    const FieldMeta *field_meta = table_meta.field(i);
+    if (field_meta->visible()) {
+      SelectExpr expr;
+      RelAttr attr;
+      attr_init(&attr, table_name, field_meta->name());
+      select_attr_init(&expr, &attr);
+      ProjectionDesc *desc = new ProjectionDesc;
+      rc = desc->init(&expr, product, multi);
+      if (rc != RC::SUCCESS) {
+        delete desc;
+        return rc;
+      }
+      descs.push_back(desc);
+    }
+  }
   return rc;
 }
+
+/////////////////////////////////////////////////////////////////////////////
+RC ProjectExeNode::init(TupleSet &&in, std::vector<ProjectionDesc *> &&descs) {
+  RC rc = RC::SUCCESS;
+  in_ = std::move(in);
+  descs_ = std::move(descs);
+  for (auto *&desc : descs_) {
+    out_schema_.add(desc->type(), COLUMN, "", "", desc->to_string().c_str());
+  }
+  return rc;
+}
+
 static float get_float_value(const TupleValue &tuple, const TupleField &field) {
   if (field.func() == AVG_FUNC && field.type() == INTS) {
     // avg()参数为INT时，需要转换

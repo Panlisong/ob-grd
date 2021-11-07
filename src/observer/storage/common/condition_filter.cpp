@@ -29,6 +29,7 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
 ConDescNode::~ConDescNode() {
   if (value_ != nullptr) {
     free(value_);
+    value_ = nullptr;
   }
 }
 
@@ -393,6 +394,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
 bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
   char *lvalue = (char *)left_->execute(rec);
   char *rvalue = (char *)right_->execute(rec);
+  AttrType attr_type = UNDEFINED;
   int cmp_result = 0;
   // TODO: 需考虑null
   if (left_->type() != right_->type()) {
@@ -412,8 +414,9 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
     }
     lvalue = (char *)left_->value();
     rvalue = (char *)right_->value();
+    attr_type = FLOATS;
   }
-  switch (attr_type_) {
+  switch (attr_type) {
   case CHARS: {
     // 字符串都是定长的，直接比较
     // 按照C字符串风格来定

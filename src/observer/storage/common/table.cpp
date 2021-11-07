@@ -922,9 +922,9 @@ Index *Table::find_index(const char *index_name) const {
 }
 
 IndexScanner *Table::find_index_for_scan(const DefaultConditionFilter &filter) {
-  const ConDesc *field_cond_desc = nullptr;
-  const ConDesc *value_cond_desc = nullptr;
   // TODO: find_index_for_scan
+  // const ConDesc *field_cond_desc = nullptr;
+  // const ConDesc *value_cond_desc = nullptr;
   // if (filter.left().is_attr && !filter.right().is_attr) {
   //   field_cond_desc = &filter.left();
   //   value_cond_desc = &filter.right();
@@ -932,31 +932,32 @@ IndexScanner *Table::find_index_for_scan(const DefaultConditionFilter &filter) {
   //   field_cond_desc = &filter.right();
   //   value_cond_desc = &filter.left();
   // }
-  if (field_cond_desc == nullptr || value_cond_desc == nullptr) {
-    return nullptr;
-  }
+  // if (field_cond_desc == nullptr || value_cond_desc == nullptr) {
+  //   return nullptr;
+  // }
 
-  const FieldMeta *field_meta =
-      table_meta_.find_field_by_offset(field_cond_desc->attr_offset);
-  if (nullptr == field_meta) {
-    LOG_PANIC("Cannot find field by offset %d. table=%s",
-              field_cond_desc->attr_offset, name());
-    return nullptr;
-  }
+  // const FieldMeta *field_meta =
+  //     table_meta_.find_field_by_offset(field_cond_desc->attr_offset);
+  // if (nullptr == field_meta) {
+  //   LOG_PANIC("Cannot find field by offset %d. table=%s",
+  //             field_cond_desc->attr_offset, name());
+  //   return nullptr;
+  // }
 
-  const IndexMeta *index_meta =
-      table_meta_.find_index_by_field(field_meta->name());
-  if (nullptr == index_meta) {
-    return nullptr;
-  }
+  // const IndexMeta *index_meta =
+  //     table_meta_.find_index_by_field(field_meta->name());
+  // if (nullptr == index_meta) {
+  //   return nullptr;
+  // }
 
-  Index *index = find_index(index_meta->name());
-  if (nullptr == index) {
-    return nullptr;
-  }
+  // Index *index = find_index(index_meta->name());
+  // if (nullptr == index) {
+  //   return nullptr;
+  // }
 
-  return index->create_scanner(filter.comp_op(),
-                               (const char *)value_cond_desc->value);
+  // return index->create_scanner(filter.comp_op(),
+  //                              (const char *)value_cond_desc->value);
+  return nullptr;
 }
 
 // TODO: 按照多列索引找最优的index

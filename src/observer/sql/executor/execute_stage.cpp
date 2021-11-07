@@ -832,6 +832,10 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
 
   // 0.1 初始化[关系名->Table Object]表
   rc = relations_init(selects);
+  if (rc != RC::SUCCESS) {
+    session_event->set_response("FAILURE\n");
+    return rc;
+  }
 
   // 0.2 优先检查元数据
   RelationTable relations;
@@ -850,16 +854,49 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
   return rc;
 }
 /////////////////////////////////////////////////////////////////////////////////
+static RC add_all_relations(RelationTable &relations,
+                            const TupleSchema &product,
+                            std::vector<ProjectionDesc *> &descs, bool multi) {
+  RC rc = RC::SUCCESS;
+  for (auto &p : relations) {
+    rc = ProjectionDesc::from_table(p.second, product, descs, multi);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+  }
+  return rc;
+}
+
 RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
                               const TupleSchema &product,
                               ProjectExeNode &project) {
   RC rc = RC::SUCCESS;
-  TupleSchema out_schema;
+  RelationTable &relations = *selects.context;
+  bool multi = relations.size() > 1;
   std::vector<ProjectionDesc *> descs;
   for (int i = selects.expr_num - 1; i >= 0; i--) {
     SelectExpr *expr = selects.exprs[i];
+    if (expr->is_attr == 1) {
+      // 处理'*'情况
+      RelAttr *attr = expr->attr;
+      const char *table_name = attr->relation_name;
+      const char *field_name = attr->attribute_name;
+      if (strcmp("*", field_name) == 0) {
+        if (table_name == nullptr) {
+          rc = add_all_relations(relations, product, descs, multi);
+        } else {
+          Table *table = relations[table_name];
+          rc = ProjectionDesc::from_table(table, product, descs, multi);
+        }
+        if (rc != RC::SUCCESS) {
+          return rc;
+        }
+      }
+      continue;
+    }
+    // 一般情况
     ProjectionDesc *desc = new ProjectionDesc();
-    rc = desc->init(expr, product, selects.context->size() > 1);
+    rc = desc->init(expr, product, multi);
     if (rc != RC::SUCCESS) {
       delete desc;
       for (ProjectionDesc *&d : descs) {
@@ -868,20 +905,8 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
       return rc;
     }
     descs.push_back(desc);
-    if (expr->has_subexpr == 1) {
-      out_schema.add(desc->type(), EXPR, "", "", desc->to_string().c_str());
-    } else {
-      // select expression 不可能出现单独值
-      assert(expr->is_attr == 1);
-      RelAttr *attr = expr->attr;
-      const char *table_name = attr->relation_name;
-      const char *field_name = attr->attribute_name;
-      schema_add_field(selects.context->at(table_name), expr->func, field_name,
-                       out_schema);
-    }
   }
-  return project.init(std::move(tuple_set), std::move(out_schema),
-                      std::move(descs));
+  return project.init(std::move(tuple_set), std::move(descs));
 }
 
 /////////////////////////////////////////////////////////////////////////////////

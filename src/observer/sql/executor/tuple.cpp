@@ -146,7 +146,7 @@ void TupleSchema::print(std::ostream &os, bool multi) const {
     os << "No schema";
     return;
   }
-
+  // TODO: 应该有更好的处理办法
   // 判断有多张表还是只有一张表
   for (auto it = fields_.begin(), end = --fields_.end(); it != end; ++it) {
     os << it->alias() << " | ";
