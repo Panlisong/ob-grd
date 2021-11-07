@@ -808,7 +808,7 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
       delete join_node;
     }
   }
-
+	
   // 3 根据select clause生成输出schema
   ProjectExeNode *project_node = new ProjectExeNode;
   rc = create_projection_executor(selects, tuple_set, tuple_set.get_schema(),
@@ -820,7 +820,8 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
   for (auto &tmp_node : select_nodes) {
     delete tmp_node.second;
   }
-  return rc;
+
+ return rc;
 }
 
 RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {

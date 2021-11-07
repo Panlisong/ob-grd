@@ -276,7 +276,7 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
         if (value.is_null()) {
           continue;
         }
-        if (next.get(column).compare(cur.get(j)) > 0) {
+        if (next.get(column).compare(value) > 0) {
           tmp.add(next.get_pointer(column));
         } else {
           tmp.add(cur.get_pointer(j)); // 保持不变
@@ -287,7 +287,7 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
         if (value.is_null()) {
           continue;
         }
-        if (next.get(column).compare(cur.get(j)) < 0) {
+        if (next.get(column).compare(value) < 0) {
           tmp.add(next.get_pointer(column));
           break;
         }

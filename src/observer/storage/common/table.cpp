@@ -771,8 +771,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   }
   // (2) 检查类型是否匹配
   // 目前实现类型不同则报错
-  if (field_meta->type() != value->type &&
-      (field_meta->nullable() == false && value->type == ATTR_NULL)) {
+  if (field_meta->type() != value->type && field_meta->nullable() == false) {
     LOG_WARN("Type dismatching.");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
