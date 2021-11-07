@@ -141,7 +141,6 @@ RC RecordPageHandler::deinit() {
 }
 
 RC RecordPageHandler::insert_record(const char *data, RID *rid) {
-
   if (page_header_->record_num == page_header_->record_capacity) {
     LOG_WARN("Page is full, file_id:page_num %d:%d.", file_id_,
              page_handle_.frame->page.page_num);
@@ -312,6 +311,10 @@ bool RecordPageHandler::is_full() const {
   return page_header_->record_num >= page_header_->record_capacity;
 }
 
+void RecordPageHandler::select_text(char *text) {
+  memcpy(text, page_handle_.frame->page.data, 4092);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 RecordFileHandler::RecordFileHandler()
@@ -370,7 +373,7 @@ RC RecordFileHandler::insert_record(const char *data, int record_size,
     // TODO：current_page_num更新逻辑有误
     current_page_num =
         (current_page_num + i) % page_count; // 从当前打开的页面开始查找
-    if (current_page_num == 0) {
+    if (current_page_num == 0 || (current_page_num & 0x80000000) != 0) {
       continue;
     }
     if (current_page_num != record_page_handler_.get_page_num()) {
@@ -526,20 +529,32 @@ RC RecordFileScanner::get_next_record(Record *rec) {
 
   while (current_record.rid.page_num < page_count) {
     if (current_record.rid.page_num != record_page_handler_.get_page_num()) {
-      record_page_handler_.deinit();
-      ret = record_page_handler_.init(*disk_buffer_pool_, file_id_,
-                                      current_record.rid.page_num);
-      if (ret != RC::SUCCESS && ret != RC::BUFFERPOOL_INVALID_PAGE_NUM) {
-        LOG_ERROR("Failed to init record page handler. page num=%d",
-                  current_record.rid.page_num);
-        return ret;
-      }
+      while (current_record.rid.page_num < page_count) {
+        record_page_handler_.deinit();
+        ret = record_page_handler_.init(*disk_buffer_pool_, file_id_,
+                                        current_record.rid.page_num);
+        if (ret != RC::SUCCESS && ret != RC::BUFFERPOOL_INVALID_PAGE_NUM) {
+          LOG_ERROR("Failed to init record page handler. page num=%d",
+                    current_record.rid.page_num);
+          return ret;
+        }
 
-      if (RC::BUFFERPOOL_INVALID_PAGE_NUM == ret) {
+        if (RC::BUFFERPOOL_INVALID_PAGE_NUM == ret) {
+          current_record.rid.page_num++;
+          current_record.rid.slot_num = -1;
+          break;
+        }
+
+        if (current_record.rid.page_num ==
+            record_page_handler_.get_page_num()) {
+          break;
+        }
         current_record.rid.page_num++;
         current_record.rid.slot_num = -1;
-        continue;
       }
+    }
+    if (ret == RC::BUFFERPOOL_INVALID_PAGE_NUM) {
+      continue;
     }
 
     ret = record_page_handler_.get_next_record(&current_record);
@@ -560,4 +575,53 @@ RC RecordFileScanner::get_next_record(Record *rec) {
     *rec = current_record;
   }
   return ret;
+}
+
+RC RecordFileHandler::insert_text(char *text, int *page_id, int len) {
+  BPPageHandle page_handle;
+  RC rc = disk_buffer_pool_->allocate_page(file_id_, &page_handle);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR(
+        "Failed to allocate page while inserting record. file_it:%d, ret:%d",
+        file_id_, rc);
+    return rc;
+  }
+
+  *page_id = page_handle.frame->page.page_num;
+  page_handle.frame->page.page_num = 0x80000000 | *page_id;
+  memset(page_handle.frame->page.data, 0, 4092);
+  if (len > 0) {
+    memcpy(page_handle.frame->page.data, text, len);
+  }
+
+  rc = disk_buffer_pool_->mark_dirty(&page_handle);
+  if (rc != RC::SUCCESS) {
+    // hard to rollback
+    LOG_ERROR("Failed to mark page dirty. rc =%d:%s", rc, strrc(rc));
+  }
+
+  return RC::SUCCESS;
+}
+
+RC RecordFileHandler::delete_text(int page_id) {
+  BPPageHandle page_handle;
+  RC rc = disk_buffer_pool_->get_this_page(file_id_, page_id, &page_handle);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+  rc = disk_buffer_pool_->unpin_page(&page_handle);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to unpin page. file_id:%d", file_id_);
+  }
+
+  return rc;
+}
+
+void RecordFileHandler::select_text(char *data, int page_id) {
+  RecordPageHandler page_handler;
+  RC rc = page_handler.init(*disk_buffer_pool_, file_id_, page_id);
+  if (rc != RC::SUCCESS) {
+    LOG_PANIC("Get text page error");
+  }
+  page_handler.select_text(data);
 }

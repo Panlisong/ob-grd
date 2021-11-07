@@ -94,6 +94,7 @@ void value_init_float(Value *value, float v) {
 void value_init_string(Value *value, const char *v) {
   value->type = CHARS;
   value->data = strdup(v);
+  value->len = strlen(v);
 }
 int check_date(int year, int month, int day) {
   int day_max[13] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};

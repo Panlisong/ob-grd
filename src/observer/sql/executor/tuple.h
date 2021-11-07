@@ -184,6 +184,24 @@ public:
         time_t value = *(time_t *)(record + offset);
         tuple.add(value, is_null);
       } break;
+      case ATTR_TEXT: {
+        if (is_null) {
+          tuple.add("", 0, true);
+        } else {
+          char *s = new char[4096];
+          memset(s, 0, 4096);
+          int remain_len = 4;
+          memcpy(s, record + offset, remain_len);
+          int len = strlen(s);
+          if (len < remain_len) {
+            tuple.add(s, len, false);
+          } else {
+            int page_id = (*(int *)(record + offset + remain_len)) & 0x7FFFFFFF;
+            table->select_text(s + remain_len, page_id);
+						tuple.add(s, strlen(s), false);
+          }
+        }
+      } break;
       default: {
         LOG_PANIC("Unsupported field type. type=%d", field_meta->type());
       }

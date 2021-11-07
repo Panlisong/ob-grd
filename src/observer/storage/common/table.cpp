@@ -338,6 +338,10 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
+    if (field->type() == ATTR_TEXT && value.type == CHARS) {
+      // insert text.
+      continue;
+    }
     if (field->nullable() == false && value.type == ATTR_NULL) {
       LOG_ERROR("Invalid value type.field name=%s, not null but given=null",
                 field->name());
@@ -349,14 +353,13 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
                 field->name(), field->type(), field->nullable(), value.type);
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
-    LOG_INFO("Field name=%s, type=%d, nullable=%d, given=%d", field->name(),
-             field->type(), field->nullable(), value.type);
   }
 
   // 复制所有字段的值
   int record_size = table_meta_.record_size();
   char *record = new char[record_size];
   memset(record, 0, record_size);
+  RC rc = RC::SUCCESS;
 
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
@@ -367,12 +370,19 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
       int32_t *null_field = (int32_t *)(record + null_field_offset);
       *null_field |= (1 << i);
     } else {
-      memcpy(record + field->offset(), value.data, field->len());
+      if (field->type() == ATTR_TEXT && value.type == CHARS) {
+        rc = make_text(field, value, record);
+        if (rc != RC::SUCCESS) {
+          break;
+        }
+      } else {
+        memcpy(record + field->offset(), value.data, field->len());
+      }
     }
   }
 
   record_out = record;
-  return RC::SUCCESS;
+  return rc;
 }
 /**
  * 为了不把Record暴露出去，封装一下
@@ -708,19 +718,20 @@ public:
       }
     }
 
-    UpdateTrxEvent *event = new UpdateTrxEvent(&table_, new_rec, value_,
-                                               offset_, len_, field_meta_);
+    UpdateTrxEvent *event = new UpdateTrxEvent(
+        &table_, new_rec, value_, offset_, len_, is_text_, field_meta_);
     trx_->pending(event);
     updated_count_++;
 
     return RC::SUCCESS;
   }
 
-  void set_update_info(const Value *v, int offset, int len,
+  void set_update_info(const Value *v, int offset, int len, bool is_text,
                        FieldMeta field_meta) {
     value_ = v;
     offset_ = offset;
     len_ = len;
+    is_text_ = is_text;
     field_meta_ = field_meta;
   }
 
@@ -732,6 +743,7 @@ private:
   const Value *value_;
   int offset_;
   int len_;
+  bool is_text_;
   FieldMeta field_meta_;
   int updated_count_ = 0;
 };
@@ -767,7 +779,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
 
   RecordUpdater updater(*this, trx);
   updater.set_update_info(value, field_meta->offset(), field_meta->len(),
-                          *field_meta);
+                          field_meta->type() == ATTR_TEXT, *field_meta);
   rc = scan_record(trx, &filter, -1, &updater, record_reader_update_adapter);
   if (updated_count != nullptr) {
     *updated_count = updater.updated_count();
@@ -776,13 +788,17 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
 }
 
 RC Table::commit_update(Record *record, bool new_null, char *new_value,
-                        int offset, int len) {
+                        int offset, int len, bool is_text) {
   if (new_null) {
     int column = find_column_by_offset(offset);
     int32_t *null_field = (int32_t *)(record + null_field_offset());
     *null_field |= (1 << column);
   } else {
-    memcpy(record->data + offset, new_value, len);
+    if (is_text) {
+      update_text(record, new_value, offset);
+    } else {
+      memcpy(record->data + offset, new_value, len);
+    }
   }
   // RC rc = update_entry_of_indexes(old_record->data, old_record->rid);
   RC rc = RC::SUCCESS;
@@ -1013,3 +1029,93 @@ int Table::find_column_by_offset(int offset) {
 }
 
 int Table::null_field_offset() { return table_meta_.null_field()->offset(); }
+
+void Table::select_text(char *data, int page_id) {
+  record_handler_->select_text(data, page_id);
+}
+
+RC Table::make_text(const FieldMeta *field, const Value &value, char *record) {
+  int page_id;
+  int remain_len = 4;
+  RC rc = record_handler_->insert_text((char *)(value.data) + remain_len,
+                                       &page_id, value.len - remain_len);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+  // text in record:
+  // | text (first 4 bytes) | page_id (the page contains remain 4092
+  // bytes) |
+  if (value.len < remain_len) {
+    memcpy(record + field->offset(), value.data, value.len);
+  } else {
+    memcpy(record + field->offset(), value.data, remain_len);
+  }
+
+  memcpy(record + field->offset() + remain_len, &page_id,
+         field->len() - remain_len);
+
+  return RC::SUCCESS;
+}
+
+RC Table::delete_text(Record *old_record) {
+  int page_id;
+  int remain_len = 4;
+  char *s = new char[5];
+  RC rc = RC::SUCCESS;
+
+  for (int i = 2; i < table_meta().field_num(); i++) {
+    const FieldMeta *field = table_meta_.field(i);
+    if (field->type() != ATTR_TEXT) {
+      continue;
+    }
+    memcpy(s, old_record + field->offset(), remain_len);
+    if (s[remain_len - 1] == 0) {
+      continue;
+    }
+    page_id =
+        (*(int *)(old_record + field->offset() + remain_len)) & 0x7FFFFFFF;
+    rc = record_handler_->delete_text(page_id);
+    if (rc != RC::SUCCESS) {
+      break;
+    }
+  }
+
+  delete[] s;
+
+  return rc;
+}
+
+RC Table::update_text(Record *record, char *new_value, int offset) {
+  int page_id = 0;
+  int remain_len = 4;
+  char *s = new char[5];
+  RC rc = RC::SUCCESS;
+
+  memcpy(s, record->data + offset, remain_len);
+  if (s[remain_len - 1] != 0) {
+    page_id = *(int *)(record->data + offset + remain_len);
+    rc = record_handler_->delete_text(page_id);
+    if (rc != RC::SUCCESS) {
+      delete[] s;
+      return rc;
+    }
+  }
+
+  int field_len = 8;
+  int new_len = strlen(new_value);
+  memset(record->data + offset, 0, field_len);
+
+  if (new_len < remain_len) {
+    memcpy(record->data + offset, new_value, new_len);
+    delete[] s;
+    return RC::SUCCESS;
+  }
+
+  memcpy(record->data + offset, new_value, remain_len);
+  rc = record_handler_->insert_text(new_value + remain_len, &page_id,
+                                    new_len - remain_len);
+  memcpy(record->data + offset + remain_len, &page_id, field_len - remain_len);
+
+  delete[] s;
+  return rc;
+}

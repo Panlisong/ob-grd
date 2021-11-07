@@ -69,12 +69,21 @@ typedef enum _ArithOp {
 } ArithOp;
 
 //属性值类型
-typedef enum { UNDEFINED, CHARS, INTS, FLOATS, ATTR_NULL, DATES } AttrType;
+typedef enum {
+  UNDEFINED,
+  CHARS,
+  INTS,
+  FLOATS,
+  ATTR_NULL,
+  ATTR_TEXT,
+  DATES
+} AttrType;
 
 //属性值
 typedef struct _Value {
   AttrType type; // type of value
   void *data;    // value
+  int len;
 } Value;
 
 /**

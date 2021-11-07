@@ -122,6 +122,7 @@ ParserContext *get_context(yyscan_t scanner)
         STRING_T
 		DATE_T
         FLOAT_T
+				TEXT_T
         HELP
         EXIT
 		IS
@@ -332,7 +333,7 @@ attr_def:
     |ID type is_nullable {
 		AttrInfo attribute;
 		AttrType type = static_cast<AttrType>($2);
-		attr_info_init(&attribute, $1, type, type == DATES ? 8 : 4, $3);
+		attr_info_init(&attribute, $1, type, (type == DATES || type == ATTR_TEXT) ? 8 : 4, $3);
 		create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 	}
     ;
@@ -346,6 +347,7 @@ type:
 	| STRING_T { $$=CHARS; }
 	| FLOAT_T  { $$=FLOATS; }
 	| DATE_T   { $$=DATES; }
+  | TEXT_T   { $$=ATTR_TEXT; }
 	;
 
 is_nullable:

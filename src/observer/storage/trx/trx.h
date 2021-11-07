@@ -56,9 +56,9 @@ private:
 class UpdateTrxEvent : public TrxEvent {
 public:
   UpdateTrxEvent(Table *table, Record *old_record, const Value *new_value,
-                 int offset, int len, const FieldMeta &field_meta)
+                 int offset, int len, bool is_text, const FieldMeta &field_meta)
       : table_(table), old_record_(old_record), offset_(offset), len_(len),
-        field_meta_(field_meta) {
+        is_text_(is_text), field_meta_(field_meta) {
     int column = table_->find_column_by_offset(offset);
     int null_field_offset = table->null_field_offset();
     int32_t *old_null_field = (int32_t *)(old_record + null_field_offset);
@@ -83,7 +83,7 @@ public:
   const char *get_table_name() { return table_->name(); }
   RC commit() {
     return table_->commit_update(old_record_, new_null_, new_value_, offset_,
-                                 len_);
+                                 len_, is_text_);
   }
   RC rollback() {
     return table_->rollback_update(old_record_, old_null_, old_value_, offset_,
@@ -99,6 +99,7 @@ private:
   bool new_null_;
   int offset_;
   int len_;
+  bool is_text_;
   FieldMeta field_meta_;
 };
 

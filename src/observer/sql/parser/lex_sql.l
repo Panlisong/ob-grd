@@ -47,6 +47,7 @@ DELI			 [\-\\/\.]
 (?i:not)        								     RETURN_TOKEN(NOT);
 (?i:null)        								     RETURN_TOKEN(NULL_T);
 (?i:nullable) 									 	 RETURN_TOKEN(NULLABLE);
+(?i:text) 												 RETURN_TOKEN(TEXT_T);
 (?i:group)											 RETURN_TOKEN(GROUP);
 (?i:order)											 RETURN_TOKEN(ORDER);
 (?i:asc)											 RETURN_TOKEN(ASC);

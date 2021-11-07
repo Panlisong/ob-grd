@@ -78,13 +78,14 @@ public:
   RC update_records(Trx *trx, const char *attribute_name, const Value *value,
                     int condition_num, const Condition conditions[],
                     int *updated_count);
- RC commit_update(Record *record, bool new_null, char *new_value, int offset,
-                   int len);
+  RC commit_update(Record *record, bool new_null, char *new_value, int offset,
+                   int len, bool is_text);
   RC rollback_update(Record *record, bool old_null, char *old_value, int offset,
                      int len);
 
   int find_column_by_offset(int offset);
   int null_field_offset();
+  void select_text(char *data, int page_id);
 
 private:
   RC insert_record(Trx *trx, int value_num, const Value *values);
@@ -118,6 +119,9 @@ private:
 
 private:
   RC make_record(int value_num, const Value *values, char *&record_out);
+  RC make_text(const FieldMeta *field, const Value &value, char *record);
+  RC delete_text(Record *old_record);
+  RC update_text(Record *record, char *new_value, int offset);
 
 private:
   Index *find_index(const char *index_name) const;

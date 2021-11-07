@@ -201,7 +201,7 @@ RC DiskBufferPool::get_this_page(int file_id, PageNum page_num,
       continue;
 
     // This page has been loaded.
-    if (bp_manager_.frame[i].page.page_num == page_num) {
+		if ((bp_manager_.frame[i].page.page_num & 0x7FFFFFFF) == page_num) {
       page_handle->frame = bp_manager_.frame + i;
       page_handle->frame->pin_count++;
       page_handle->frame->acc_time = current_time();

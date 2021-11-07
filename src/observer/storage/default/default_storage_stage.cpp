@@ -276,10 +276,6 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     snprintf(response, sizeof(response), "FAILURE\n");
   }
 
-  if (rc != RC::SUCCESS) {
-    snprintf(response, sizeof(response), "FAILURE\n");
-  }
-
   session_event->set_response(response);
   event->done_immediate();
 

@@ -75,6 +75,7 @@ public:
   PageNum get_page_num() const;
 
   bool is_full() const;
+  void select_text(char *text);
 
 private:
   DiskBufferPool *disk_buffer_pool_;
@@ -133,6 +134,10 @@ public:
 
     return page_handler.update_record_in_place(rid, updater);
   }
+
+  RC insert_text(char *data, int *page_id, int len);
+  RC delete_text(int page_id);
+  void select_text(char *data, int page_id);
 
 private:
   DiskBufferPool *disk_buffer_pool_;
