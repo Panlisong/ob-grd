@@ -230,7 +230,7 @@ RC Table::open(const char *meta_file, const char *base_dir) {
 RC Table::insert_records(Trx *trx, int inserted_count, Tuples *tuples) {
   RC rc = RC::SUCCESS;
 
-  for (int i = inserted_count - 1; i >= 0; i--) {
+  for (int i = 0; i < inserted_count; i++) {
     rc = insert_record(trx, &tuples[i]);
     if (rc != RC::SUCCESS) {
       break;

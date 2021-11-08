@@ -184,7 +184,7 @@ void append_cond_expr(ConditionExpr *expr, ConditionExpr *left,
   ///////////////////////////
   expr->is_attr = 0;
   expr->attr = nullptr;
-  memset(&expr->value, 0, sizeof(Value));
+  expr->value = nullptr;
 }
 
 void cond_attr_init(ConditionExpr *expr, RelAttr *attr) {
@@ -195,7 +195,7 @@ void cond_attr_init(ConditionExpr *expr, RelAttr *attr) {
   expr->left = nullptr;
   expr->right = nullptr;
   expr->op = NO_ARITH_OP;
-  memset(&expr->value, 0, sizeof(Value));
+  expr->value = nullptr;
 }
 
 void cond_value_init(ConditionExpr *expr, Value *v) {
@@ -267,7 +267,7 @@ void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr) {
   ///////////////////
   expr->has_subexpr = 0;
   expr->arithOp = NO_ARITH_OP;
-  memset(&expr->value, 0, sizeof(Value));
+  expr->value = nullptr;
   expr->left = nullptr;
   expr->right = nullptr;
 }
@@ -279,7 +279,7 @@ void select_attr_init(SelectExpr *expr, RelAttr *attr) {
   expr->has_subexpr = 0;
   expr->func = COLUMN;
   expr->arithOp = NO_ARITH_OP;
-  memset(&expr->value, 0, sizeof(Value));
+  expr->value = nullptr;
   expr->left = nullptr;
   expr->right = nullptr;
 }

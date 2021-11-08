@@ -12,16 +12,14 @@
 
 typedef struct QueryContext{
   Query *ssql;
-  size_t value_length{};
-  size_t condition_length{};
-  Value values[MAX_NUM]{};
-  Condition conditions[MAX_NUM]{};
+  size_t condition_length;
+  Condition conditions[MAX_NUM];
 } QueryContext;
 
 typedef struct ParserContext {
   Query *ssql;
-  QueryContext context_stack[MAX_NUM]{}; // 只允许嵌套深度不超过20
-  int top{};							   // 栈顶指针
+  QueryContext context_stack[MAX_NUM]; // 只允许嵌套深度不超过20
+  int top;							   // 栈顶指针
 } ParserContext;
 
 void init(Query *query, yyscan_t scanner) {
@@ -384,19 +382,16 @@ value_list:
     ;
 value:
     NUMBER{
-		Value *v = (Value *)malloc(sizeof(Value));	
-  		value_init_integer(v, $1);
-		$$ = v;
+		$$ = (Value *)malloc(sizeof(Value));	
+  		value_init_integer($$, $1);
 	}
     | FLOAT{
-		Value *v = (Value *)malloc(sizeof(Value));	
-  		value_init_float(v, $1);
-		$$ = v;
+		$$ = (Value *)malloc(sizeof(Value));	
+  		value_init_float($$, $1);
 	}
     | SSS {
-		Value *v = (Value *)malloc(sizeof(Value));		
-  		value_init_string(v, $1);
-		$$ = v;
+		$$ = (Value *)malloc(sizeof(Value));			
+  		value_init_string($$, $1);
 	}
 	| DATE {
 		int year = 0, month = 0, day = 0;
@@ -411,15 +406,13 @@ value:
 			memset(&t, 0, sizeof(struct tm));
 			t.tm_year = year - 1900, t.tm_mon = month - 1, t.tm_mday = day;
 			t.tm_hour = 12;		// 防止0点有一天的换算偏差
-			Value *v = (Value *)malloc(sizeof(Value));			
-			value_init_date(v, mktime(&t));
-			$$ = v;
+			$$ = (Value *)malloc(sizeof(Value));			
+			value_init_date($$, mktime(&t));
 		}
 	}
-	| NULL_T {
-		Value *v = (Value *)malloc(sizeof(Value));		
-		value_init_null(v);
-		$$ = v;
+	| NULL_T {		
+		$$ = (Value *)malloc(sizeof(Value));			
+		value_init_null($$);
 	}
     ;
     
@@ -465,7 +458,6 @@ select:
 		TOP->ssql->sstr.selection.context = new RelationTable();
 		//临时变量清零
 		TOP->condition_length=0;
-		TOP->value_length = 0;
 
 		$$ = &TOP->ssql->sstr.selection;
 	}
@@ -754,7 +746,7 @@ extern void scan_string(const char *str, yyscan_t scanner);
 
 int sql_parse(const char *s, Query *sqls){
 	ParserContext context;
-	// memset(&context, 0, sizeof(ParserContext));
+	memset(&context, 0, sizeof(ParserContext));
 
 	yyscan_t scanner;
 	yylex_init_extra(&context, &scanner);

@@ -132,7 +132,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 158 "yacc_sql.y"
+#line 156 "yacc_sql.y"
 
   struct _Selects *select;
   struct _TableRef *ref;		// Table reference
