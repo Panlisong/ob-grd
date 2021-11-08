@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_STORAGE_COMMON_RECORD_MANAGER_H_
 
 #include "storage/default/disk_buffer_pool.h"
+#include "storage/common/table.h"
 
 typedef int SlotNum;
 struct PageHeader;
@@ -41,6 +42,11 @@ struct Record {
   RID rid;    // record's rid
   char *data; // record's data
 };
+
+bool record_data_is_null(const Record &rec,int column){
+  int32_t *null_field = (int32_t *)(rec.data + Table::null_field_offset());
+  return (((*null_field) & (1 << column)) != 0);
+}
 
 class RecordPageHandler {
 public:

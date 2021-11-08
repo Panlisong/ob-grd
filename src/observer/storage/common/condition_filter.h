@@ -27,11 +27,12 @@ class ConDescNode {
 public:
   ConDescNode() = default;
   virtual ~ConDescNode() = 0;
-  virtual bool is_leaf() = 0;
   virtual void *execute(const Record &rec) = 0;
 
   void set_type(AttrType type) { type_ = type; }
   const AttrType type() const { return type_; }
+  bool is_null() { return type_ == ATTR_NULL; }
+  virtual bool is_const_null() = 0;
 
   void set_value(void *value) {
     if (value_ != nullptr) {
@@ -51,12 +52,10 @@ class ConDescInternal : public ConDescNode {
 public:
   ConDescInternal(ArithOp op, ConDescNode *left, ConDescNode *right);
   virtual ~ConDescInternal();
-  bool is_leaf() override { return false; }
   void *execute(const Record &rec) override;
+  bool is_const_null() override { return false; }
+
   void *compute(void *lv, void *rv);
-  void *compute(int lv, int rv);
-  void *compute(int lv, float rv);
-  void *compute(float lv, float rv);
 
 private:
   ArithOp op_;
@@ -66,13 +65,13 @@ private:
 
 class ConDescAttr : public ConDescNode {
 public:
-  ConDescAttr(AttrType type, int length, int offset)
-      : length_(length), offset_(offset) {
+  ConDescAttr(AttrType type, int length, int offset, int column)
+      : length_(length), offset_(offset), column_(column) {
     set_type(type);
   }
   virtual ~ConDescAttr();
-  bool is_leaf() override { return true; }
   void *execute(const Record &rec) override;
+  bool is_const_null() override { return false; }
 
   const int length() const { return length_; }
   const int offset() const { return offset_; }
@@ -82,6 +81,7 @@ public:
 private:
   int length_; // 如果是属性，表示属性值长度
   int offset_; // 如果是属性，表示在记录中的偏移量
+  int column_;
 };
 
 class ConDescValue : public ConDescNode {
@@ -91,20 +91,16 @@ public:
     set_value(value);
   }
   virtual ~ConDescValue();
-  bool is_leaf() override { return true; }
   void *execute(const Record &rec) override;
-
-  bool is_null() { return type() == ATTR_NULL; }
-
-private:
+  bool is_const_null() override { return type() == ATTR_NULL; }
 };
 
 class ConDescSubquery : public ConDescNode {
 public:
   ConDescSubquery() = default;
   virtual ~ConDescSubquery();
-  bool is_leaf() override { return true; }
   void *execute(const Record &rec) override;
+  bool is_const_null() override { return false; }
 
   RC init(TupleSet &&subquery);
 
@@ -113,6 +109,10 @@ public:
   bool is_contains(time_t t);
   bool is_contains(const char *s, int len);
   int is_contains(AttrType type, const char *value);
+
+  int subquery_size() { return values_.size(); }
+
+  int compare(char *lvalue);
 
 private:
   std::vector<std::shared_ptr<TupleValue>> values_;

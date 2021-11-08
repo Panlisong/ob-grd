@@ -33,9 +33,10 @@ public:
   virtual void get_value(void *data) const = 0;
   virtual void to_string(std::ostream &os) const = 0;
   virtual std::string to_string() const = 0;
-  virtual int compare(const TupleValue &other) const = 0;
   virtual bool is_null() const = 0;
   virtual void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) = 0;
+  virtual int compare(const TupleValue &other) const = 0;
+  virtual int compare(char *other) const = 0;
 
 private:
 };
@@ -67,6 +68,11 @@ public:
     }
     const IntValue &int_other = (const IntValue &)other;
     return value_ - int_other.value_;
+  }
+
+  int compare(char *other) const override {
+    int value = *(int *)other;
+    return value_ - value;
   }
 
   bool is_null() const override { return is_null_; }
@@ -128,6 +134,18 @@ public:
     return 0;
   }
 
+  int compare(char *other) const override {
+    float value = *(float *)other;
+    float result = value_ - value;
+    if (result > 0) { // 浮点数没有考虑精度问题
+      return 1;
+    }
+    if (result < 0) {
+      return -1;
+    }
+    return 0;
+  }
+
   bool is_null() const override { return is_null_; }
 
   void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
@@ -165,6 +183,10 @@ public:
     }
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
+  }
+
+  int compare(char *other) const override {
+    return strcmp(value_.c_str(), other);
   }
 
   bool is_null() const override { return is_null_; }
@@ -211,6 +233,17 @@ public:
     }
     const DateValue &timestamp_other = (const DateValue &)other;
     long long res = value_ - timestamp_other.value_;
+    if (res > 0LL) {
+      return 1;
+    } else if (res < 0LL) {
+      return -1;
+    }
+    return 0;
+  }
+
+  int compare(char *other) const override {
+    time_t value = *(time_t *)other;
+    long long res = value_ - value;
     if (res > 0LL) {
       return 1;
     } else if (res < 0LL) {

@@ -1028,8 +1028,6 @@ int Table::find_column_by_offset(int offset) {
   return table_meta_.find_column_by_offset(offset);
 }
 
-int Table::null_field_offset() { return table_meta_.null_field()->offset(); }
-
 void Table::select_text(char *data, int page_id) {
   record_handler_->select_text(data, page_id);
 }

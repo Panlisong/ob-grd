@@ -83,7 +83,8 @@ public:
                      int len);
 
   int find_column_by_offset(int offset);
-  int null_field_offset();
+  static int null_field_offset() { return TableMeta::null_field_offset(); }
+
   void select_text(char *data, int page_id);
 
 private:
