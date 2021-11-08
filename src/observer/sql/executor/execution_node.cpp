@@ -81,7 +81,8 @@ RC JoinExeNode::execute(TupleSet &tuple_set) {
   tuple_set.set_schema(tuple_schema_);
   for (auto &outer : tl_.tuples()) {
     for (auto &inner : tr_.tuples()) {
-      Tuple product = outer;
+      Tuple product;
+      product.append(outer);
       product.append(inner);
       bool is_result = true;
       // 遍历所有与两个TupleSet相关的过滤条件

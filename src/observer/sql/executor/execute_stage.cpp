@@ -636,7 +636,7 @@ static void get_mini_schema(const SelectExpr *expr, RelationTable &relations,
   }
   table = relations.begin()->second;
   if (relations.size() > 1) {
-    table = relations[field_name];
+    table = relations[table_name];
   }
   // 'T.*'
   if (strcmp("*", field_name) == 0) {
@@ -857,12 +857,31 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
   return rc;
 }
 /////////////////////////////////////////////////////////////////////////////////
-static RC add_all_relations(RelationTable &relations,
-                            const TupleSchema &product,
-                            std::vector<ProjectionDesc *> &descs, bool multi) {
+static RC add_join_table(TableRef *ref, RelationTable relations,
+                         const TupleSchema &product,
+                         std::vector<ProjectionDesc *> &descs) {
+  if (ref->child == nullptr) {
+    return ProjectionDesc::from_table(relations[ref->relation_name], product,
+                                      descs, relations.size() > 1);
+  }
+  add_join_table(ref->child, relations, product, descs);
+  return ProjectionDesc::from_table(relations[ref->relation_name], product,
+                                    descs, relations.size() > 1);
+}
+
+static RC add_all_relations(const Selects &selects, const TupleSchema &product,
+                            std::vector<ProjectionDesc *> &descs) {
   RC rc = RC::SUCCESS;
-  for (auto &p : relations) {
-    rc = ProjectionDesc::from_table(p.second, product, descs, multi);
+  RelationTable &relations = *selects.context;
+  bool multi = relations.size() > 1;
+  for (size_t i = 0; i < selects.ref_num; i++) {
+    auto ref = selects.references->at(i);
+    if (ref->is_join == 1) {
+      add_join_table(ref, relations, product, descs);
+    } else {
+      rc = ProjectionDesc::from_table(relations[ref->relation_name], product,
+                                      descs, multi);
+    }
     if (rc != RC::SUCCESS) {
       return rc;
     }
@@ -886,7 +905,7 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
       const char *field_name = attr->attribute_name;
       if (strcmp("*", field_name) == 0) {
         if (table_name == nullptr) {
-          rc = add_all_relations(relations, product, descs, multi);
+          rc = add_all_relations(selects, product, descs);
         } else {
           Table *table = relations[table_name];
           rc = ProjectionDesc::from_table(table, product, descs, multi);
@@ -894,8 +913,8 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
         if (rc != RC::SUCCESS) {
           return rc;
         }
+        continue;
       }
-      continue;
     }
     // 一般情况
     ProjectionDesc *desc = new ProjectionDesc();
