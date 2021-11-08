@@ -57,9 +57,7 @@ void Tuple::add(const char *s, int len, bool is_null) {
 }
 
 void Tuple::append(const Tuple &other) {
-  for (auto value : other.values_) {
-    add(value);
-  }
+  values_.insert(values_.end(), other.values_.begin(), other.values_.end());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
