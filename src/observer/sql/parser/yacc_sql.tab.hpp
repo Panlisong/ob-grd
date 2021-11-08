@@ -139,13 +139,14 @@ union YYSTYPE
   struct _SelectExpr *sexpr;	// select expr
   struct _ConditionExpr *cexpr; // condition expr
   struct _RelAttr *attr;
+  struct _Value *val;
   struct _OrderCol *ocol; 		// order column
   char *string;
   int number;
   float floats;
   char *position;
 
-#line 149 "yacc_sql.tab.hpp"
+#line 150 "yacc_sql.tab.hpp"
 
 };
 typedef union YYSTYPE YYSTYPE;

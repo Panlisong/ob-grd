@@ -128,7 +128,7 @@ void value_destroy(Value *value) {
 
 void tuple_destory(Tuples *tuple) {
   for (size_t i = 0; i < tuple->value_num; i++) {
-    value_destroy(&tuple->values[i]);
+    value_destroy(tuple->values[i]);
   }
 }
 
@@ -141,7 +141,7 @@ void condition_expr_destory(ConditionExpr *expr) {
     if (expr->is_attr) {
       attr_destroy(expr->attr);
     } else {
-      value_destroy(&expr->value);
+      value_destroy(expr->value);
     }
   }
   free(expr);
@@ -199,7 +199,7 @@ void cond_attr_init(ConditionExpr *expr, RelAttr *attr) {
 }
 
 void cond_value_init(ConditionExpr *expr, Value *v) {
-  expr->value = *v;
+  expr->value = v;
   ///////////////////////////
   expr->has_subexpr = 0;
   expr->left = nullptr;
@@ -254,7 +254,7 @@ void select_expr_destroy(SelectExpr *expr) {
     if (expr->is_attr) {
       attr_destroy(expr->attr);
     } else {
-      value_destroy(&expr->value);
+      value_destroy(expr->value);
     }
   }
   free(expr);
@@ -285,7 +285,7 @@ void select_attr_init(SelectExpr *expr, RelAttr *attr) {
 }
 
 void select_value_init(SelectExpr *expr, Value *value) {
-  expr->value = *value;
+  expr->value = value;
   ///////////////////
   expr->is_attr = 0;
   expr->attr = nullptr;
@@ -356,13 +356,9 @@ void selects_destroy(Selects *selects) {
   selects->order_num = 0;
 }
 
-void insert_tuple_init(Inserts *inserts, Value values[], size_t value_num) {
-  Tuples *tuple = &inserts->tuples[inserts->tuple_num++];
-  assert(value_num <= sizeof(tuple->values) / sizeof(tuple->values[0]));
-  for (size_t i = 0; i < value_num; i++) {
-    tuple->values[i] = values[i];
-  }
-  tuple->value_num = value_num;
+void insert_value_append(Inserts *inserts, Value *v) {
+  Tuples *tuple = &inserts->tuples[inserts->tuple_num];
+  tuple->values[tuple->value_num++] = v;
 }
 
 void inserts_init(Inserts *inserts, const char *relation_name) {
@@ -405,7 +401,7 @@ void updates_init(Updates *updates, const char *relation_name,
                   Condition conditions[], size_t condition_num) {
   updates->relation_name = strdup(relation_name);
   updates->attribute_name = strdup(attribute_name);
-  updates->value = *value;
+  updates->value = value;
 
   assert(condition_num <=
          sizeof(updates->conditions) / sizeof(updates->conditions[0]));
@@ -421,7 +417,7 @@ void updates_destroy(Updates *updates) {
   updates->relation_name = nullptr;
   updates->attribute_name = nullptr;
 
-  value_destroy(&updates->value);
+  value_destroy(updates->value);
 
   for (size_t i = 0; i < updates->condition_num; i++) {
     condition_destroy(&updates->conditions[i]);

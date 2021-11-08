@@ -353,7 +353,7 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
       auto field = table_meta.field(expr->attr->attribute_name);
       return new ConDescAttr(field->type(), field->len(), field->offset());
     } else {
-      return new ConDescValue(expr->value.type, expr->value.data);
+      return new ConDescValue(expr->value->type, expr->value->data);
     }
   }
   ConDescNode *left = create_cond_desc_node(expr->left, table_meta);
@@ -415,6 +415,8 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
     lvalue = (char *)left_->value();
     rvalue = (char *)right_->value();
     attr_type = FLOATS;
+  } else {
+    attr_type = left_->type();
   }
   switch (attr_type) {
   case CHARS: {

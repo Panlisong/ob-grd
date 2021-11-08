@@ -371,7 +371,7 @@ TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
       int i = product.index_of_field(attr->relation_name, attr->attribute_name);
       return new TupleConDescAttr(product.field(i).type(), i);
     } else {
-      return new TupleConDescValue(&expr->value);
+      return new TupleConDescValue(expr->value);
     }
   }
   TupleConDescNode *left = create_cond_desc_node(expr->left, product);

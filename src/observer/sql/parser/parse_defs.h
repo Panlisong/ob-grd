@@ -96,7 +96,7 @@ typedef struct _ConditionExpr {
   ArithOp op;
   /* ConditionExpr叶子节点 */
   int is_attr;
-  Value value;
+  Value *value;
   RelAttr *attr;
 } ConditionExpr;
 
@@ -150,7 +150,7 @@ typedef struct _SelectExpr {
   struct _SelectExpr *right;
   /* Expression叶子节点 */
   int is_attr;
-  Value value;
+  Value *value;
   FuncName func;
   RelAttr *attr;
 } SelectExpr;
@@ -177,8 +177,8 @@ typedef struct _Selects {
 } Selects;
 
 typedef struct {
-  size_t value_num;      // Length of values
-  Value values[MAX_NUM]; // values to insert
+  size_t value_num;       // Length of values
+  Value *values[MAX_NUM]; // values to insert
 } Tuples;
 
 // struct of insert
@@ -199,7 +199,7 @@ typedef struct {
 typedef struct {
   char *relation_name;           // Relation to update
   char *attribute_name;          // Attribute to update
-  Value value;                   // update value
+  Value *value;                  // update value
   size_t condition_num;          // Length of conditions in Where clause
   Condition conditions[MAX_NUM]; // conditions in Where clause
 } Updates;
@@ -358,7 +358,7 @@ void selects_append_group(Selects *selects, RelAttr *);
 void selects_append_order(Selects *selects, OrderCol *ocol);
 void selects_destroy(Selects *selects);
 
-void insert_tuple_init(Inserts *inserts, Value values[], size_t value_num);
+void insert_value_append(Inserts *inserts, Value *v);
 void inserts_init(Inserts *inserts, const char *relation_name);
 void inserts_destroy(Inserts *inserts);
 

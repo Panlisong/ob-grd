@@ -138,7 +138,7 @@ TupleConDescNode *create_project_desc_node(SelectExpr *expr,
       int idx = product.index_of_field(table_name, field_name);
       return new TupleConDescAttr(product.field(idx).type(), idx);
     } else {
-      TupleConDescValue *node = new TupleConDescValue(&expr->value);
+      TupleConDescValue *node = new TupleConDescValue(expr->value);
       alias += node->to_string();
       return node;
     }

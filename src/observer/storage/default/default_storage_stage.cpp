@@ -177,7 +177,7 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     const char *field_name = updates.attribute_name;
     int updated_count = 0;
     rc = handler_->update_records(
-        current_trx, current_db, table_name, field_name, &updates.value,
+        current_trx, current_db, table_name, field_name, updates.value,
         updates.condition_num, updates.conditions, &updated_count);
     snprintf(response, sizeof(response), "%s\n",
              rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");

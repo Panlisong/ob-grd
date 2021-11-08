@@ -161,6 +161,7 @@ ParserContext *get_context(yyscan_t scanner)
   struct _SelectExpr *sexpr;	// select expr
   struct _ConditionExpr *cexpr; // condition expr
   struct _RelAttr *attr;
+  struct _Value *val;
   struct _OrderCol *ocol; 		// order column
   char *string;
   int number;
@@ -190,6 +191,7 @@ ParserContext *get_context(yyscan_t scanner)
 %type <sexpr> select_func
 %type <sexpr> select_arith_expr
 %type <attr> col
+%type <val> value
 %type <ocol> order_col
 
 %type <cexpr> non_subquery
@@ -369,25 +371,32 @@ tuple_list:
 
 tuple: 
 	LBRACE value value_list RBRACE {
-		// 由于tuple这种语法[形如(v1, v2, ..., vn)]只在insert中使用
-		insert_tuple_init(&CONTEXT->ssql->sstr.insertion, TOP->values, TOP->value_length);
-		// 清空CONTEXT临时变量
-		TOP->value_length = 0;
+		insert_value_append(&CONTEXT->ssql->sstr.insertion, $2);
+		// tuple reduce: tuple_num ++
+		(CONTEXT->ssql->sstr.insertion.tuple_num)++;
 	}
 
 value_list:
     /* empty */
-    | COMMA value value_list  {}
+    | COMMA value value_list  {
+		insert_value_append(&CONTEXT->ssql->sstr.insertion, $2);
+	}
     ;
 value:
-    NUMBER{	
-  		value_init_integer(&TOP->values[TOP->value_length++], $1);
+    NUMBER{
+		Value *v = (Value *)malloc(sizeof(Value));	
+  		value_init_integer(v, $1);
+		$$ = v;
 	}
     | FLOAT{
-  		value_init_float(&TOP->values[TOP->value_length++], $1);
+		Value *v = (Value *)malloc(sizeof(Value));	
+  		value_init_float(v, $1);
+		$$ = v;
 	}
     | SSS {
-  		value_init_string(&TOP->values[TOP->value_length++], $1);
+		Value *v = (Value *)malloc(sizeof(Value));		
+  		value_init_string(v, $1);
+		$$ = v;
 	}
 	| DATE {
 		int year = 0, month = 0, day = 0;
@@ -402,11 +411,15 @@ value:
 			memset(&t, 0, sizeof(struct tm));
 			t.tm_year = year - 1900, t.tm_mon = month - 1, t.tm_mday = day;
 			t.tm_hour = 12;		// 防止0点有一天的换算偏差
-			value_init_date(&TOP->values[TOP->value_length++], mktime(&t));
+			Value *v = (Value *)malloc(sizeof(Value));			
+			value_init_date(v, mktime(&t));
+			$$ = v;
 		}
 	}
 	| NULL_T {
-		value_init_null(&TOP->values[TOP->value_length++]);
+		Value *v = (Value *)malloc(sizeof(Value));		
+		value_init_null(v);
+		$$ = v;
 	}
     ;
     
@@ -423,8 +436,7 @@ delete:		/*  delete 语句的语法解析树*/
 update:			/*  update 语句的语法解析树*/
     UPDATE ID SET ID EQ value where SEMICOLON {
 		CONTEXT->ssql->flag = SCF_UPDATE;//"update";
-		Value *value = &TOP->values[0];
-		updates_init(&CONTEXT->ssql->sstr.update, $2, $4, value, TOP->conditions, TOP->condition_length);
+		updates_init(&CONTEXT->ssql->sstr.update, $2, $4, $6, TOP->conditions, TOP->condition_length);
 		
 		// CONTEXT临时变量清零
 		TOP->condition_length = 0;
@@ -518,10 +530,7 @@ select_arith_expr:
 	}
 	| value { 
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
-		select_value_init($$, &TOP->values[TOP->value_length - 1]);	
-
-		// 释放临时变量
-		TOP->value_length --;
+		select_value_init($$, $1);	
 	}
 	| LBRACE select_arith_expr RBRACE {
 		$$ = $2;
@@ -663,10 +672,7 @@ non_subquery:
 	}
 	| value {
 		$$ = (ConditionExpr *)malloc(sizeof(ConditionExpr));
-		cond_value_init($$, &TOP->values[TOP->value_length - 1]);	
-
-		// 释放临时变量
-		TOP->value_length --;
+		cond_value_init($$, $1);	
 	}
 	| LBRACE non_subquery RBRACE {
 		$$ = $2;
