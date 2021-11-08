@@ -157,7 +157,8 @@ RC Db::sync() {
   return rc;
 }
 
-RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,Tuples *tuples){
+RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,
+                      Tuples *tuples) {
   auto res = opened_tables_.find(table_name);
   if (res == opened_tables_.end()) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
@@ -167,7 +168,7 @@ RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,Tuple
 }
 
 RC Db::delete_records(Trx *trx, const char *table_name, int condition_num,
-                      const Condition *conditions, int *deleted_count) {
+                      const ConditionList *conditions, int *deleted_count) {
   auto res = opened_tables_.find(table_name);
   if (res == opened_tables_.end()) {
     return RC::SCHEMA_TABLE_NOT_EXIST;

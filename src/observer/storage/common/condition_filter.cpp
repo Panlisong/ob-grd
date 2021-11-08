@@ -544,7 +544,7 @@ RC CompositeConditionFilter::init(const ConditionFilter *filters[],
 }
 
 RC CompositeConditionFilter::init(Trx *trx, Table &table,
-                                  const Condition *conditions,
+                                  const ConditionList *conditions,
                                   int condition_num) {
   if (condition_num == 0) {
     return RC::SUCCESS;
@@ -559,11 +559,11 @@ RC CompositeConditionFilter::init(Trx *trx, Table &table,
     DefaultConditionFilter *default_condition_filter =
         new DefaultConditionFilter(table);
     TupleSet subquery;
-    if (conditions[i].is_subquery == 1) {
-      do_select(trx, *conditions[i].subquery, subquery);
+    const Condition &cond = conditions->at(i);
+    if (cond.is_subquery == 1) {
+      do_select(trx, *cond.subquery, subquery);
     }
-    rc = default_condition_filter->init(table, conditions[i],
-                                        std::move(subquery));
+    rc = default_condition_filter->init(table, cond, std::move(subquery));
     if (rc != RC::SUCCESS) {
       delete default_condition_filter;
       for (int j = i - 1; j >= 0; j--) {

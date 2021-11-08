@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_SQL_PARSER_PARSE_DEFS_H__
 #define __OBSERVER_SQL_PARSER_PARSE_DEFS_H__
 
+#include <deque>
 #include <stddef.h>
 #include <string>
 #include <time.h>
@@ -28,6 +29,20 @@ typedef std::unordered_map<std::string, Table *> RelationTable;
 #define MAX_ATTR_NAME 20
 #define MAX_ERROR_MESSAGE 20
 #define MAX_DATA 50
+
+typedef struct _Selects Selects;
+typedef struct _SelectExpr SelectExpr;
+typedef struct _RelAttr RelAttr;
+typedef struct _Value Value;
+typedef struct _TableRef TableRef;
+typedef struct _Condition Condition;
+typedef struct _ConditionExpr ConditionExpr;
+typedef struct _OrderCol OrderCol;
+typedef std::deque<Condition> ConditionList;
+typedef std::deque<SelectExpr *> SelectExprList;
+typedef std::deque<TableRef *> TableRefList;
+typedef std::deque<OrderCol *> OrderColList;
+typedef std::deque<RelAttr *> GroupByList;
 
 // Built-in Function类型
 typedef enum _FuncName {
@@ -80,25 +95,25 @@ typedef enum {
 } AttrType;
 
 //属性值
-typedef struct _Value {
+struct _Value {
   AttrType type; // type of value
   void *data;    // value
   int len;
-} Value;
+};
 
 /**
  * PS: 标志位优先级：has_subexpr > is_attr
  */
-typedef struct _ConditionExpr {
+struct _ConditionExpr {
   int has_subexpr;
-  struct _ConditionExpr *left;
-  struct _ConditionExpr *right;
+  ConditionExpr *left;
+  ConditionExpr *right;
   ArithOp op;
   /* ConditionExpr叶子节点 */
   int is_attr;
   Value *value;
   RelAttr *attr;
-} ConditionExpr;
+};
 
 /**
  * Condition 有两种情况
@@ -109,14 +124,14 @@ typedef struct _ConditionExpr {
  *
  * PS: 其余情况均非法
  */
-typedef struct _Condition {
+struct _Condition {
   int is_used = 0; // 生成Filter时避免重复选取
   int is_subquery;
-  struct _Selects *subquery;
+  Selects *subquery;
   ConditionExpr *left;
   ConditionExpr *right;
   CompOp comp; // comparison operator
-} Condition;
+};
 
 /** TableRef结构体
  *  表引用有两种类型：join table和普通table
@@ -132,49 +147,49 @@ typedef struct _Condition {
  *      |
  *     null
  */
-typedef struct _TableRef {
-  int is_join;             // 是否为join table
-  char *relation_name;     // 表名，具体含义见上面注释
-  struct _TableRef *child; // 子结点
+struct _TableRef {
+  int is_join;         // 是否为join table
+  char *relation_name; // 表名，具体含义见上面注释
+  TableRef *child;     // 子结点
   size_t cond_num;
-  Condition conditions[MAX_NUM]; // join condtion
-} TableRef;
+  ConditionList *conditions;
+};
 
 /**
  * PS: 标志位优先级：has_subexpr > is_attr
  */
-typedef struct _SelectExpr {
+struct _SelectExpr {
   int has_subexpr;
   ArithOp arithOp;
-  struct _SelectExpr *left;
-  struct _SelectExpr *right;
+  SelectExpr *left;
+  SelectExpr *right;
   /* Expression叶子节点 */
   int is_attr;
   Value *value;
   FuncName func;
   RelAttr *attr;
-} SelectExpr;
+};
 
-typedef struct _OrderCol {
+struct _OrderCol {
   RelAttr *attr;
   int asc; // 1: 升序；0：降序
-} OrderCol;
+};
 
 // struct of select
-typedef struct _Selects {
-  size_t expr_num;               // Length of attrs in Expression clause
-  SelectExpr *exprs[MAX_NUM];    // Select expression in Select clause
-  size_t ref_num;                // Length of table references in From clause
-  TableRef *references[MAX_NUM]; // Table references in From clause
-  size_t cond_num;               // Length of conditions in Where clause
-  Condition conditions[MAX_NUM]; // conditions in Where clause
-  size_t group_num;              // Length of groups
-  RelAttr *groups[MAX_NUM];      // cols in Group List
-  size_t order_num;              // Length of orders
-  OrderCol *orders[MAX_NUM];     // cols in OrderBy List
+struct _Selects {
+  size_t expr_num;           // Length of attrs in Expression clause
+  SelectExprList *exprs;     // Select expression in Select clause
+  size_t ref_num;            // Length of table references in From clause
+  TableRefList *references;  // Table references in From clause
+  size_t cond_num;           // Length of conditions in Where clause
+  ConditionList *conditions; // conditions in Where clause
+  size_t group_num;          // Length of groups
+  GroupByList *groups;       // cols in Group List
+  size_t order_num;          // Length of orders
+  OrderColList *orders;      // cols in OrderBy List
   ///////////////////////////////////////////////////////////////////////////
   RelationTable *context;
-} Selects;
+};
 
 typedef struct {
   size_t value_num;       // Length of values
@@ -190,18 +205,18 @@ typedef struct {
 
 // struct of delete
 typedef struct {
-  char *relation_name;           // Relation to delete from
-  size_t condition_num;          // Length of conditions in Where clause
-  Condition conditions[MAX_NUM]; // conditions in Where clause
+  char *relation_name;       // Relation to delete from
+  size_t condition_num;      // Length of conditions in Where clause
+  ConditionList *conditions; // conditions in Where clause
 } Deletes;
 
 // struct of update
 typedef struct {
-  char *relation_name;           // Relation to update
-  char *attribute_name;          // Attribute to update
-  Value *value;                  // update value
-  size_t condition_num;          // Length of conditions in Where clause
-  Condition conditions[MAX_NUM]; // conditions in Where clause
+  char *relation_name;       // Relation to update
+  char *attribute_name;      // Attribute to update
+  Value *value;              // update value
+  size_t condition_num;      // Length of conditions in Where clause
+  ConditionList *conditions; // conditions in Where clause
 } Updates;
 
 typedef struct {
@@ -297,7 +312,7 @@ bool is_comparable(AttrType lt, AttrType rt);
 
 //////////////////////////////////////////////////////
 void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
-                    TableRef *child, Condition conditions[], int cond_num);
+                    TableRef *child, ConditionList *cond_list);
 void table_ref_destory(TableRef *ref);
 
 //////////////////////////////////////////////////////
@@ -350,10 +365,7 @@ void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type,
 void attr_info_destroy(AttrInfo *attr_info);
 
 ///////////////////////////////////////////////////////
-void selects_append_expr(Selects *selects, SelectExpr *select_expr);
-void selects_append_relation(Selects *selects, TableRef *ref);
-void selects_append_conditions(Selects *selects, Condition conditions[],
-                               size_t condition_num);
+void selects_append_conditions(Selects *selects, ConditionList *cond_list);
 void selects_append_group(Selects *selects, RelAttr *);
 void selects_append_order(Selects *selects, OrderCol *ocol);
 void selects_destroy(Selects *selects);
@@ -363,13 +375,12 @@ void inserts_init(Inserts *inserts, const char *relation_name);
 void inserts_destroy(Inserts *inserts);
 
 void deletes_init_relation(Deletes *deletes, const char *relation_name);
-void deletes_set_conditions(Deletes *deletes, Condition conditions[],
-                            size_t condition_num);
+void deletes_set_conditions(Deletes *deletes, ConditionList *conditions);
 void deletes_destroy(Deletes *deletes);
 
 void updates_init(Updates *updates, const char *relation_name,
                   const char *attribute_name, Value *value,
-                  Condition conditions[], size_t condition_num);
+                  ConditionList *cond_list);
 void updates_destroy(Updates *updates);
 
 void create_table_append_attribute(CreateTable *create_table,

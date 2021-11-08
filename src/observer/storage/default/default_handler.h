@@ -139,7 +139,7 @@ public:
    * @return
    */
   RC delete_record(Trx *trx, const char *dbname, const char *relation_name,
-                   int condition_num, const Condition *conditions,
+                   int condition_num, const ConditionList *conditions,
                    int *deleted_count);
 
   /**
@@ -156,7 +156,7 @@ public:
    */
   RC update_records(Trx *trx, const char *dbname, const char *relation_name,
                     const char *attribute_name, const Value *value,
-                    int condition_num, const Condition *conditions,
+                    int condition_num, const ConditionList *conditions,
                     int *updated_count);
 
 public:

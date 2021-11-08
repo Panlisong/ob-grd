@@ -756,7 +756,7 @@ static RC record_reader_update_adapter(Record *record, void *context) {
 
 RC Table::update_records(Trx *trx, const char *attribute_name,
                          const Value *value, int condition_num,
-                         const Condition conditions[], int *updated_count) {
+                         const ConditionList *conditions, int *updated_count) {
   RC rc = RC::SUCCESS;
   // 进入这里说明更新Table一定存在
   // 1. 生成ConditionFilter

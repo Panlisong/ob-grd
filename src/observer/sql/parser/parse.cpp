@@ -19,9 +19,9 @@ See the Mulan PSL v2 for more details. */
 
 RC parse(char *st, Query *sqln);
 
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
+// #ifdef __cplusplus
+// extern "C" {
+// #endif // __cplusplus
 bool is_comparable(AttrType lt, AttrType rt) {
   if (lt == DATES || rt == DATES || lt == CHARS || rt == CHARS) {
     return lt == rt;
@@ -39,16 +39,12 @@ bool is_computable(AttrType left, AttrType right) {
 }
 
 void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
-                    TableRef *child, Condition conditions[], int cond_num) {
+                    TableRef *child, ConditionList *cond_list) {
   ref->is_join = is_join;
   ref->relation_name = strdup(relation_name);
   ref->child = child;
-  ref->cond_num = cond_num;
-  if (cond_num) {
-    for (int i = 0; i < cond_num; i++) {
-      ref->conditions[i] = conditions[i];
-    }
-  }
+  ref->conditions = cond_list;
+  ref->cond_num = cond_list->size();
 }
 
 void table_ref_destory(TableRef *ref) {
@@ -56,10 +52,10 @@ void table_ref_destory(TableRef *ref) {
     table_ref_destory(ref->child);
   }
   free(ref->relation_name);
-  for (size_t i = 0; i < ref->cond_num; i++) {
-    condition_destroy(&ref->conditions[i]);
-  }
+
+  delete ref->conditions;
   ref->cond_num = 0;
+
   free(ref);
 }
 
@@ -296,27 +292,18 @@ void select_value_init(SelectExpr *expr, Value *value) {
   expr->right = nullptr;
 }
 
-void selects_append_expr(Selects *selects, SelectExpr *select_expr) {
-  selects->exprs[selects->expr_num++] = select_expr;
+void selects_append_conditions(Selects *selects, ConditionList *cond_list) {
+  selects->conditions = cond_list;
+  selects->cond_num = cond_list->size();
 }
-void selects_append_relation(Selects *selects, TableRef *ref) {
-  selects->references[selects->ref_num++] = ref;
-}
-void selects_append_conditions(Selects *selects, Condition conditions[],
-                               size_t condition_num) {
-  assert(condition_num <=
-         sizeof(selects->conditions) / sizeof(selects->conditions[0]));
-  for (size_t i = 0; i < condition_num; i++) {
-    selects->conditions[i] = conditions[i];
-  }
-  selects->cond_num = condition_num;
-}
-void selects_append_group(Selects *selects, RelAttr *attr) {
-  selects->groups[selects->group_num++] = attr;
+void selects_append_group(Selects *selects, GroupByList *groups) {
+  selects->groups = groups;
+  selects->group_num = groups->size();
 }
 
-void selects_append_order(Selects *selects, OrderCol *ocol) {
-  selects->orders[selects->order_num++] = ocol;
+void selects_append_order(Selects *selects, OrderColList *ocolist) {
+  selects->orders = ocolist;
+  selects->order_num = ocolist->size();
 }
 
 void order_col_init(OrderCol *col, RelAttr *attr, int asc_flag) {
@@ -330,29 +317,20 @@ void order_col_destroy(OrderCol *col) {
 }
 
 void selects_destroy(Selects *selects) {
-  for (size_t i = 0; i < selects->expr_num; i++) {
-    select_expr_destroy(selects->exprs[i]);
-  }
+
+  delete selects->exprs;
   selects->expr_num = 0;
 
-  for (size_t i = 0; i < selects->ref_num; i++) {
-    table_ref_destory(selects->references[i]);
-  }
+  delete selects->references;
   selects->ref_num = 0;
 
-  for (size_t i = 0; i < selects->cond_num; i++) {
-    condition_destroy(&selects->conditions[i]);
-  }
+  delete selects->conditions;
   selects->cond_num = 0;
 
-  for (size_t i = 0; i < selects->group_num; i++) {
-    attr_destroy(selects->groups[i]);
-  }
+  delete selects->groups;
   selects->group_num = 0;
 
-  for (size_t i = 0; i < selects->order_num; i++) {
-    order_col_destroy(selects->orders[i]);
-  }
+  delete selects->orders;
   selects->order_num = 0;
 }
 
@@ -378,18 +356,13 @@ void deletes_init_relation(Deletes *deletes, const char *relation_name) {
   deletes->relation_name = strdup(relation_name);
 }
 
-void deletes_set_conditions(Deletes *deletes, Condition conditions[],
-                            size_t condition_num) {
-  assert(condition_num <=
-         sizeof(deletes->conditions) / sizeof(deletes->conditions[0]));
-  for (size_t i = 0; i < condition_num; i++) {
-    deletes->conditions[i] = conditions[i];
-  }
-  deletes->condition_num = condition_num;
+void deletes_set_conditions(Deletes *deletes, ConditionList *cond_list) {
+  deletes->conditions = cond_list;
+  deletes->condition_num = cond_list->size();
 }
 void deletes_destroy(Deletes *deletes) {
-  for (size_t i = 0; i < deletes->condition_num; i++) {
-    condition_destroy(&deletes->conditions[i]);
+  if (deletes->conditions != nullptr) {
+    delete deletes->conditions;
   }
   deletes->condition_num = 0;
   free(deletes->relation_name);
@@ -398,17 +371,12 @@ void deletes_destroy(Deletes *deletes) {
 
 void updates_init(Updates *updates, const char *relation_name,
                   const char *attribute_name, Value *value,
-                  Condition conditions[], size_t condition_num) {
+                  ConditionList *cond_list) {
   updates->relation_name = strdup(relation_name);
   updates->attribute_name = strdup(attribute_name);
   updates->value = value;
-
-  assert(condition_num <=
-         sizeof(updates->conditions) / sizeof(updates->conditions[0]));
-  for (size_t i = 0; i < condition_num; i++) {
-    updates->conditions[i] = conditions[i];
-  }
-  updates->condition_num = condition_num;
+  updates->conditions = cond_list;
+  updates->condition_num = cond_list->size();
 }
 
 void updates_destroy(Updates *updates) {
@@ -416,11 +384,9 @@ void updates_destroy(Updates *updates) {
   free(updates->attribute_name);
   updates->relation_name = nullptr;
   updates->attribute_name = nullptr;
-
   value_destroy(updates->value);
-
-  for (size_t i = 0; i < updates->condition_num; i++) {
-    condition_destroy(&updates->conditions[i]);
+  if (updates->conditions != nullptr) {
+    delete updates->conditions;
   }
   updates->condition_num = 0;
 }
@@ -580,9 +546,9 @@ void query_destroy(Query *query) {
   query_reset(query);
   free(query);
 }
-#ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+// #ifdef __cplusplus
+// } // extern "C"
+// #endif // __cplusplus
 
 ////////////////////////////////////////////////////////////////////////////////
 

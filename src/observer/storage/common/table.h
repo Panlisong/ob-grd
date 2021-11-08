@@ -75,7 +75,7 @@ public:
   RC rollback_delete(Record *old_record);
 
   RC update_records(Trx *trx, const char *attribute_name, const Value *value,
-                    int condition_num, const Condition conditions[],
+                    int condition_num, const ConditionList *conditions,
                     int *updated_count);
   RC commit_update(Record *record, bool new_null, char *new_value, int offset,
                    int len, bool is_text);

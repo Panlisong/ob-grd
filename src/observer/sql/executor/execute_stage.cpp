@@ -36,9 +36,9 @@ using namespace common;
 RC create_selection_executor(Trx *trx, Selects &selects, Table *table,
                              RelAttrTable &mini_schema,
                              SelectExeNode &select_node);
-RC create_join_executor(Trx *trx, RelationTable &relations, Condition conds[],
-                        size_t cond_num, TupleSet &tl, TupleSet &tr,
-                        JoinExeNode &join_node);
+RC create_join_executor(Trx *trx, RelationTable &relations,
+                        ConditionList *conds, size_t cond_num, TupleSet &tl,
+                        TupleSet &tr, JoinExeNode &join_node);
 RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
                               const TupleSchema &product,
                               ProjectExeNode &project);
@@ -279,7 +279,7 @@ static bool check_column_attr(RelationTable &outer, RelationTable &cur,
       table = outer_res->second;
       cur[table->name()] = table;
       ref = (TableRef *)malloc(sizeof(TableRef));
-      table_ref_init(ref, 0, table->name(), nullptr, nullptr, 0);
+      table_ref_init(ref, 0, table->name(), nullptr, nullptr);
     }
   } else {
     table = cur_res->second;
@@ -311,7 +311,7 @@ static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
     }
     if (ref != nullptr) {
       // check_cloumn_attr返回的TableRef非空，说明缺少上文信息
-      selects.references[selects.ref_num++] = ref;
+      selects.references->push_back(ref);
     }
     // TODO: check type时再做
     // // AVG参数要匹配
@@ -335,8 +335,8 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
   bool error = false;
 
   // 1. 检查 '*' 是否是否使用正确
-  for (int i = selects.expr_num - 1; i >= 0; i--) {
-    SelectExpr *expr = selects.exprs[i];
+  for (size_t i = 0; i < selects.expr_num; i++) {
+    SelectExpr *expr = selects.exprs->at(i);
     if (expr->has_subexpr == 1) {
       continue;
     }
@@ -374,8 +374,9 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
           LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
           break;
         } else {
-          auto ref = selects.references[selects.ref_num++];
-          table_ref_init(ref, 0, table_name, nullptr, nullptr, 0);
+          TableRef *ref = new TableRef;
+          table_ref_init(ref, 0, table_name, nullptr, nullptr);
+          selects.references->push_back(ref);
           cur[table_name] = outer[table_name];
         }
       }
@@ -387,8 +388,8 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
   }
 
   // 2. 检查 col 用法：'T.A' 'A'
-  for (int i = selects.expr_num - 1; i >= 0; i--) {
-    SelectExpr *expr = selects.exprs[i];
+  for (size_t i = 0; i < selects.expr_num; i++) {
+    SelectExpr *expr = selects.exprs->at(i);
     if (expr->has_subexpr == 0) {
       if (strcmp(expr->attr->attribute_name, "*") == 0) {
         // 跳过'T.*' '*'
@@ -442,10 +443,11 @@ static bool check_condition_expr(const ConditionExpr *expr,
 
 RC ExecuteStage::resolve_condtions(RelationTable &outer, RelationTable &cur,
                                    std::vector<TableRef *> &refs,
-                                   const Condition conds[], size_t cond_num) {
+                                   const ConditionList *conds,
+                                   size_t cond_num) {
   RC rc = RC::SUCCESS;
   for (size_t i = 0; i < cond_num; i++) {
-    const Condition &cond = conds[i];
+    const Condition &cond = conds->at(i);
     // 1. 先检查left ConditionExpr
     if (!check_condition_expr(cond.left, outer, cur, refs)) {
       rc = RC::SQL_SYNTAX;
@@ -513,8 +515,8 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
   RC rc = RC::SUCCESS;
   // 1. 建立本层的RelationTable
   auto &cur = *selects.context;
-  for (int i = selects.ref_num - 1; i >= 0; i--) {
-    TableRef *ref = selects.references[i];
+  for (size_t i = 0; i < selects.ref_num; i++) {
+    TableRef *ref = selects.references->at(i);
     const char *table_name = ref->relation_name;
     if (ref->is_join) {
       rc = resolve_join_table(ref, outer, cur);
@@ -529,8 +531,8 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
   // 2. 检查condition，必要时候补充上文信息到from clause
   // ConditionFilter中有类型转换和检查，这里不用做
   std::vector<TableRef *> refs;
-  rc =
-      resolve_condtions(outer, cur, refs, selects.conditions, selects.cond_num);
+  rc = resolve_condtions(outer, cur, refs, selects.conditions,
+                         selects.conditions->size());
   if (rc != RC::SUCCESS) {
     for (auto t : refs) {
       free(t);
@@ -539,7 +541,7 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
   }
   // 加入from clause
   for (auto t : refs) {
-    selects.references[selects.ref_num++] = t;
+    selects.references->push_back(t);
   }
   // 3. 检查 select clause，必要时补充上文信息到from clause
   // 属性名：多表必须T.A，T.*；单表A, *，单表情况下不允许多个*
@@ -571,7 +573,7 @@ RC ExecuteStage::join_table_relations_init(const TableRef *ref) {
   // 子结点中的表信息已经收集完毕
   // 3. 检查 join condition
   for (int i = ref->cond_num - 1; i >= 0; i--) {
-    const Condition &cond = ref->conditions[i];
+    const Condition &cond = ref->conditions->at(i);
     if (cond.is_subquery) {
       rc = relations_init(*cond.subquery);
       if (rc != RC::SUCCESS) {
@@ -583,8 +585,8 @@ RC ExecuteStage::join_table_relations_init(const TableRef *ref) {
 }
 
 RC ExecuteStage::relations_init(const Selects &selects) {
-  for (int i = selects.ref_num - 1; i >= 0; i--) {
-    const TableRef *ref = selects.references[i];
+  for (size_t i = 0; i < selects.ref_num; i++) {
+    const TableRef *ref = selects.references->at(i);
     const char *table_name = ref->relation_name;
     if (ref->is_join) {
       join_table_relations_init(ref);
@@ -601,7 +603,7 @@ RC ExecuteStage::relations_init(const Selects &selects) {
 
   RC rc = RC::SUCCESS;
   for (int i = selects.cond_num - 1; i >= 0; i--) {
-    const Condition &cond = selects.conditions[i];
+    const Condition &cond = selects.conditions->at(i);
     if (cond.is_subquery) {
       rc = relations_init(*cond.subquery);
       if (rc != RC::SUCCESS) {
@@ -693,7 +695,7 @@ static void get_mini_schema(const TableRef *ref, RelationTable &relations,
   }
   get_mini_schema(ref->child, relations, mini_schema);
   for (int i = ref->cond_num - 1; i >= 0; i--) {
-    const Condition &cond = ref->conditions[i];
+    const Condition &cond = ref->conditions->at(i);
     get_mini_schema(cond, relations, mini_schema);
   }
 }
@@ -701,18 +703,18 @@ static void get_mini_schema(const TableRef *ref, RelationTable &relations,
 static void get_mini_schema(const Selects &selects, RelationTable &relations,
                             RelAttrTable &mini_schema) {
   // 扫描select clause，这是一定要添加的
-  for (int i = selects.expr_num - 1; i >= 0; i--) {
-    const SelectExpr *expr = selects.exprs[i];
+  for (size_t i = 0; i < selects.expr_num; i++) {
+    const SelectExpr *expr = selects.exprs->at(i);
     get_mini_schema(expr, relations, mini_schema);
   }
   // 扫描where clause
   for (int i = selects.cond_num - 1; i >= 0; i--) {
-    const Condition &cond = selects.conditions[i];
+    const Condition &cond = selects.conditions->at(i);
     get_mini_schema(cond, relations, mini_schema);
   }
   // 扫描join的on clause
-  for (int i = selects.ref_num - 1; i >= 0; i--) {
-    const TableRef *ref = selects.references[i];
+  for (size_t i = 0; i < selects.ref_num; i++) {
+    const TableRef *ref = selects.references->at(i);
     if (ref->is_join) {
       get_mini_schema(ref, relations, mini_schema);
     }
@@ -775,8 +777,8 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
   // 依次执行ExecutionNode
   // （Join table实质是SelectExeNode + JoinExeNode）
   std::vector<TupleSet> tuple_sets;
-  for (int i = selects.ref_num - 1; i >= 0; i--) {
-    TableRef *ref = selects.references[i];
+  for (size_t i = 0; i < selects.ref_num; i++) {
+    TableRef *ref = selects.references->at(i);
     TupleSet tuple_set;
     if (ref->is_join != 1) {
       rc = select_nodes[ref->relation_name]->execute(tuple_set);
@@ -875,8 +877,8 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
   RelationTable &relations = *selects.context;
   bool multi = relations.size() > 1;
   std::vector<ProjectionDesc *> descs;
-  for (int i = selects.expr_num - 1; i >= 0; i--) {
-    SelectExpr *expr = selects.exprs[i];
+  for (size_t i = 0; i < selects.expr_num; i++) {
+    SelectExpr *expr = selects.exprs->at(i);
     if (expr->is_attr == 1) {
       // 处理'*'情况
       RelAttr *attr = expr->attr;
@@ -926,9 +928,9 @@ static void get_one_mini_schema(const ConditionExpr *expr,
   }
 }
 
-RC create_join_executor(Trx *trx, RelationTable &relations, Condition conds[],
-                        size_t cond_num, TupleSet &tl, TupleSet &tr,
-                        JoinExeNode &join_node) {
+RC create_join_executor(Trx *trx, RelationTable &relations,
+                        ConditionList *conds, size_t cond_num, TupleSet &tl,
+                        TupleSet &tr, JoinExeNode &join_node) {
   RC rc = RC::SUCCESS;
   // 列出和这两张表相关的condition
   std::vector<TupleFilter *> filters;
@@ -938,7 +940,7 @@ RC create_join_executor(Trx *trx, RelationTable &relations, Condition conds[],
 
   TupleSchema collector;
   for (size_t i = 0; i < cond_num; i++) {
-    Condition &cond = conds[i];
+    Condition &cond = conds->at(i);
     if (cond.is_used == 1) {
       continue;
     }
@@ -978,14 +980,14 @@ RC create_join_executor(Trx *trx, RelationTable &relations, Condition conds[],
 
 /////////////////////////////////////////////////////////////////////////////////
 static RC add_filter(Trx *trx, RelationTable &relations, Table *table,
-                     Condition conds[], size_t cond_num,
+                     ConditionList *conds, size_t cond_num,
                      std::vector<DefaultConditionFilter *> &cond_filters) {
   RC rc = RC::SUCCESS;
   TupleSchema table_schema;
   TupleSchema::from_table(table, table_schema, false);
   TupleSchema counter;
   for (size_t i = 0; i < cond_num; i++) {
-    Condition &cond = conds[i];
+    Condition &cond = conds->at(i);
     if (cond.is_used == 1) {
       // 使用过的条件直接跳过
       continue;
@@ -1048,8 +1050,8 @@ RC create_selection_executor(Trx *trx, Selects &selects, Table *table,
   std::vector<DefaultConditionFilter *> cond_filters;
   // 找出仅与此表相关的过滤条件
   // 1. join table中
-  for (int i = selects.ref_num - 1; i >= 0; i--) {
-    TableRef *ref = selects.references[i];
+  for (size_t i = 0; i < selects.ref_num; i++) {
+    TableRef *ref = selects.references->at(i);
     if (ref->is_join == 1) {
       create_filters_in_join_table(ref, trx, relations, table, cond_filters);
     }

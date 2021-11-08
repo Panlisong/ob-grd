@@ -162,7 +162,7 @@ public:
   virtual ~CompositeConditionFilter();
 
   RC init(const ConditionFilter *filters[], int filter_num);
-  RC init(Trx *trx, Table &table, const Condition *conditions,
+  RC init(Trx *trx, Table &table, const ConditionList *conditions,
           int condition_num);
   virtual bool filter(const Record &rec) const;
 

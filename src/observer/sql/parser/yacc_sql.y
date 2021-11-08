@@ -10,62 +10,9 @@
 #include<stdlib.h>
 #include<cstring>
 
-typedef struct QueryContext{
-  Query *ssql;
-  size_t condition_length;
-  Condition conditions[MAX_NUM];
-} QueryContext;
-
 typedef struct ParserContext {
   Query *ssql;
-  QueryContext context_stack[MAX_NUM]; // 只允许嵌套深度不超过20
-  int top;							   // 栈顶指针
 } ParserContext;
-
-void init(Query *query, yyscan_t scanner) {
-	ParserContext *global = (ParserContext *)yyget_extra(scanner);
-	global->top = -1;
-	global->context_stack[0].ssql = query;
-}
-
-QueryContext *top(yyscan_t scanner) {
-	ParserContext *global = (ParserContext *)yyget_extra(scanner);
-	return &(global->context_stack[global->top]);
-}
-
-void pop(yyscan_t scanner) {
-	ParserContext *global = (ParserContext *)yyget_extra(scanner);
-	global->top --;
-}
-
-void push(yyscan_t scanner) {
-	ParserContext *global = (ParserContext *)yyget_extra(scanner);
-	global->top ++;
-}
-
-/////////////////////////////////////////////////
-// 由于整个过程只有一个scanner，使用marco封装
-
-/**
- * ParserContext初始化，将解析结果Q放入栈顶
- */
-#define INIT(Q) init(Q, scanner)
-
-/**
- * 返回指向Query Context Stack栈顶QueryContext结构的指针
- */
-#define TOP top(scanner)
-
-/**
- * 将Query Context Stack栈顶弹出
- */
-#define POP pop(scanner)
-
-/**
- * 栈顶指针上移
- * PS: 注意给Query *ssql分配空间
- */
- #define PUSH push(scanner)
 
 void yyerror(yyscan_t scanner, const char *str)
 {
@@ -84,6 +31,23 @@ ParserContext *get_context(yyscan_t scanner)
 #define CONTEXT get_context(scanner)
 
 %}
+
+%code requires{
+#include <deque>
+typedef struct _Selects Selects;
+typedef struct _SelectExpr SelectExpr;
+typedef struct _RelAttr RelAttr;
+typedef struct _Value Value;
+typedef struct _TableRef TableRef;
+typedef struct _Condition Condition;
+typedef struct _ConditionExpr ConditionExpr;
+typedef struct _OrderCol OrderCol;
+typedef std::deque<Condition> ConditionList;
+typedef std::deque<SelectExpr *> SelectExprList;
+typedef std::deque<TableRef *> TableRefList;
+typedef std::deque<OrderCol *> OrderColList;
+typedef std::deque<RelAttr *> GroupByList;
+}
 
 %define api.pure full
 %lex-param { yyscan_t scanner }
@@ -120,7 +84,7 @@ ParserContext *get_context(yyscan_t scanner)
         STRING_T
 		DATE_T
         FLOAT_T
-				TEXT_T
+		TEXT_T
         HELP
         EXIT
 		IS
@@ -154,17 +118,24 @@ ParserContext *get_context(yyscan_t scanner)
 		IN
 
 %union {
-  struct _Selects *select;
-  struct _TableRef *ref;		// Table reference
-  struct _SelectExpr *sexpr;	// select expr
-  struct _ConditionExpr *cexpr; // condition expr
-  struct _RelAttr *attr;
-  struct _Value *val;
-  struct _OrderCol *ocol; 		// order column
+  Selects *select;		// select
+  TableRef *ref;		// Table reference
+  SelectExpr *sexpr;	// select expr
+  Condition *cond;		// condition
+  ConditionExpr *cexpr; // condition expr
+  RelAttr *attr;
+  Value *val;			// value
+  OrderCol *ocol; 		// order column
   char *string;
   int number;
   float floats;
   char *position;
+
+  ConditionList *cond_list;
+  SelectExprList *sexpr_list;
+  TableRefList *ref_list;
+  OrderColList *ocol_list;
+  GroupByList *group_list;
 }
 
 %token <number> NUMBER
@@ -185,14 +156,24 @@ ParserContext *get_context(yyscan_t scanner)
 
 %type <ref>	table_ref
 %type <ref>	join_table
+%type <ref_list> table_ref_list
 %type <sexpr> select_expr
 %type <sexpr> select_func
 %type <sexpr> select_arith_expr
+%type <sexpr_list> select_expr_list
 %type <attr> col
+%type <group_list> group
+%type <group_list> group_by_list
 %type <val> value
 %type <ocol> order_col
+%type <ocol_list> order
+%type <ocol_list> order_col_list
 
 %type <cexpr> non_subquery
+%type <cond> condition
+%type <cond_list> where
+%type <cond_list> condition_list
+%type <cond_list> join_condition
 
 %type <number> type
 %type <number> is_nullable
@@ -420,61 +401,56 @@ delete:		/*  delete 语句的语法解析树*/
     DELETE FROM ID where SEMICOLON {
 		CONTEXT->ssql->flag = SCF_DELETE;//"delete";
 		deletes_init_relation(&CONTEXT->ssql->sstr.deletion, $3);
-		deletes_set_conditions(&CONTEXT->ssql->sstr.deletion, TOP->conditions, TOP->condition_length);
-		
-		// CONTEXT临时变量清零
-		TOP->condition_length = 0;	
+		deletes_set_conditions(&CONTEXT->ssql->sstr.deletion, $4);
     }
     ;
 update:			/*  update 语句的语法解析树*/
-    UPDATE ID SET ID EQ value where SEMICOLON {
+    UPDATE ID SET ID EQ value where[wh] SEMICOLON {
 		CONTEXT->ssql->flag = SCF_UPDATE;//"update";
-		updates_init(&CONTEXT->ssql->sstr.update, $2, $4, $6, TOP->conditions, TOP->condition_length);
-		
-		// CONTEXT临时变量清零
-		TOP->condition_length = 0;
+		updates_init(&CONTEXT->ssql->sstr.update, $2, $4, $6, $wh);
 	}
     ;
 selects:				/*  select 语句的语法解析树*/
     select SEMICOLON {
 		CONTEXT->ssql->flag = SCF_SELECT; //"select";
+		CONTEXT->ssql->sstr.selection = std::move(*$1);
 	}
 select:
-	SELECT start_select select_expr select_expr_list FROM table_ref table_ref_list where group order
+	SELECT select_expr[expr] select_expr_list[exprlist] FROM table_ref[ref] table_ref_list[reflist] where[wh] group[gp] order[od]
 	{
-		// 1. append select_expr $3
-		selects_append_expr(&TOP->ssql->sstr.selection, $3);
+		$$ = (Selects *)malloc(sizeof(Selects));
+		// 1. append select_expr
+		SelectExprList *expr_list = $exprlist;
+		expr_list->push_front($expr);
+		$$->exprs = expr_list;
+		$$->expr_num = expr_list->size();
 
-		// 2. append table_ref $6
-		selects_append_relation(&TOP->ssql->sstr.selection, $6);
+		// 2. append table_ref
+		TableRefList *ref_list = $reflist;
+		ref_list->push_front($ref);
+		$$->references = ref_list;
+		$$->ref_num = ref_list->size();
 
 		// 3. append condtion_list(可选项，可能为空)
-		selects_append_conditions(&TOP->ssql->sstr.selection, TOP->conditions, TOP->condition_length);
+		selects_append_conditions($$, $wh);
 
 		// 4. append group_list(可选项，可能为空)
 
 		// 5. append order_list(可选项，可能为空)
 		
-		TOP->ssql->sstr.selection.context = new RelationTable();
-		//临时变量清零
-		TOP->condition_length=0;
-
-		$$ = &TOP->ssql->sstr.selection;
+		$$->context = new RelationTable();
 	}
 	;
-
-start_select: {
-		PUSH;
-		if (TOP->ssql == NULL) {
-			TOP->ssql = (Query *)malloc(sizeof(Query));
-		}
-	}
 /*************************** SELECT CLAUSE ****************************/
 select_expr_list:
 	/* empty */
+	{
+		$$ = new SelectExprList();
+	}
 	| COMMA select_expr select_expr_list {
 		// append select_expr $2
-		selects_append_expr(&TOP->ssql->sstr.selection, $2);
+		$$ = $3;
+		$$->push_front($2);
 	}
 	;
 
@@ -581,15 +557,19 @@ col:
 /*************************** FROM CLAUSE ****************************/
 table_ref_list:
     /* empty */
-    | COMMA table_ref table_ref_list {	
-		selects_append_relation(&TOP->ssql->sstr.selection, $2);
+	{
+		$$ = new TableRefList();
+	}
+    | COMMA table_ref[ref] table_ref_list[reflist] {	
+		$$ = $reflist;
+		$$->push_front($ref);
 	}
     ;
 
 table_ref: 
 	ID { 
 		TableRef *ref = (TableRef *)malloc(sizeof(TableRef));
-		table_ref_init(ref, 0, $1, NULL, NULL, 0); 
+		table_ref_init(ref, 0, $1, nullptr, new ConditionList); 
 		$$ = ref;
 	} 
 	| join_table { $$ = $1; }
@@ -598,42 +578,61 @@ table_ref:
 join_table: 
 	table_ref INNER JOIN ID join_condition {
 		TableRef *ref = (TableRef *)malloc(sizeof(TableRef));
-		table_ref_init(ref, 1, $4, $1, TOP->conditions, TOP->condition_length);
+		table_ref_init(ref, 1, $4, $1, $5);
 		$$ = ref;
-		// 临时变量清零
-		TOP->condition_length = 0;
 	}
 	;
 
 join_condition:
 	/* empty */
-	| ON condition condition_list {}
+	{
+		$$ = new ConditionList();
+	}
+	| ON condition condition_list {
+		$$ = $3;
+		$$->push_front(*$2);
+	}
 	;
 
 /*************************** WHERE CLAUSE ****************************/
 where:
     /* empty */ 
-    | WHERE condition condition_list {}
+	{
+		$$ = new ConditionList();
+	}
+    | WHERE condition condition_list {
+		$$ = $3;
+		$$->push_front(*$2);
+	}
     ;
 
 /*************************** CONDITION ****************************/
 condition_list:
     /* empty */
-    | AND condition condition_list {}
+	{
+		$$ = new ConditionList();
+	}
+    | AND condition condition_list {
+		$$ = $3;
+		$$->push_front(*$2);
+	}
     ;
 
 condition:
 	non_subquery comOp non_subquery {
 		CompOp op = static_cast<CompOp>($2);
-		non_subquery_cond_init(&TOP->conditions[TOP->condition_length++], $1, $3, op);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		non_subquery_cond_init($$, $1, $3, op);
 	}
 	| non_subquery comOp subquery {
 		CompOp op = static_cast<CompOp>($2);
-		com_subquery_init(&TOP->conditions[TOP->condition_length++], $1, $3, op);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		com_subquery_init($$, $1, $3, op);
 	}
 	| non_subquery membershipOp subquery {
 		CompOp op = static_cast<CompOp>($2);
-		membership_subquery_init(&TOP->conditions[TOP->condition_length++], $1, $3, op);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		membership_subquery_init($$, $1, $3, op);
 	}
 	;
 
@@ -685,36 +684,51 @@ comOp:
 subquery:
 	LBRACE select RBRACE {
 		$$ = $2;
-		POP;
 	}
 
 /*************************** GROUP BY ****************************/
 group: 
 	/* empty */
-	| GROUP BY col group_list {
-		selects_append_group(&TOP->ssql->sstr.selection, $3);
+	{
+		$$ = new GroupByList();
+	}
+	| GROUP BY col[column] group_by_list[gplist] {
+		$$ = $gplist;
+		$$->push_front($column);
 	}
 	;
 
-group_list:
+group_by_list:
 	/* empty */
-	| COMMA col group_list {
-		selects_append_group(&TOP->ssql->sstr.selection, $2);
+	{
+		$$ = new GroupByList();
+	}
+	| COMMA col[column] group_by_list[gplist] {
+		$$ = $gplist;
+		$$->push_front($column);
 	}
 	;
 
 /*************************** ORDER BY ****************************/
 order:
 	/* empty */
-	| ORDER BY order_col order_list {
-		selects_append_order(&TOP->ssql->sstr.selection, $3);
+	{
+		$$ = new OrderColList;
+	}
+	| ORDER BY order_col[ocol] order_col_list[ocolist] {
+		$$ = $ocolist;
+		$$->push_front($ocol);
 	}
 	;
 
-order_list:
+order_col_list:
 	/* empty */
-	| COMMA order_col order_list {
-		selects_append_order(&TOP->ssql->sstr.selection, $2);
+	{
+		$$ = new OrderColList;
+	}
+	| COMMA order_col[ocol] order_col_list[ocolist] {
+		$$ = $ocolist;
+		$$->push_front($ocol);
 	}
 	;
 
@@ -751,7 +765,6 @@ int sql_parse(const char *s, Query *sqls){
 	yyscan_t scanner;
 	yylex_init_extra(&context, &scanner);
 	context.ssql = sqls;
-	INIT(sqls);
 	scan_string(s, scanner);
 	int result = yyparse(scanner);
 	yylex_destroy(scanner);

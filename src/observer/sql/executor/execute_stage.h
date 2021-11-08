@@ -57,8 +57,8 @@ protected:
   RC resolve_join_table(TableRef *ref, RelationTable &outer,
                         RelationTable &cur);
   RC resolve_condtions(RelationTable &outer, RelationTable &cur,
-                       std::vector<TableRef *> &refs, const Condition conds[],
-                       size_t cond_num);
+                       std::vector<TableRef *> &refs,
+                       const ConditionList *conds, size_t cond_num);
   RC resolve_select(Selects &selects, RelationTable &relations);
 
   RC do_select(Query *sql, SessionEvent *session_event);

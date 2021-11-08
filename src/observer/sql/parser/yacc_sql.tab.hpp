@@ -44,6 +44,25 @@
 #if YYDEBUG
 extern int yydebug;
 #endif
+/* "%code requires" blocks.  */
+#line 35 "yacc_sql.y"
+
+#include <deque>
+typedef struct _Selects Selects;
+typedef struct _SelectExpr SelectExpr;
+typedef struct _RelAttr RelAttr;
+typedef struct _Value Value;
+typedef struct _TableRef TableRef;
+typedef struct _Condition Condition;
+typedef struct _ConditionExpr ConditionExpr;
+typedef struct _OrderCol OrderCol;
+typedef std::deque<Condition> ConditionList;
+typedef std::deque<SelectExpr *> SelectExprList;
+typedef std::deque<TableRef *> TableRefList;
+typedef std::deque<OrderCol *> OrderColList;
+typedef std::deque<RelAttr *> GroupByList;
+
+#line 66 "yacc_sql.tab.hpp"
 
 /* Token kinds.  */
 #ifndef YYTOKENTYPE
@@ -132,21 +151,28 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 156 "yacc_sql.y"
+#line 120 "yacc_sql.y"
 
-  struct _Selects *select;
-  struct _TableRef *ref;		// Table reference
-  struct _SelectExpr *sexpr;	// select expr
-  struct _ConditionExpr *cexpr; // condition expr
-  struct _RelAttr *attr;
-  struct _Value *val;
-  struct _OrderCol *ocol; 		// order column
+  Selects *select;		// select
+  TableRef *ref;		// Table reference
+  SelectExpr *sexpr;	// select expr
+  Condition *cond;		// condition
+  ConditionExpr *cexpr; // condition expr
+  RelAttr *attr;
+  Value *val;			// value
+  OrderCol *ocol; 		// order column
   char *string;
   int number;
   float floats;
   char *position;
 
-#line 150 "yacc_sql.tab.hpp"
+  ConditionList *cond_list;
+  SelectExprList *sexpr_list;
+  TableRefList *ref_list;
+  OrderColList *ocol_list;
+  GroupByList *group_list;
+
+#line 176 "yacc_sql.tab.hpp"
 
 };
 typedef union YYSTYPE YYSTYPE;

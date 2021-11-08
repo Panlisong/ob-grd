@@ -158,7 +158,7 @@ RC DefaultHandler::insert_records(Trx *trx, const char *dbname,
 
 RC DefaultHandler::delete_record(Trx *trx, const char *dbname,
                                  const char *relation_name, int condition_num,
-                                 const Condition *conditions,
+                                 const ConditionList *conditions,
                                  int *deleted_count) {
   Db *db = find_db(dbname);
   if (db == nullptr) {
@@ -173,7 +173,7 @@ RC DefaultHandler::update_records(Trx *trx, const char *dbname,
                                   const char *relation_name,
                                   const char *attribute_name,
                                   const Value *value, int condition_num,
-                                  const Condition *conditions,
+                                  const ConditionList *conditions,
                                   int *updated_count) {
   Table *table = find_table(dbname, relation_name);
   if (nullptr == table) {
