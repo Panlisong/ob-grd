@@ -23,9 +23,6 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/record_manager.h"
 #include "storage/common/table.h"
 
-int *get_value_num(int tuple_num, Tuples tuples[]);
-Value **get_values(int tuple_num, Tuples tuples[]);
-
 DefaultHandler &DefaultHandler::get_default() {
   static DefaultHandler handler;
   return handler;
@@ -156,9 +153,7 @@ RC DefaultHandler::insert_records(Trx *trx, const char *dbname,
     return RC::SCHEMA_DB_NOT_EXIST;
   }
 
-  int *value_num = get_value_num(tuple_num, tuples);
-  Value **values = get_values(tuple_num, tuples);
-  return db->insert_records(trx, relation_name, tuple_num, value_num, values);
+  return db->insert_records(trx, relation_name, tuple_num, tuples);
 }
 
 RC DefaultHandler::delete_record(Trx *trx, const char *dbname,
@@ -223,22 +218,4 @@ RC DefaultHandler::sync() {
     }
   }
   return rc;
-}
-
-int *get_value_num(int tuple_num, Tuples tuples[]) {
-  int *value_num = new int[tuple_num];
-  for (int i = 0; i < tuple_num; i++) {
-    value_num[i] = tuples[i].value_num;
-  }
-
-  return value_num;
-}
-
-Value **get_values(int tuple_num, Tuples tuples[]) {
-  Value **values = new Value *[tuple_num];
-  for (int i = 0; i < tuple_num; i++) {
-    values[i] = tuples[i].values;
-  }
-
-  return values;
 }

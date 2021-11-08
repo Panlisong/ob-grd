@@ -45,8 +45,7 @@ public:
 
   RC sync();
 
-  RC insert_records(Trx *trx, const char *table_name, int inserted_count,
-                    int value_num[], Value *values[]);
+  RC insert_records(Trx *trx, const char *table_name, int inserted_count,Tuples *tuples);
 
   RC delete_records(Trx *trx, const char *table_name, int condition_num,
                         const Condition *conditions, int *deleted_count);

@@ -157,14 +157,13 @@ RC Db::sync() {
   return rc;
 }
 
-RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,
-                      int value_num[], Value *values[]) {
+RC Db::insert_records(Trx *trx, const char *table_name, int inserted_count,Tuples *tuples){
   auto res = opened_tables_.find(table_name);
   if (res == opened_tables_.end()) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
   Table *table = res->second;
-  return table->insert_records(trx, inserted_count, value_num, values);
+  return table->insert_records(trx, inserted_count, tuples);
 }
 
 RC Db::delete_records(Trx *trx, const char *table_name, int condition_num,

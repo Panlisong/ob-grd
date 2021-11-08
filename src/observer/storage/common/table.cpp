@@ -227,12 +227,11 @@ RC Table::open(const char *meta_file, const char *base_dir) {
   return rc;
 }
 
-RC Table::insert_records(Trx *trx, int inserted_count, int value_num[],
-                         Value *values[]) {
+RC Table::insert_records(Trx *trx, int inserted_count, Tuples *tuples) {
   RC rc = RC::SUCCESS;
 
   for (int i = 0; i < inserted_count; i++) {
-    rc = insert_record(trx, value_num[i], values[i]);
+    rc = insert_record(trx, tuples[i]);
     if (rc != RC::SUCCESS) {
       break;
     }
@@ -241,7 +240,9 @@ RC Table::insert_records(Trx *trx, int inserted_count, int value_num[],
   return rc;
 }
 
-RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
+RC Table::insert_record(Trx *trx, Tuples tuple){
+	int value_num = tuple.value_num;
+	Value *values=*tuple.values;
   if (value_num <= 0 || nullptr == values) {
     LOG_ERROR("Invalid argument. value num=%d, values=%p", value_num, values);
     return RC::INVALID_ARGUMENT;

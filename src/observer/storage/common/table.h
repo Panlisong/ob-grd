@@ -66,8 +66,7 @@ public:
                   std::vector<std::string> &attrs);
 
 public:
-  RC insert_records(Trx *trx, int inserted_count, int value_num[],
-                    Value *values[]);
+  RC insert_records(Trx *trx, int inserted_count, Tuples *tuples);
   RC commit_insert(Record *new_record);
   RC rollback_insert(Record *new_record);
 
@@ -88,7 +87,7 @@ public:
   void select_text(char *data, int page_id);
 
 private:
-  RC insert_record(Trx *trx, int value_num, const Value *values);
+  RC insert_record(Trx *trx, Tuples tuple);
 
 public:
   RC sync();
