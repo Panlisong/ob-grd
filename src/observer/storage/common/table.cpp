@@ -230,8 +230,8 @@ RC Table::open(const char *meta_file, const char *base_dir) {
 RC Table::insert_records(Trx *trx, int inserted_count, Tuples *tuples) {
   RC rc = RC::SUCCESS;
 
-  for (int i = 0; i < inserted_count; i++) {
-    rc = insert_record(trx, tuples[i]);
+  for (int i = inserted_count - 1; i >= 0; i--) {
+    rc = insert_record(trx, &tuples[i]);
     if (rc != RC::SUCCESS) {
       break;
     }
@@ -240,16 +240,16 @@ RC Table::insert_records(Trx *trx, int inserted_count, Tuples *tuples) {
   return rc;
 }
 
-RC Table::insert_record(Trx *trx, Tuples tuple){
-	int value_num = tuple.value_num;
-	Value *values=*tuple.values;
-  if (value_num <= 0 || nullptr == values) {
-    LOG_ERROR("Invalid argument. value num=%d, values=%p", value_num, values);
+RC Table::insert_record(Trx *trx, Tuples *tuple) {
+  int value_num = tuple->value_num;
+  if (value_num <= 0) {
+    // LOG_ERROR("Invalid argument. value num=%d, values=%p", value_num,
+    // values);
     return RC::INVALID_ARGUMENT;
   }
 
   char *record_data;
-  RC rc = make_record(value_num, values, record_data);
+  RC rc = make_record(value_num, tuple, record_data);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to create a record. rc=%d:%s", rc, strrc(rc));
     return rc;
@@ -329,7 +329,7 @@ RC Table::rollback_insert(Record *new_record) {
   return record_handler_->delete_record(&new_record->rid);
 }
 
-RC Table::make_record(int value_num, const Value *values, char *&record_out) {
+RC Table::make_record(int value_num, Tuples *tuple, char *&record_out) {
   // 检查字段类型是否一致
   if (value_num + table_meta_.sys_field_num() != table_meta_.field_num()) {
     return RC::SCHEMA_FIELD_MISSING;
@@ -338,20 +338,20 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   const int normal_field_start_index = table_meta_.sys_field_num();
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
-    const Value &value = values[i];
-    if (field->type() == ATTR_TEXT && value.type == CHARS) {
+    Value *value = tuple->values[value_num - 1 - i];
+    if (field->type() == ATTR_TEXT && value->type == CHARS) {
       // insert text.
       continue;
     }
-    if (field->nullable() == false && value.type == ATTR_NULL) {
+    if (field->nullable() == false && value->type == ATTR_NULL) {
       LOG_ERROR("Invalid value type.field name=%s, not null but given=null",
                 field->name());
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
-    if (field->type() != value.type) {
+    if (field->type() != value->type) {
       LOG_ERROR("Invalid value type. field name=%s, type=%d, nullable=%d but "
                 "given=%d",
-                field->name(), field->type(), field->nullable(), value.type);
+                field->name(), field->type(), field->nullable(), value->type);
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
   }
@@ -364,20 +364,20 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
 
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
-    const Value &value = values[i];
-    if (value.type == ATTR_NULL) {
+    Value *value = tuple->values[value_num - 1 - i];
+    if (value->type == ATTR_NULL) {
       // bit i means value[i] is null.
       int null_field_offset = table_meta_.null_field()->offset();
       int32_t *null_field = (int32_t *)(record + null_field_offset);
       *null_field |= (1 << i);
     } else {
-      if (field->type() == ATTR_TEXT && value.type == CHARS) {
+      if (field->type() == ATTR_TEXT && value->type == CHARS) {
         rc = make_text(field, value, record);
         if (rc != RC::SUCCESS) {
           break;
         }
       } else {
-        memcpy(record + field->offset(), value.data, field->len());
+        memcpy(record + field->offset(), value->data, field->len());
       }
     }
   }
@@ -1034,21 +1034,21 @@ void Table::select_text(char *data, int page_id) {
   record_handler_->select_text(data, page_id);
 }
 
-RC Table::make_text(const FieldMeta *field, const Value &value, char *record) {
+RC Table::make_text(const FieldMeta *field, Value *value, char *record) {
   int page_id;
   int remain_len = 4;
-  RC rc = record_handler_->insert_text((char *)(value.data) + remain_len,
-                                       &page_id, value.len - remain_len);
+  RC rc = record_handler_->insert_text((char *)(value->data) + remain_len,
+                                       &page_id, value->len - remain_len);
   if (rc != RC::SUCCESS) {
     return rc;
   }
   // text in record:
   // | text (first 4 bytes) | page_id (the page contains remain 4092
   // bytes) |
-  if (value.len < remain_len) {
-    memcpy(record + field->offset(), value.data, value.len);
+  if (value->len < remain_len) {
+    memcpy(record + field->offset(), value->data, value->len);
   } else {
-    memcpy(record + field->offset(), value.data, remain_len);
+    memcpy(record + field->offset(), value->data, remain_len);
   }
 
   memcpy(record + field->offset() + remain_len, &page_id,

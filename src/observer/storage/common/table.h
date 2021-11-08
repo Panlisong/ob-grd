@@ -87,7 +87,7 @@ public:
   void select_text(char *data, int page_id);
 
 private:
-  RC insert_record(Trx *trx, Tuples tuple);
+  RC insert_record(Trx *trx, Tuples *tuple);
 
 public:
   RC sync();
@@ -117,8 +117,8 @@ private:
                              const RID &rid);
 
 private:
-  RC make_record(int value_num, const Value *values, char *&record_out);
-  RC make_text(const FieldMeta *field, const Value &value, char *record);
+  RC make_record(int value_num, Tuples *tuple, char *&record_out);
+  RC make_text(const FieldMeta *field, Value *value, char *record);
   RC delete_text(Record *old_record);
   RC update_text(Record *record, char *new_value, int offset);
 
