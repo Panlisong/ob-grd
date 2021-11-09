@@ -143,11 +143,11 @@ public:
 class AvgDesc : public AggregateDesc {
 public:
   AvgDesc(int total) : count_(0), total_(total) {
-    set_value(new FloatValue(0.0, false));
+    set_value(new FloatValue(0.0));
   }
   std::shared_ptr<TupleValue> execute(const Tuple &tuple) override {
     auto cur = ProjectionDesc::execute(tuple);
-    if (cur->is_null()) {
+    if (cur->type()==ATTR_NULL) {
       return value();
     }
     // 累加
@@ -156,14 +156,14 @@ public:
     if (type() == INTS) {
       int i;
       cur->get_value(&i);
-      cur.reset(new FloatValue((float)i, false));
+      cur.reset(new FloatValue((float)i));
     }
     cur->compute(value().get(), res, ADD);
     set_value(res);
 
     if (count_ == total_) {
       // 达到数量时求平均
-      FloatValue fv = FloatValue((float)total_, false);
+      FloatValue fv = FloatValue((float)total_);
       value()->compute(&fv, res, DIV);
       set_value(res);
     }
@@ -177,7 +177,7 @@ private:
 
 class CountDesc : public AggregateDesc {
 public:
-  CountDesc(int count) { set_value(new IntValue(count, false)); }
+  CountDesc(int count) { set_value(new IntValue(count)); }
   std::shared_ptr<TupleValue> execute(const Tuple &tuple) override {
     return value();
   }

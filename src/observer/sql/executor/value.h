@@ -33,55 +33,56 @@ public:
   virtual void get_value(void *data) const = 0;
   virtual void to_string(std::ostream &os) const = 0;
   virtual std::string to_string() const = 0;
+
+  virtual bool comparable(TupleValue &other) const = 0;
   virtual int compare(const TupleValue &other) const = 0;
-  virtual bool is_null() const = 0;
   virtual void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) = 0;
+
+  virtual AttrType type() const = 0;
 
 private:
 };
 
 class IntValue : public TupleValue {
 public:
-  explicit IntValue(int value, bool is_null)
-      : value_(value), is_null_(is_null) {}
+  explicit IntValue(int value) : value_(value) {}
 
   void get_value(void *data) const override { *(int *)data = value_; }
 
-  void to_string(std::ostream &os) const override {
-    if (is_null_) {
-      os << "null";
-      return;
-    }
-    os << value_;
-  }
-  std::string to_string() const override {
-    if (is_null_) {
-      return "null";
-    }
-    return std::to_string(value_);
+  void to_string(std::ostream &os) const override { os << value_; }
+
+  std::string to_string() const override { return std::to_string(value_); }
+
+  bool comparable(TupleValue &other) const override {
+    return other.type() == INTS || other.type() == FLOATS;
   }
 
   int compare(const TupleValue &other) const override {
-    if (is_null() && other.is_null()) {
-      return 0;
+    if (other.type() == INTS) {
+      const IntValue &int_other = (const IntValue &)other;
+      return value_ - int_other.value_;
     }
-    const IntValue &int_other = (const IntValue &)other;
-    return value_ - int_other.value_;
+    float float_value;
+    other.get_value(&float_value);
+    if (value_ - float_value < -1e-6) {
+      return -1;
+    } else if (value_ - float_value > 1e6) {
+      return 1;
+    }
+    return 0;
   }
-
-  bool is_null() const override { return is_null_; }
 
   void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
 
+  AttrType type() const override { return INTS; }
+
 private:
   int value_;
-  bool is_null_;
 };
 
 class FloatValue : public TupleValue {
 public:
-  explicit FloatValue(float value, bool is_null)
-      : value_(value), is_null_(is_null) {}
+  explicit FloatValue(float value) : value_(value) {}
 
   void get_value(void *data) const override { *(float *)data = value_; }
 
@@ -99,87 +100,71 @@ public:
     }
     return str;
   }
-  void to_string(std::ostream &os) const override {
-    if (is_null_) {
-      os << "null";
-      return;
-    }
-    os << float_string();
-  }
-  std::string to_string() const override {
-    if (is_null_) {
-      return "null";
-    }
-    return float_string();
+
+  void to_string(std::ostream &os) const override { os << float_string(); }
+
+  std::string to_string() const override { return float_string(); }
+
+  bool comparable(TupleValue &other) const override {
+    return other.type() == INTS || other.type() == FLOATS;
   }
 
   int compare(const TupleValue &other) const override {
-    if (is_null() && other.is_null()) {
-      return 0;
+    float other_value;
+    if (other.type() == INTS) {
+      int int_value;
+      other.get_value(&int_value);
+      other_value = float(int_value);
+    } else {
+      other.get_value(&other_value);
     }
-    const FloatValue &float_other = (const FloatValue &)other;
-    float result = value_ - float_other.value_;
-    if (result > 0) { // 浮点数没有考虑精度问题
-      return 1;
-    }
-    if (result < 0) {
+    if (value_ - other_value < -1e-6) {
       return -1;
+    } else if (value_ - other_value > 1e6) {
+      return 1;
     }
     return 0;
   }
 
-  bool is_null() const override { return is_null_; }
-
   void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
+
+  AttrType type() const override { return FLOATS; }
 
 private:
   float value_;
-  bool is_null_;
 };
 
 class StringValue : public TupleValue {
 public:
-  StringValue(const char *value, int len, int is_null)
-      : value_(value, len), is_null_(is_null) {}
+  StringValue(const char *value, int len) : value_(value, len) {}
   explicit StringValue(const char *value) : value_(value) {}
 
   void get_value(void *data) const override { *(std::string *)data = value_; }
 
-  void to_string(std::ostream &os) const override {
-    if (is_null_) {
-      os << "null";
-      return;
-    }
-    os << value_;
-  }
-  std::string to_string() const override {
-    if (is_null_) {
-      return "null";
-    }
-    return value_;
+  void to_string(std::ostream &os) const override { os << value_; }
+
+  std::string to_string() const override { return value_; }
+
+  bool comparable(TupleValue &other) const override {
+    return other.type() == CHARS;
   }
 
   int compare(const TupleValue &other) const override {
-    if (is_null() && other.is_null()) {
-      return 0;
-    }
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
   }
 
-  bool is_null() const override { return is_null_; }
-
   void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
+
+  AttrType type() const override { return CHARS; }
 
 private:
   std::string value_;
-  bool is_null_;
 };
 
 class DateValue : public TupleValue {
 public:
-  explicit DateValue(time_t value, bool is_null)
-      : value_(value), is_null_(is_null) {}
+  explicit DateValue(time_t value) : value_(value) {}
 
   void get_value(void *data) const override { *(time_t *)data = value_; }
 
@@ -191,24 +176,16 @@ public:
                   tp->tm_mon + 1, tp->tm_mday);
     return std::string(s);
   }
-  void to_string(std::ostream &os) const override {
-    if (is_null_) {
-      os << "null";
-      return;
-    }
-    os << date_string();
-  }
-  std::string to_string() const override {
-    if (is_null_) {
-      return "null";
-    }
-    return date_string();
+
+  void to_string(std::ostream &os) const override { os << date_string(); }
+
+  std::string to_string() const override { return date_string(); }
+
+  bool comparable(TupleValue &other) const override {
+    return other.type() == DATES;
   }
 
   int compare(const TupleValue &other) const override {
-    if (is_null() && other.is_null()) {
-      return 0;
-    }
     const DateValue &timestamp_other = (const DateValue &)other;
     long long res = value_ - timestamp_other.value_;
     if (res > 0LL) {
@@ -219,13 +196,28 @@ public:
     return 0;
   }
 
-  bool is_null() const override { return is_null_; }
-
   void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
+
+  AttrType type() const override { return DATES; }
 
 private:
   time_t value_;
-  bool is_null_;
+};
+
+class NullValue : public TupleValue {
+  void get_value(void *data) const override { data = nullptr; }
+
+  void to_string(std::ostream &os) const override { os << "null"; }
+
+  std::string to_string() const override { return "null"; }
+
+  bool comparable(TupleValue &other) const override { return false; }
+
+  int compare(const TupleValue &other) const override { return 0; }
+
+  void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override{};
+
+  AttrType type() const override { return ATTR_NULL; }
 };
 
 #endif //__OBSERVER_SQL_EXECUTOR_VALUE_H_

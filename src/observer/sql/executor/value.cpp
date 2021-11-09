@@ -30,7 +30,7 @@ void IntValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
       if (int_value->value_ == 0) {
         // TODO: 运算异常
         // 目前返回INT类型的null值
-        res = new IntValue(value_ > 0 ? INT_MAX : INT_MIN, true);
+        res = new IntValue(value_ > 0 ? INT_MAX : INT_MIN);
         return;
       }
       result = value_ / int_value->value_;
@@ -39,7 +39,7 @@ void IntValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
       LOG_PANIC("Unkown arithop type: %d", op);
       break;
     }
-    res = new IntValue(result, false);
+    res = new IntValue(result);
   }
 }
 
@@ -62,7 +62,7 @@ void FloatValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
       if (float_value->value_ == 0) {
         // TODO: 运算异常
         // 目前返回INT类型的null值
-        res = new FloatValue(value_ > 0 ? INFINITY : -INFINITY, true);
+        res = new FloatValue(value_ > 0 ? INFINITY : -INFINITY);
         return;
       }
       result = value_ / float_value->value_;
@@ -71,7 +71,7 @@ void FloatValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
       LOG_PANIC("Unkown arithop type: %d", op);
       break;
     }
-    res = new FloatValue(result, false);
+    res = new FloatValue(result);
   }
 }
 

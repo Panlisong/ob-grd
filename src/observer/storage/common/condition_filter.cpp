@@ -51,116 +51,44 @@ ConDescInternal::ConDescInternal(ArithOp op, ConDescNode *left,
   }
 }
 
-// INT op INT
-void *ConDescInternal::compute(int lv, int rv) {
-  int *res = (int *)malloc(sizeof(int));
-  switch (op_) {
-  case ADD:
-    *res = lv + rv;
-    break;
-  case SUB:
-    *res = lv - rv;
-    break;
-  case MUL:
-    *res = lv * rv;
-    break;
-  case DIV:
-    *res = lv / rv;
-    break;
-  default:
-    LOG_PANIC("Unkown arithop type: %d", op_);
-    break;
-  }
-  return res;
-}
-
-// INT op FLOAT
-void *ConDescInternal::compute(int lv, float rv) {
-  float *res = (float *)malloc(sizeof(float));
-  switch (op_) {
-  case ADD:
-    *res = (float)lv + rv;
-    break;
-  case SUB:
-    *res = (float)lv - rv;
-    break;
-  case MUL:
-    *res = (float)lv * rv;
-    break;
-  case DIV:
-    *res = (float)lv / rv;
-    break;
-  default:
-    LOG_PANIC("Unkown arithop type: %d", op_);
-    break;
-  }
-  return res;
-}
-
-// FLOAT op FLOAT
-void *ConDescInternal::compute(float lv, float rv) {
-  float *res = (float *)malloc(sizeof(float));
-  switch (op_) {
-  case ADD:
-    *res = lv + rv;
-    break;
-  case SUB:
-    *res = lv - rv;
-    break;
-  case MUL:
-    *res = lv * rv;
-    break;
-  case DIV:
-    *res = lv / rv;
-    break;
-  default:
-    LOG_PANIC("Unkown arithop type: %d", op_);
-    break;
-  }
-  return res;
-}
-
 void *ConDescInternal::compute(void *lv, void *rv) {
-  // 由于使用void*，仿照b+树写法
-  // TODO: 处理运算异常
-  int i1 = 0, i2 = 0;
-  float f1 = 0, f2 = 0;
-  void *res = nullptr;
-  switch (left_->type()) {
-  case INTS:
-    i1 = *(int *)lv;
-    switch (right_->type()) {
-    case INTS:
-      i2 = *(int *)rv;
-      res = compute(i1, i2);
-      break;
-    case FLOATS:
-      f2 = *(float *)rv;
-      res = compute(i1, f2);
-      break;
-    default:
-      LOG_PANIC("Incomputable attr type: %d", right_->type());
-    }
+  float lvalue, rvalue;
+  if (left_->type() == INTS) {
+    lvalue = float(*(int *)lv);
+  } else {
+    lvalue = *(float *)lv;
+  }
+  if (right_->type() == INTS) {
+    rvalue = float(*(int *)rv);
+  } else {
+    rvalue = *(float *)rv;
+  }
+  float res = 0.0;
+  switch (op_) {
+  case ADD:
+    res = lvalue + rvalue;
     break;
-  case FLOATS:
-    f1 = *(float *)lv;
-    switch (right_->type()) {
-    case INTS:
-      i2 = *(int *)rv;
-      res = compute(i2, f1);
-      break;
-    case FLOATS:
-      f2 = *(float *)rv;
-      res = compute(f1, f2);
-      break;
-    default:
-      LOG_PANIC("Incomputable attr type: %d", right_->type());
-    }
+  case SUB:
+    res = lvalue - rvalue;
+    break;
+  case MUL:
+    res = lvalue * rvalue;
+    break;
+  case DIV:
+    res = lvalue / rvalue;
     break;
   default:
-    LOG_PANIC("Incomputable attr type: %d", left_->type());
+    LOG_PANIC("Unkown arithop type: %d", op_);
+    break;
   }
-  return res;
+  if (left_->type() == INTS && right_->type() == INTS && op_ != DIV) {
+    int *r = (int *)malloc(sizeof(int));
+    *r = (int)res;
+    return r;
+  }
+  float *r = (float *)malloc(sizeof(float));
+  *r = res;
+  return r;
 }
 
 void *ConDescInternal::execute(const Record &rec) {
@@ -204,6 +132,9 @@ void *ConDescAttr::execute(const Record &rec) {
   void *value = nullptr;
   get_value_from_data(rec.data + offset_, value);
   set_value(value);
+  if (Table::record_data_is_null(rec, column_)) {
+    set_type(ATTR_NULL);
+  }
   return value;
 }
 
@@ -228,83 +159,50 @@ RC ConDescSubquery::init(TupleSet &&subquery) {
 
 void *ConDescSubquery::execute(const Record &rec) { return nullptr; }
 
-bool ConDescSubquery::is_contains(int i) {
-  // 在这里进行类型转换
-  TupleValue *v = nullptr;
-  if (type() == FLOATS) {
-    v = new FloatValue((float)i, false);
-  } else {
-    v = new IntValue(i, false);
-  }
-  for (auto value : values_) {
-    if (v->compare(*value) == 0) {
-      return true;
-    }
-  }
-  delete v;
-  return false;
-}
-
-bool ConDescSubquery::is_contains(float f) {
-  FloatValue v = FloatValue(f, false);
-  for (auto value : values_) {
-    if (type() == INTS) {
-      int i;
-      value->get_value(&i);
-      FloatValue fv = FloatValue((float)i, false);
-      if (v.compare(fv) == 0) {
-        return true;
-      }
-    } else {
-      if (v.compare(*value) == 0) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-bool ConDescSubquery::is_contains(time_t t) {
-  DateValue v = DateValue(t, false);
-  for (auto value : values_) {
-    if (v.compare(*value) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool ConDescSubquery::is_contains(const char *s, int len) {
-  StringValue v = StringValue(s, len, false);
-  for (auto value : values_) {
-    if (v.compare(*value) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-int ConDescSubquery::is_contains(AttrType type, const char *value) {
-  // TODO: 所以is_contains未考虑null
-  int res = 0;
+std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
   switch (type) {
   case CHARS: {
-    res = is_contains(value, strlen(value));
+    StringValue *string_value = new StringValue(value);
+    return std::make_shared<TupleValue>(string_value);
   } break;
   case INTS: {
-    res = is_contains(*(int *)value);
+    IntValue *int_value = new IntValue(*(int *)value);
+    return std::make_shared<TupleValue>(int_value);
   } break;
   case FLOATS: {
-    res = is_contains(*(float *)value);
+    FloatValue *float_value = new FloatValue(*(float *)value);
+    return std::make_shared<TupleValue>(float_value);
   } break;
   case DATES: {
-    res = is_contains(*(time_t *)value);
+    DateValue *time_value = new DateValue(*(time_t *)value);
+    return std::make_shared<TupleValue>(time_value);
   } break;
-  default:
+  case ATTR_NULL: {
+    NullValue *null_value = new NullValue();
+    return std::make_shared<TupleValue>(null_value);
+  } break;
+  default: {
     LOG_PANIC("Unkown attr type: %d", type);
-    break;
+    return nullptr;
+  } break;
   }
-  return res;
+}
+
+bool ConDescSubquery::contains(AttrType type, const char *value) {
+  std::shared_ptr<TupleValue> tuple_value = get_tuple_value(type, value);
+  for (auto value : values_) {
+    if (tuple_value->compare(*value) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int ConDescSubquery::compare(char *lvalue, AttrType type) {
+  std::shared_ptr<TupleValue> left_value = get_tuple_value(type, lvalue);
+
+  TupleValue *right_value = values_[0].get();
+  return left_value->compare(*right_value);
 }
 
 ConDescSubquery::~ConDescSubquery() {}
@@ -351,7 +249,11 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
   if (expr->has_subexpr == 0) {
     if (expr->is_attr) {
       auto field = table_meta.field(expr->attr->attribute_name);
-      return new ConDescAttr(field->type(), field->len(), field->offset());
+      int offset = field->offset();
+      // TODO: const pointer.
+      TableMeta tmp = table_meta;
+      return new ConDescAttr(field->type(), field->len(), offset,
+                             tmp.find_column_by_offset(offset));
     } else {
       return new ConDescValue(expr->value->type, expr->value->data);
     }
@@ -392,61 +294,36 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
 }
 
 bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
+  if (left_->is_const_null() && right_->is_const_null()) {
+    // null is/is not null
+    return comp_op_ == OP_IS;
+  }
+
+  if (left_->is_const_null() || right_->is_const_null()) {
+    if (comp_op_ != OP_IS && comp_op_ != OP_IS_NOT) {
+      // return false unless is/is not.
+      return false;
+    }
+    if (left_->is_const_null()) {
+      // null is/is not attr.
+      return false;
+    }
+    // attr is/is not null.
+    return comp_op_ == OP_IS ? left_->is_null() : !left_->is_null();
+  }
+
   char *lvalue = (char *)left_->execute(rec);
   char *rvalue = (char *)right_->execute(rec);
-  AttrType attr_type = UNDEFINED;
-  int cmp_result = 0;
-  // TODO: 需考虑null
-  if (left_->type() != right_->type()) {
-    int i;
-    if (left_->type() == FLOATS) {
-      i = *(int *)right_->value();
-      float *f = (float *)malloc(sizeof(float));
-      *f = (float)i;
-      right_->set_value(f);
-      right_->set_type(FLOATS);
-    } else {
-      i = *(int *)left_->value();
-      float *f = (float *)malloc(sizeof(float));
-      *f = (float)i;
-      left_->set_value(f);
-      left_->set_type(FLOATS);
-    }
-    lvalue = (char *)left_->value();
-    rvalue = (char *)right_->value();
-    attr_type = FLOATS;
-  } else {
-    attr_type = left_->type();
-  }
-  switch (attr_type) {
-  case CHARS: {
-    // 字符串都是定长的，直接比较
-    // 按照C字符串风格来定
-    cmp_result = strcmp(lvalue, rvalue);
-  } break;
-  case INTS: {
-    // 没有考虑大小端问题
-    // 对int和float，要考虑字节对齐问题,有些平台下直接转换可能会跪
-    int left = *(int *)lvalue;
-    int right = *(int *)rvalue;
-    cmp_result = left - right;
-  } break;
-  case FLOATS: {
-    float left = *(float *)lvalue;
-    float right = *(float *)rvalue;
-    double res = (double)left - right;
-    double ep = 1e-6;
-    cmp_result = fabs(res) < ep ? 0 : (res < -ep ? -1 : 1);
-  } break;
-  case DATES: {
-    time_t left = *(time_t *)lvalue;
-    time_t right = *(time_t *)rvalue;
-    long long res = left - right;
-    cmp_result = res == 0LL ? 0 : (res < 0LL ? -1 : 1);
-  }
-  default:
-    break;
-  }
+
+  std::shared_ptr<TupleValue> left_value =
+      get_tuple_value(left_->type(), lvalue);
+  std::shared_ptr<TupleValue> right_value =
+      get_tuple_value(right_->type(), rvalue);
+
+  int cmp_result = left_value->compare(*right_value);
+
+  LOG_INFO("%d %d %d", cmp_result, *(int *)lvalue, *(int *)rvalue);
+
   switch (comp_op_) {
   case EQUAL_TO:
     return 0 == cmp_result;
@@ -471,20 +348,34 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
 
 bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
   char *lvalue = (char *)left_->execute(rec);
-  auto cond_desc_subquery = dynamic_cast<ConDescSubquery *>(right_);
+  ConDescSubquery *cond_desc_subquery = dynamic_cast<ConDescSubquery *>(right_);
+  if (comp_op_ == MEM_IN || comp_op_ == MEM_NOT_IN) {
+    bool contains = cond_desc_subquery->contains(left_->type(), lvalue);
+    return comp_op_ == MEM_IN ? contains : !contains;
+  }
+
+  if (cond_desc_subquery->subquery_size() != 1) {
+    return false;
+  }
+
+  if (left_->is_null() || left_->is_const_null()) {
+    // null arithop something.
+    return false;
+  }
+
   switch (comp_op_) {
   case EQUAL_TO:
+    return cond_desc_subquery->compare(lvalue, left_->type()) == 0;
   case LESS_EQUAL:
+    return cond_desc_subquery->compare(lvalue, left_->type()) <= 0;
   case NOT_EQUAL:
+    return cond_desc_subquery->compare(lvalue, left_->type()) != 0;
   case LESS_THAN:
+    return cond_desc_subquery->compare(lvalue, left_->type()) < 0;
   case GREAT_EQUAL:
+    return cond_desc_subquery->compare(lvalue, left_->type()) >= 0;
   case GREAT_THAN:
-    // TODO: 子查询的比较
-    break;
-  case MEM_IN:
-    return cond_desc_subquery->is_contains(left_->type(), lvalue);
-  case MEM_NOT_IN:
-    return !cond_desc_subquery->is_contains(left_->type(), lvalue);
+    return cond_desc_subquery->compare(lvalue, left_->type()) > 0;
   default:
     LOG_PANIC("Unkown operator type: %d", comp_op_);
     break;
@@ -493,27 +384,6 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
 }
 
 bool DefaultConditionFilter::filter(const Record &rec) const {
-  // TODO: null
-  // null op null
-  // if (left_.is_null && right_.is_null) {
-  //   return comp_op_ == OP_IS;
-  // }
-
-  // if (left_.is_null || right_.is_null) {
-  //   if (comp_op_ != OP_IS && comp_op_ != OP_IS_NOT) {
-  //     // return false unless is/is not.
-  //     return false;
-  //   }
-  //   if (left_.is_null) {
-  //     // null is/is not attr.
-  //     return false;
-  //   }
-  //   // attr is/is not attr.
-  //   int column = table_.find_column_by_offset(left_.attr_offset);
-  //   int32_t *null_field = (int32_t *)(rec.data + table_.null_field_offset());
-  //   bool is_null = (((*null_field) & (1 << column)) != 0);
-  //   return comp_op_ == OP_IS ? is_null : !is_null;
-  // }
   bool res = false;
   auto is_subquery = dynamic_cast<ConDescSubquery *>(right_);
   if (is_subquery != nullptr) {
@@ -538,6 +408,7 @@ RC CompositeConditionFilter::init(const ConditionFilter *filters[],
   memory_owner_ = own_memory;
   return RC::SUCCESS;
 }
+
 RC CompositeConditionFilter::init(const ConditionFilter *filters[],
                                   int filter_num) {
   return init(filters, filter_num, false);
