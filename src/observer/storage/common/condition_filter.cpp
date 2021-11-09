@@ -159,38 +159,37 @@ RC ConDescSubquery::init(TupleSet &&subquery) {
 
 void *ConDescSubquery::execute(const Record &rec) { return nullptr; }
 
-void get_tuple_value(std::shared_ptr<TupleValue> tuple_value, AttrType type,
-                     const char *value) {
+std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
   switch (type) {
   case CHARS: {
     StringValue *string_value = new StringValue(value);
-    tuple_value.reset(string_value);
+    return std::make_shared<TupleValue>(string_value);
   } break;
   case INTS: {
     IntValue *int_value = new IntValue(*(int *)value);
-    tuple_value.reset(int_value);
+    return std::make_shared<TupleValue>(int_value);
   } break;
   case FLOATS: {
     FloatValue *float_value = new FloatValue(*(float *)value);
-    tuple_value.reset(float_value);
+    return std::make_shared<TupleValue>(float_value);
   } break;
   case DATES: {
     DateValue *time_value = new DateValue(*(time_t *)value);
-    tuple_value.reset(time_value);
+    return std::make_shared<TupleValue>(time_value);
   } break;
   case ATTR_NULL: {
     NullValue *null_value = new NullValue();
-    tuple_value.reset(null_value);
+    return std::make_shared<TupleValue>(null_value);
   } break;
   default: {
     LOG_PANIC("Unkown attr type: %d", type);
+    return nullptr;
   } break;
   }
 }
 
 bool ConDescSubquery::contains(AttrType type, const char *value) {
-  std::shared_ptr<TupleValue> tuple_value;
-  get_tuple_value(tuple_value, type, value);
+  std::shared_ptr<TupleValue> tuple_value = get_tuple_value(type, value);
   for (auto value : values_) {
     if (tuple_value->compare(*value) == 0) {
       return true;
@@ -200,8 +199,10 @@ bool ConDescSubquery::contains(AttrType type, const char *value) {
 }
 
 int ConDescSubquery::compare(char *lvalue, AttrType type) {
-  TupleValue *value = values_[0].get();
-  return value->compare(*value);
+  std::shared_ptr<TupleValue> left_value = get_tuple_value(type, lvalue);
+
+  TupleValue *right_value = values_[0].get();
+  return left_value->compare(*right_value);
 }
 
 ConDescSubquery::~ConDescSubquery() {}
@@ -293,11 +294,6 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
 }
 
 bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
-  char *lvalue = (char *)left_->execute(rec);
-  char *rvalue = (char *)right_->execute(rec);
-  AttrType attr_type = UNDEFINED;
-  int cmp_result = 0;
-
   if (left_->is_const_null() && right_->is_const_null()) {
     // null is/is not null
     return comp_op_ == OP_IS;
@@ -316,56 +312,18 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
     return comp_op_ == OP_IS ? left_->is_null() : !left_->is_null();
   }
 
-  if (left_->type() != right_->type()) {
-    int i;
-    if (left_->type() == FLOATS) {
-      i = *(int *)right_->value();
-      float *f = (float *)malloc(sizeof(float));
-      *f = (float)i;
-      right_->set_value(f);
-      right_->set_type(FLOATS);
-    } else {
-      i = *(int *)left_->value();
-      float *f = (float *)malloc(sizeof(float));
-      *f = (float)i;
-      left_->set_value(f);
-      left_->set_type(FLOATS);
-    }
-    lvalue = (char *)left_->value();
-    rvalue = (char *)right_->value();
-    attr_type = FLOATS;
-  } else {
-    attr_type = left_->type();
-  }
-  switch (attr_type) {
-  case CHARS: {
-    // 字符串都是定长的，直接比较
-    // 按照C字符串风格来定
-    cmp_result = strcmp(lvalue, rvalue);
-  } break;
-  case INTS: {
-    // 没有考虑大小端问题
-    // 对int和float，要考虑字节对齐问题,有些平台下直接转换可能会跪
-    int left = *(int *)lvalue;
-    int right = *(int *)rvalue;
-    cmp_result = left - right;
-  } break;
-  case FLOATS: {
-    float left = *(float *)lvalue;
-    float right = *(float *)rvalue;
-    double res = (double)left - right;
-    double ep = 1e-6;
-    cmp_result = fabs(res) < ep ? 0 : (res < -ep ? -1 : 1);
-  } break;
-  case DATES: {
-    time_t left = *(time_t *)lvalue;
-    time_t right = *(time_t *)rvalue;
-    long long res = left - right;
-    cmp_result = res == 0LL ? 0 : (res < 0LL ? -1 : 1);
-  }
-  default:
-    break;
-  }
+  char *lvalue = (char *)left_->execute(rec);
+  char *rvalue = (char *)right_->execute(rec);
+
+  std::shared_ptr<TupleValue> left_value =
+      get_tuple_value(left_->type(), lvalue);
+  std::shared_ptr<TupleValue> right_value =
+      get_tuple_value(right_->type(), rvalue);
+
+  int cmp_result = left_value->compare(*right_value);
+
+  LOG_INFO("%d %d %d", cmp_result, *(int *)lvalue, *(int *)rvalue);
+
   switch (comp_op_) {
   case EQUAL_TO:
     return 0 == cmp_result;
