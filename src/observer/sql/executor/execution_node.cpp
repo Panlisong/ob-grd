@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/executor/execution_node.h"
 #include "common/log/log.h"
+#include "sql/parser/parse_defs.h"
 #include "storage/common/table.h"
 
 TupleConDescNode *create_project_desc_node(SelectExpr *expr,
@@ -118,38 +119,63 @@ ProjectionDesc::~ProjectionDesc() { delete desc_; }
 static std::string op_str_table[NO_ARITH_OP] = {"+", "-", "*", "/"};
 static std::string func[FUNC_NUM] = {"", "", "MAX", "MIN", "COUNT", "AVG"};
 
+static void col_to_string(SelectExpr *expr, std::string &res, bool multi) {
+  assert(expr->is_attr == 1);
+  RelAttr *attr = expr->attr;
+  const char *table_name = attr->relation_name;
+  const char *field_name = attr->attribute_name;
+  if (strcmp("*", field_name) == 0) {
+    assert(expr->func == COUNT_FUNC);
+    if (table_name == nullptr) {
+      res = func[expr->func] + "(" + field_name + ")";
+    } else {
+      res = func[expr->func] + "(" + table_name + "." + field_name + ")";
+    }
+  } else {
+    std::string pre = multi ? table_name + std::string(".") : "";
+    if (expr->func != COLUMN) {
+      res = func[expr->func] + "(" + pre + field_name + ")";
+    } else {
+      res = pre + field_name;
+    }
+  }
+}
+
 TupleConDescNode *create_project_desc_node(SelectExpr *expr,
                                            const TupleSchema &product,
                                            std::string &alias, bool multi) {
-  if (expr->has_subexpr == 0) {
-    // 非表达式 不可能为EXPR
-    // COLUMN: 'T.A' 'A'
-    // FUNC: 'func(T.A)' 'func(A)'
-    if (expr->is_attr) {
-      RelAttr *attr = expr->attr;
-      const char *table_name = attr->relation_name;
-      const char *field_name = attr->attribute_name;
-      // 初始化别名
-      std::string pre = multi ? table_name + std::string(".") : "";
-      if (expr->func != COLUMN) {
-        alias += func[expr->func] + "(" + pre + field_name + ")";
-      } else {
-        alias += pre + field_name;
-      }
-      int idx = product.index_of_field(table_name, field_name);
-      return new TupleConDescAttr(product.field(idx).type(), idx);
-    } else {
-      TupleConDescValue *node = new TupleConDescValue(expr->value);
-      alias += node->to_string();
-      return node;
-    }
+  if (expr->has_subexpr == 1) {
+    TupleConDescNode *left =
+        create_project_desc_node(expr->left, product, alias, multi);
+    alias += op_str_table[expr->arithOp];
+    TupleConDescNode *right =
+        create_project_desc_node(expr->right, product, alias, multi);
+    return new TupleConDescInternal(expr->arithOp, left, right);
   }
-  TupleConDescNode *left =
-      create_project_desc_node(expr->left, product, alias, multi);
-  alias += op_str_table[expr->arithOp];
-  TupleConDescNode *right =
-      create_project_desc_node(expr->right, product, alias, multi);
-  return new TupleConDescInternal(expr->arithOp, left, right);
+  // 非表达式
+  // COLUMN: 'T.A' 'A'
+  // FUNC: 'func(T.A)' 'func(A)' 'func(T.*)' 'func(*)'
+  if (expr->is_attr) {
+    // 初始化别名
+    std::string name;
+    col_to_string(expr, name, multi);
+    alias += name;
+
+    RelAttr *attr = expr->attr;
+    const char *table_name = attr->relation_name;
+    const char *field_name = attr->attribute_name;
+    if (strcmp("*", field_name) == 0) {
+      assert(expr->func == COUNT_FUNC);
+      return new TupleConDescAttr(INTS, -1);
+    }
+
+    int idx = product.index_of_field(table_name, field_name);
+    return new TupleConDescAttr(product.field(idx).type(), idx);
+  } else {
+    TupleConDescValue *node = new TupleConDescValue(expr->value);
+    alias += node->to_string();
+    return node;
+  }
 }
 
 RC ProjectionDesc::init(SelectExpr *expr, const TupleSchema &product,
@@ -184,6 +210,44 @@ RC ProjectionDesc::from_table(Table *table, const TupleSchema &product,
   return rc;
 }
 
+ProjectionDesc *ProjectionDesc::get_projection_desc(SelectExpr *expr,
+                                                    TupleSet &in) {
+  ProjectionDesc *projection_desc = nullptr;
+  switch (expr->func) {
+  case COLUMN:
+    projection_desc = new ProjectionDesc;
+    break;
+  case MAX_FUNC:
+    projection_desc = new MaxDesc;
+    break;
+  case MIN_FUNC:
+    projection_desc = new MinDesc;
+    break;
+  case AVG_FUNC:
+  case COUNT_FUNC: {
+    int total;
+    const RelAttr *attr = expr->attr;
+    const char *table_name = attr->relation_name;
+    const char *field_name = attr->attribute_name;
+    if (strcmp("*", field_name) == 0) {
+      total = in.size();
+    } else {
+      int idx = in.get_schema().index_of_field(table_name, field_name);
+      total = in.not_null_size(idx);
+    }
+    if (expr->func == AVG_FUNC) {
+      projection_desc = new AvgDesc(total);
+    } else {
+      projection_desc = new CountDesc(total);
+    }
+  } break;
+  default:
+    LOG_ERROR("Unkown aggregate function type %d", func);
+    break;
+  }
+  return projection_desc;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 ProjectExeNode::~ProjectExeNode() {
   for (ProjectionDesc *&desc : descs_) {
@@ -202,124 +266,9 @@ RC ProjectExeNode::init(TupleSet &&in, std::vector<ProjectionDesc *> &&descs) {
   return rc;
 }
 
-static float get_float_value(const TupleValue &tuple, const TupleField &field) {
-  if (field.func() == AVG_FUNC && field.type() == INTS) {
-    // avg()参数为INT时，需要转换
-    int v;
-    tuple.get_value(&v);
-    return (float)v;
-  }
-  float v;
-  tuple.get_value(&v);
-  return v;
-}
-
-RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
-  // 目前TupleSet只有一组所以直接保留第一个tuple然后迭代即可
-  Tuple cur;
-  // 1. 初始化
-  for (const TupleField &field : out_schema_.fields()) {
-    if (field.func() == COUNT_FUNC) {
-      if (strcmp(field.field_name(), "*") == 0) {
-        // count(*)
-        cur.add(in_.size(), false);
-      } else {
-        // count(field)
-        int column = in_.get_schema().index_of_field(field.table_name(),
-                                                     field.field_name());
-        cur.add(in_.not_null_size(column), false);
-      }
-    } else {
-      // max min avg 以及普通列初值都是第一个值
-      // 且除count外max min avg参数均不可能为
-      int column = in_.get_schema().index_of_field(field.table_name(),
-                                                   field.field_name());
-      auto &t = in_.get(0);
-      assert(column != -1);
-
-      if (field.func() == AVG_FUNC && field.type() == INTS) {
-        // avg()参数为INT时，需要转换
-        int v;
-        t.get(column).get_value(&v);
-        cur.add((float)v, false);
-      } else {
-        cur.add(t.get_pointer(column));
-      }
-    }
-  }
-
-  // 如果只有COUNT则无需迭代
-  if (only_count_) {
-    tuple_set.add(std::move(cur));
-    return RC::SUCCESS;
-  }
-
-  // 2.从第二行开始迭代
-  for (int i = 1; i < in_.size(); i++) {
-    Tuple tmp;
-    auto &next = in_.get(i);
-    for (size_t j = 0; j < out_schema_.fields().size(); j++) {
-      const TupleField &field = out_schema_.field(j);
-      int column = in_.get_schema().index_of_field(field.table_name(),
-                                                   field.field_name());
-      switch (field.func()) {
-      case AVG_FUNC: {
-        // 上面的初始化确保AVG列一定为float
-        float v1;
-        float v2 = get_float_value(next.get(column), field);
-        const TupleValue &value = cur.get(j);
-        if (value.is_null()) {
-          continue;
-        }
-        value.get_value(&v1);
-
-        float ans = v1 + v2;
-        if (i + 1 == in_.size()) {
-          ans /= in_.not_null_size(column);
-        }
-        tmp.add(ans, false);
-      } break;
-      case MAX_FUNC: {
-        const TupleValue &value = cur.get(j);
-        if (value.is_null()) {
-          continue;
-        }
-        if (next.get(column).compare(value) > 0) {
-          tmp.add(next.get_pointer(column));
-        } else {
-          tmp.add(cur.get_pointer(j)); // 保持不变
-        }
-      } break;
-      case MIN_FUNC: {
-        const TupleValue &value = cur.get(j);
-        if (value.is_null()) {
-          continue;
-        }
-        if (next.get(column).compare(value) < 0) {
-          tmp.add(next.get_pointer(column));
-          break;
-        }
-      }
-      case COUNT_FUNC:
-      case COLUMN:
-        tmp.add(cur.get_pointer(j)); // 保持不变
-      default:
-        break;
-      }
-    }
-    cur = std::move(tmp);
-  }
-  tuple_set.add(std::move(cur));
-  return RC::SUCCESS;
-}
-
 RC ProjectExeNode::execute(TupleSet &tuple_set) {
   tuple_set.clear();
   tuple_set.set_schema(out_schema_);
-
-  if (has_aggregate_) {
-    return execute_aggregate(tuple_set);
-  }
 
   for (auto &t : in_.tuples()) {
     Tuple tuple;

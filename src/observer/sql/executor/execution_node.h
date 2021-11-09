@@ -15,6 +15,8 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_EXECUTOR_EXECUTION_NODE_H_
 
 #include "sql/executor/tuple.h"
+#include "sql/executor/value.h"
+#include "sql/parser/parse_defs.h"
 #include "storage/common/condition_filter.h"
 #include <vector>
 
@@ -70,20 +72,115 @@ public:
   ProjectionDesc() = default;
   virtual ~ProjectionDesc();
 
+  /**
+   * expr@param: select clause中的元素
+   * product@param: 需映射Tuple的schema
+   * multi@param: 是否为多表（关系到该Projection Description的别名）
+   */
   RC init(SelectExpr *expr, const TupleSchema &product, bool multi);
   const std::string to_string() const { return alias_; }
   const AttrType type() const { return desc_->type(); }
-  std::shared_ptr<TupleValue> execute(const Tuple &tuple) {
+
+  /**
+   * tuple@param: 需做映射的tuple
+   */
+  virtual std::shared_ptr<TupleValue> execute(const Tuple &tuple) {
     return desc_->execute(tuple);
   }
 
 public:
   static RC from_table(Table *table, const TupleSchema &product,
                        std::vector<ProjectionDesc *> &descs, bool multi);
+  static ProjectionDesc *get_projection_desc(SelectExpr *expr, TupleSet &in);
 
 private:
   TupleConDescNode *desc_;
   std::string alias_;
+};
+
+class AggregateDesc : public ProjectionDesc {
+public:
+  AggregateDesc() = default;
+  virtual std::shared_ptr<TupleValue> execute(const Tuple &tuple) override = 0;
+  const std::shared_ptr<TupleValue> value() const { return value_; }
+  void set_value(std::shared_ptr<TupleValue> value) { value_ = value; }
+  void set_value(TupleValue *value) { value_.reset(value); }
+
+private:
+  std::shared_ptr<TupleValue> value_ = nullptr;
+};
+
+class MaxDesc : public AggregateDesc {
+public:
+  MaxDesc() = default;
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override {
+    auto cur = ProjectionDesc::execute(tuple);
+    if (value() == nullptr) {
+      set_value(cur);
+    }
+    if (cur->compare(*value()) > 0) {
+      set_value(cur);
+    }
+    return value();
+  }
+};
+
+class MinDesc : public AggregateDesc {
+public:
+  MinDesc() = default;
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override {
+    auto cur = ProjectionDesc::execute(tuple);
+    if (value() == nullptr) {
+      set_value(cur);
+    }
+    if (cur->compare(*value()) < 0) {
+      set_value(cur);
+    }
+    return value();
+  }
+};
+
+class AvgDesc : public AggregateDesc {
+public:
+  AvgDesc(int total) : count_(0), total_(total) {
+    set_value(new FloatValue(0.0, false));
+  }
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override {
+    auto cur = ProjectionDesc::execute(tuple);
+    if (cur->is_null()) {
+      return value();
+    }
+    // 累加
+    count_++;
+    TupleValue *res = nullptr;
+    if (type() == INTS) {
+      int i;
+      cur->get_value(&i);
+      cur.reset(new FloatValue((float)i, false));
+    }
+    cur->compute(value().get(), res, ADD);
+    set_value(res);
+
+    if (count_ == total_) {
+      // 达到数量时求平均
+      FloatValue fv = FloatValue((float)total_, false);
+      value()->compute(&fv, res, DIV);
+      set_value(res);
+    }
+    return value();
+  }
+
+private:
+  int count_;
+  int total_;
+};
+
+class CountDesc : public AggregateDesc {
+public:
+  CountDesc(int count) { set_value(new IntValue(count, false)); }
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override {
+    return value();
+  }
 };
 
 class ProjectExeNode : public ExecutionNode {

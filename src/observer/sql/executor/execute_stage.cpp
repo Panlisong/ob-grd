@@ -901,7 +901,7 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
   std::vector<ProjectionDesc *> descs;
   for (size_t i = 0; i < selects.expr_num; i++) {
     SelectExpr *expr = selects.exprs->at(i);
-    if (expr->is_attr == 1) {
+    if (expr->is_attr == 1 && expr->func == COLUMN) {
       // 处理'*'情况
       RelAttr *attr = expr->attr;
       const char *table_name = attr->relation_name;
@@ -923,7 +923,7 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
       }
     }
     // 一般情况
-    ProjectionDesc *desc = new ProjectionDesc();
+    ProjectionDesc *desc = ProjectionDesc::get_projection_desc(expr, tuple_set);
     rc = desc->init(expr, product, multi);
     if (rc != RC::SUCCESS) {
       delete desc;

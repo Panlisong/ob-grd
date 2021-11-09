@@ -47,7 +47,7 @@ void FloatValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
   auto float_value = dynamic_cast<FloatValue *>(rhs);
   if (float_value != nullptr) {
     // rhs为float
-    int result = 0;
+    float result = 0;
     switch (op) {
     case ADD:
       result = value_ + float_value->value_;
