@@ -222,12 +222,12 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
     if (field.func() == COUNT_FUNC) {
       if (strcmp(field.field_name(), "*") == 0) {
         // count(*)
-        cur.add(in_.size(), false);
+        cur.add(in_.size());
       } else {
         // count(field)
         int column = in_.get_schema().index_of_field(field.table_name(),
                                                      field.field_name());
-        cur.add(in_.not_null_size(column), false);
+        cur.add(in_.not_null_size(column));
       }
     } else {
       // max min avg 以及普通列初值都是第一个值
@@ -241,7 +241,7 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
         // avg()参数为INT时，需要转换
         int v;
         t.get(column).get_value(&v);
-        cur.add((float)v, false);
+        cur.add((float)v);
       } else {
         cur.add(t.get_pointer(column));
       }
@@ -262,28 +262,24 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
       const TupleField &field = out_schema_.field(j);
       int column = in_.get_schema().index_of_field(field.table_name(),
                                                    field.field_name());
+			const TupleValue &value = cur.get(j);
+			if(value.type()==ATTR_NULL){
+					continue;
+			}
       switch (field.func()) {
       case AVG_FUNC: {
         // 上面的初始化确保AVG列一定为float
         float v1;
         float v2 = get_float_value(next.get(column), field);
-        const TupleValue &value = cur.get(j);
-        if (value.is_null()) {
-          continue;
-        }
         value.get_value(&v1);
 
         float ans = v1 + v2;
         if (i + 1 == in_.size()) {
           ans /= in_.not_null_size(column);
         }
-        tmp.add(ans, false);
+        tmp.add(ans);
       } break;
       case MAX_FUNC: {
-        const TupleValue &value = cur.get(j);
-        if (value.is_null()) {
-          continue;
-        }
         if (next.get(column).compare(value) > 0) {
           tmp.add(next.get_pointer(column));
         } else {
@@ -291,10 +287,6 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
         }
       } break;
       case MIN_FUNC: {
-        const TupleValue &value = cur.get(j);
-        if (value.is_null()) {
-          continue;
-        }
         if (next.get(column).compare(value) < 0) {
           tmp.add(next.get_pointer(column));
           break;

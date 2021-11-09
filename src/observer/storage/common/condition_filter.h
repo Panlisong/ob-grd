@@ -104,15 +104,11 @@ public:
 
   RC init(TupleSet &&subquery);
 
-  bool is_contains(int i);
-  bool is_contains(float f);
-  bool is_contains(time_t t);
-  bool is_contains(const char *s, int len);
-  int is_contains(AttrType type, const char *value);
+  bool contains(AttrType type, const char *value);
 
   int subquery_size() { return values_.size(); }
 
-  int compare(char *lvalue);
+  int compare(char *lvalue, AttrType type);
 
 private:
   std::vector<std::shared_ptr<TupleValue>> values_;

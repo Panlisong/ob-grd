@@ -159,90 +159,49 @@ RC ConDescSubquery::init(TupleSet &&subquery) {
 
 void *ConDescSubquery::execute(const Record &rec) { return nullptr; }
 
-bool ConDescSubquery::is_contains(int i) {
-  // 在这里进行类型转换
-  TupleValue *v = nullptr;
-  if (type() == FLOATS) {
-    v = new FloatValue((float)i, false);
-  } else {
-    v = new IntValue(i, false);
-  }
-  for (auto value : values_) {
-    if (v->compare(*value) == 0) {
-      return true;
-    }
-  }
-  delete v;
-  return false;
-}
-
-bool ConDescSubquery::is_contains(float f) {
-  FloatValue v = FloatValue(f, false);
-  for (auto value : values_) {
-    if (type() == INTS) {
-      int i;
-      value->get_value(&i);
-      FloatValue fv = FloatValue((float)i, false);
-      if (v.compare(fv) == 0) {
-        return true;
-      }
-    } else {
-      if (v.compare(*value) == 0) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-bool ConDescSubquery::is_contains(time_t t) {
-  DateValue v = DateValue(t, false);
-  for (auto value : values_) {
-    if (v.compare(*value) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool ConDescSubquery::is_contains(const char *s, int len) {
-  StringValue v = StringValue(s, len, false);
-  for (auto value : values_) {
-    if (v.compare(*value) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-int ConDescSubquery::is_contains(AttrType type, const char *value) {
-  for (auto value : values_) {
-  }
-  // TODO: 所以is_contains未考虑null
-  int res = 0;
+void get_tuple_value(std::shared_ptr<TupleValue> tuple_value, AttrType type,
+                     const char *value) {
   switch (type) {
   case CHARS: {
-    res = is_contains(value, strlen(value));
+    StringValue *string_value = new StringValue(value);
+    tuple_value.reset(string_value);
   } break;
   case INTS: {
-    res = is_contains(*(int *)value);
+    IntValue *int_value = new IntValue(*(int *)value);
+    tuple_value.reset(int_value);
   } break;
   case FLOATS: {
-    res = is_contains(*(float *)value);
+    FloatValue *float_value = new FloatValue(*(float *)value);
+    tuple_value.reset(float_value);
   } break;
   case DATES: {
-    res = is_contains(*(time_t *)value);
+    DateValue *time_value = new DateValue(*(time_t *)value);
+    tuple_value.reset(time_value);
   } break;
-  default:
+  case ATTR_NULL: {
+    NullValue *null_value = new NullValue();
+    tuple_value.reset(null_value);
+  } break;
+  default: {
     LOG_PANIC("Unkown attr type: %d", type);
-    break;
+  } break;
   }
-  return res;
 }
 
-int ConDescSubquery::compare(char *lvalue) {
+bool ConDescSubquery::contains(AttrType type, const char *value) {
+  std::shared_ptr<TupleValue> tuple_value;
+  get_tuple_value(tuple_value, type, value);
+  for (auto value : values_) {
+    if (tuple_value->compare(*value) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int ConDescSubquery::compare(char *lvalue, AttrType type) {
   TupleValue *value = values_[0].get();
-  return value->compare(lvalue);
+  return value->compare(*value);
 }
 
 ConDescSubquery::~ConDescSubquery() {}
@@ -433,28 +392,32 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
   char *lvalue = (char *)left_->execute(rec);
   ConDescSubquery *cond_desc_subquery = dynamic_cast<ConDescSubquery *>(right_);
   if (comp_op_ == MEM_IN || comp_op_ == MEM_NOT_IN) {
-    bool contains = cond_desc_subquery->is_contains(left_->type(), lvalue);
+    bool contains = cond_desc_subquery->contains(left_->type(), lvalue);
     return comp_op_ == MEM_IN ? contains : !contains;
   }
 
   if (cond_desc_subquery->subquery_size() != 1) {
-    // TODO: false or failure.
+    return false;
+  }
+
+  if (left_->is_null() || left_->is_const_null()) {
+    // null arithop something.
     return false;
   }
 
   switch (comp_op_) {
   case EQUAL_TO:
-    return cond_desc_subquery->compare(lvalue) == 0;
+    return cond_desc_subquery->compare(lvalue, left_->type()) == 0;
   case LESS_EQUAL:
-    return cond_desc_subquery->compare(lvalue) <= 0;
+    return cond_desc_subquery->compare(lvalue, left_->type()) <= 0;
   case NOT_EQUAL:
-    return cond_desc_subquery->compare(lvalue) != 0;
+    return cond_desc_subquery->compare(lvalue, left_->type()) != 0;
   case LESS_THAN:
-    return cond_desc_subquery->compare(lvalue) < 0;
+    return cond_desc_subquery->compare(lvalue, left_->type()) < 0;
   case GREAT_EQUAL:
-    return cond_desc_subquery->compare(lvalue) >= 0;
+    return cond_desc_subquery->compare(lvalue, left_->type()) >= 0;
   case GREAT_THAN:
-    return cond_desc_subquery->compare(lvalue) > 0;
+    return cond_desc_subquery->compare(lvalue, left_->type()) > 0;
   default:
     LOG_PANIC("Unkown operator type: %d", comp_op_);
     break;
