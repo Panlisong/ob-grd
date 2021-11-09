@@ -89,7 +89,7 @@ private:
 class ProjectExeNode : public ExecutionNode {
 public:
   ProjectExeNode() = default;
-  ~ProjectExeNode() = default;
+  virtual ~ProjectExeNode();
 
   RC init(TupleSet &&in, std::vector<ProjectionDesc *> &&descs);
 

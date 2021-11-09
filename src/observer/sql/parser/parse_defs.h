@@ -302,10 +302,6 @@ typedef struct Query {
   union Queries sstr;
 } Query;
 
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
-
 //////////////////////////////////////////////////////
 bool is_computable(AttrType left, AttrType right);
 bool is_comparable(AttrType lt, AttrType rt);
@@ -321,6 +317,7 @@ void append_subexpr(SelectExpr *expr, SelectExpr *left, SelectExpr *righ,
 void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr);
 void select_attr_init(SelectExpr *expr, RelAttr *attr);
 void select_value_init(SelectExpr *expr, Value *value);
+void select_expr_destroy(SelectExpr *expr);
 
 //////////////////////////////////////////////////////
 void attr_init(RelAttr *relation_attr, const char *relation_name,
@@ -328,7 +325,7 @@ void attr_init(RelAttr *relation_attr, const char *relation_name,
 void attr_destroy(RelAttr *relation_attr);
 
 void order_col_init(OrderCol *col, RelAttr *attr, int asc_flag);
-void order_col_destroy(OrderCol *col);
+void order_col_destory(OrderCol *col);
 
 //////////////////////////////////////////////////////
 void value_init_integer(Value *value, int v);
@@ -348,6 +345,7 @@ void com_subquery_init(Condition *cond, ConditionExpr *left, Selects *subquery,
                        CompOp op);
 void membership_subquery_init(Condition *cond, ConditionExpr *left,
                               Selects *subquery, CompOp op);
+void condition_destory(Condition *condition);
 
 //////////////////////////////////////////////////////
 void append_cond_expr(ConditionExpr *expr, ConditionExpr *left,
@@ -357,7 +355,7 @@ void cond_value_init(ConditionExpr *expr, Value *v);
 void condition_init(Condition *condition, CompOp comp, int left_is_attr,
                     RelAttr *left_attr, Value *left_value, int right_is_attr,
                     RelAttr *right_attr, Value *right_value);
-void condition_destroy(Condition *condition);
+void condition_expr_destory(ConditionExpr *expr);
 
 ///////////////////////////////////////////////////////
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type,
@@ -411,9 +409,5 @@ void query_init(Query *query);
 Query *query_create(); // create and init
 void query_reset(Query *query);
 void query_destroy(Query *query); // reset and delete
-
-#ifdef __cplusplus
-}
-#endif // __cplusplus
 
 #endif // __OBSERVER_SQL_PARSER_PARSE_DEFS_H__

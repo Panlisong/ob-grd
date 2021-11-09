@@ -185,6 +185,13 @@ RC ProjectionDesc::from_table(Table *table, const TupleSchema &product,
 }
 
 /////////////////////////////////////////////////////////////////////////////
+ProjectExeNode::~ProjectExeNode() {
+  for (ProjectionDesc *&desc : descs_) {
+    delete desc;
+  }
+  descs_.clear();
+}
+
 RC ProjectExeNode::init(TupleSet &&in, std::vector<ProjectionDesc *> &&descs) {
   RC rc = RC::SUCCESS;
   in_ = std::move(in);
