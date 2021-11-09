@@ -162,24 +162,22 @@ void *ConDescSubquery::execute(const Record &rec) { return nullptr; }
 std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
   switch (type) {
   case CHARS: {
-    StringValue *string_value = new StringValue(value);
-    return std::make_shared<TupleValue>(string_value);
+    return std::make_shared<StringValue>(value);
   } break;
   case INTS: {
-    IntValue *int_value = new IntValue(*(int *)value);
-    return std::make_shared<TupleValue>(int_value);
+    int int_value = *(int *)value;
+    return std::make_shared<IntValue>(int_value);
   } break;
   case FLOATS: {
-    FloatValue *float_value = new FloatValue(*(float *)value);
-    return std::make_shared<TupleValue>(float_value);
+    float float_value = *(float *)value;
+    return std::make_shared<FloatValue>(float_value);
   } break;
   case DATES: {
-    DateValue *time_value = new DateValue(*(time_t *)value);
-    return std::make_shared<TupleValue>(time_value);
+		time_t time_value = *(time_t *)value;
+    return std::make_shared<DateValue>(time_value);
   } break;
   case ATTR_NULL: {
-    NullValue *null_value = new NullValue();
-    return std::make_shared<TupleValue>(null_value);
+    return std::make_shared<NullValue>();
   } break;
   default: {
     LOG_PANIC("Unkown attr type: %d", type);
