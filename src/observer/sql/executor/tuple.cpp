@@ -42,19 +42,16 @@ void Tuple::add(TupleValue *value) { values_.emplace_back(value); }
 void Tuple::add(const std::shared_ptr<TupleValue> &other) {
   values_.emplace_back(other);
 }
-void Tuple::add(int value, bool is_null) { add(new IntValue(value, is_null)); }
 
-void Tuple::add(float value, bool is_null) {
-  add(new FloatValue(value, is_null));
-}
+void Tuple::add(int value) { add(new IntValue(value)); }
 
-void Tuple::add(time_t value, bool is_null) {
-  add(new DateValue(value, is_null));
-}
+void Tuple::add(float value) { add(new FloatValue(value)); }
 
-void Tuple::add(const char *s, int len, bool is_null) {
-  add(new StringValue(s, len, is_null));
-}
+void Tuple::add(time_t value) { add(new DateValue(value)); }
+
+void Tuple::add(const char *s, int len) { add(new StringValue(s, len)); }
+
+void Tuple::add() { add(new NullValue()); }
 
 void Tuple::append(const Tuple &other) {
   values_.insert(values_.end(), other.values_.begin(), other.values_.end());
@@ -214,9 +211,10 @@ int TupleSet::size() const { return tuples_.size(); }
 int TupleSet::not_null_size(int column) const {
   int not_null_size = 0;
   for (auto iter = tuples_.begin(), end = tuples_.end(); iter != end; iter++) {
-    if ((*iter).get(column).is_null() == false) {
-      not_null_size++;
+    if ((*iter).get(column).type() == ATTR_NULL) {
+      continue;
     }
+    not_null_size++;
   }
 
   return not_null_size;
@@ -267,12 +265,12 @@ std::shared_ptr<TupleValue> TupleConDescInternal::execute(const Tuple &tuple) {
     int i;
     if (left_->type() == FLOATS) {
       right_->value()->get_value(&i);
-      FloatValue *fv = new FloatValue((float)i, false);
+      FloatValue *fv = new FloatValue((float)i);
       right_->set_value(fv);
       right_->set_type(FLOATS);
     } else {
       left_->value()->get_value(&i);
-      FloatValue *fv = new FloatValue((float)i, false);
+      FloatValue *fv = new FloatValue((float)i);
       left_->set_value(fv);
       left_->set_type(FLOATS);
     }
@@ -305,17 +303,17 @@ TupleConDescValue::TupleConDescValue(Value *value) {
   TupleValue *v = nullptr;
   switch (value->type) {
   case INTS:
-    v = new IntValue(*(int *)value->data, false);
+    v = new IntValue(*(int *)value->data);
     break;
   case FLOATS:
-    v = new FloatValue(*(float *)value->data, false);
+    v = new FloatValue(*(float *)value->data);
     break;
   case CHARS: {
     const char *str = (char *)value->data;
-    v = new StringValue(str, strlen(str), false);
+    v = new StringValue(str, strlen(str));
   } break;
   case DATES:
-    v = new DateValue(*(time_t *)value->data, false);
+    v = new DateValue(*(time_t *)value->data);
     break;
   case ATTR_NULL:
     // TODO: null value
@@ -416,12 +414,12 @@ bool TupleFilter::non_subquery_filter(const Tuple &t) {
     int i;
     if (left_->type() == FLOATS) {
       right_->value()->get_value(&i);
-      FloatValue *fv = new FloatValue((float)i, false);
+      FloatValue *fv = new FloatValue((float)i);
       right_->set_value(fv);
       right_->set_type(FLOATS);
     } else {
       left_->value()->get_value(&i);
-      FloatValue *fv = new FloatValue((float)i, false);
+      FloatValue *fv = new FloatValue((float)i);
       left_->set_value(fv);
       left_->set_type(FLOATS);
     }

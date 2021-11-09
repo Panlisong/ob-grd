@@ -211,29 +211,6 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   }
 }
 
-//////////////////////////////////////////////////////////////////////////////////
-static RC schema_add_field(Table *table, FuncName func, const char *field_name,
-                           TupleSchema &schema) {
-  // '*'的情况在外面考虑了，一定是最简SelectExeNode+JoinExeNode结果的schema
-  if (func == COLUMN && strcmp(field_name, "*") == 0) {
-    // 列名'T.*'
-    TupleSchema::from_table(table, schema, true);
-    return RC::SUCCESS;
-  }
-
-  if (func == COUNT_FUNC && strcmp(field_name, "*") == 0) {
-    // 特殊情况：count(*)
-    schema.add(INTS, func, table->name(), field_name);
-    return RC::SUCCESS;
-  }
-
-  // func(A) 或 func(T.A) 或 A 或 T.A
-  const FieldMeta *field_meta = table->table_meta().field(field_name);
-  assert(field_meta != nullptr); // 语义检查后不应该发生
-  schema.add(field_meta->type(), func, table->name(), field_meta->name());
-  return RC::SUCCESS;
-}
-
 // 必须在语义检查后调用
 // 将table中名为field_name的Field不重复地添加进schema中
 static RC schema_add_field(Table *table, const char *field_name,

@@ -37,10 +37,11 @@ public:
 
   void add(TupleValue *value);
   void add(const std::shared_ptr<TupleValue> &other);
-  void add(int value, bool is_null);
-  void add(float value, bool is_null);
-  void add(time_t value, bool is_null);
-  void add(const char *s, int len, bool is_null);
+  void add(int value);
+  void add(float value);
+  void add(time_t value);
+  void add(const char *s, int len);
+  void add();
 
   void append(const Tuple &other);
 
@@ -167,39 +168,40 @@ public:
       int32_t *null_field = (int32_t *)(record + table->null_field_offset());
       bool is_null = ((*null_field) & (1 << column)) != 0;
 
+      if (is_null) {
+        tuple.add();
+        continue;
+      }
+
       switch (field_meta->type()) {
       case INTS: {
         int value = *(int *)(record + offset);
-        tuple.add(value, is_null);
+        tuple.add(value);
       } break;
       case FLOATS: {
         float value = *(float *)(record + offset);
-        tuple.add(value, is_null);
+        tuple.add(value);
       } break;
       case CHARS: {
         const char *s = record + offset; // 现在当做Cstring来处理
-        tuple.add(s, strlen(s), is_null);
+        tuple.add(s, strlen(s));
       } break;
       case DATES: {
         time_t value = *(time_t *)(record + offset);
-        tuple.add(value, is_null);
+        tuple.add(value);
       } break;
       case ATTR_TEXT: {
-        if (is_null) {
-          tuple.add("", 0, true);
+        char *s = new char[4096];
+        memset(s, 0, 4096);
+        int remain_len = 4;
+        memcpy(s, record + offset, remain_len);
+        int len = strlen(s);
+        if (len < remain_len) {
+          tuple.add(s, len);
         } else {
-          char *s = new char[4096];
-          memset(s, 0, 4096);
-          int remain_len = 4;
-          memcpy(s, record + offset, remain_len);
-          int len = strlen(s);
-          if (len < remain_len) {
-            tuple.add(s, len, false);
-          } else {
-            int page_id = (*(int *)(record + offset + remain_len)) & 0x7FFFFFFF;
-            table->select_text(s + remain_len, page_id);
-            tuple.add(s, strlen(s), false);
-          }
+          int page_id = (*(int *)(record + offset + remain_len)) & 0x7FFFFFFF;
+          table->select_text(s + remain_len, page_id);
+          tuple.add(s, strlen(s));
         }
       } break;
       default: {
