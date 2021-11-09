@@ -173,7 +173,7 @@ std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
     return std::make_shared<FloatValue>(float_value);
   } break;
   case DATES: {
-		time_t time_value = *(time_t *)value;
+    time_t time_value = *(time_t *)value;
     return std::make_shared<DateValue>(time_value);
   } break;
   case ATTR_NULL: {
@@ -318,9 +318,12 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
   std::shared_ptr<TupleValue> right_value =
       get_tuple_value(right_->type(), rvalue);
 
-  int cmp_result = left_value->compare(*right_value);
+  if (!left_value->comparable(*right_value)) {
+    LOG_ERROR("can not compare");
+    return false;
+  }
 
-  LOG_INFO("%d %d %d", cmp_result, *(int *)lvalue, *(int *)rvalue);
+  int cmp_result = left_value->compare(*right_value);
 
   switch (comp_op_) {
   case EQUAL_TO:

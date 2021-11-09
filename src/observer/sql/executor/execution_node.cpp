@@ -334,10 +334,10 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
       const TupleField &field = out_schema_.field(j);
       int column = in_.get_schema().index_of_field(field.table_name(),
                                                    field.field_name());
-			const TupleValue &value = cur.get(j);
-			if(value.type()==ATTR_NULL){
-					continue;
-			}
+      const TupleValue &value = cur.get(j);
+      if (value.type() == ATTR_NULL) {
+        continue;
+      }
       switch (field.func()) {
       case AVG_FUNC: {
         // 上面的初始化确保AVG列一定为float

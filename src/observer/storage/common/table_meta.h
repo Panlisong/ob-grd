@@ -39,7 +39,7 @@ public:
   const char *name() const;
   const FieldMeta *trx_field() const;
   const FieldMeta *null_field() const;
-  static int null_field_offset() { return 8; }
+  static int null_field_offset() { return 4; }
   const FieldMeta *field(int index) const;
   const FieldMeta *field(const char *name) const;
   const FieldMeta *find_field_by_offset(int offset) const;

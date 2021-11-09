@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_STORAGE_COMMON_TABLE_H__
 #define __OBSERVER_STORAGE_COMMON_TABLE_H__
 
+#include "common/log/log.h"
 #include "storage/common/record_manager.h"
 #include "storage/common/table_meta.h"
 
