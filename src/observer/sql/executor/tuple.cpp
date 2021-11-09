@@ -379,6 +379,11 @@ TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
 
 TupleFilter::TupleFilter() {}
 
+TupleFilter::~TupleFilter() {
+  delete left_;
+  delete right_;
+}
+
 RC TupleFilter::init(TupleSchema &product, const Condition &cond,
                      TupleSet &&tuple_set) {
   RC rc = RC::SUCCESS;

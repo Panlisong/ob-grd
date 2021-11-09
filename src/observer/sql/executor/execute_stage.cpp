@@ -312,6 +312,7 @@ static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
     if (ref != nullptr) {
       // check_cloumn_attr返回的TableRef非空，说明缺少上文信息
       selects.references->push_back(ref);
+      selects.ref_num++;
     }
     // TODO: check type时再做
     // // AVG参数要匹配
@@ -377,6 +378,7 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
           TableRef *ref = new TableRef;
           table_ref_init(ref, 0, table_name, nullptr, nullptr);
           selects.references->push_back(ref);
+          selects.ref_num++;
           cur[table_name] = outer[table_name];
         }
       }
@@ -542,6 +544,7 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
   // 加入from clause
   for (auto t : refs) {
     selects.references->push_back(t);
+    selects.ref_num++;
   }
   // 3. 检查 select clause，必要时补充上文信息到from clause
   // 属性名：多表必须T.A，T.*；单表A, *，单表情况下不允许多个*
@@ -911,6 +914,9 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
           rc = ProjectionDesc::from_table(table, product, descs, multi);
         }
         if (rc != RC::SUCCESS) {
+          for (ProjectionDesc *&d : descs) {
+            delete d;
+          }
           return rc;
         }
         continue;

@@ -198,7 +198,7 @@ public:
           } else {
             int page_id = (*(int *)(record + offset + remain_len)) & 0x7FFFFFFF;
             table->select_text(s + remain_len, page_id);
-						tuple.add(s, strlen(s), false);
+            tuple.add(s, strlen(s), false);
           }
         }
       } break;
@@ -284,6 +284,7 @@ private:
 class TupleFilter {
 public:
   TupleFilter();
+  virtual ~TupleFilter();
   RC init(TupleSchema &product, const Condition &cond, TupleSet &&tuple_set);
   bool filter(const Tuple &t);
   bool non_subquery_filter(const Tuple &tuple);
