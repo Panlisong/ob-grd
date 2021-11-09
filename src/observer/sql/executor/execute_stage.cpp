@@ -314,16 +314,22 @@ static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
       selects.references->push_back(ref);
       selects.ref_num++;
     }
-    // TODO: check type时再做
-    // // AVG参数要匹配
-    // if (expr->func == AVG_FUNC) { /* 聚合函数 */
-    //   const FieldMeta *field_meta = table->table_meta().field(field_name);
-    //   if (field_meta->type() != INTS && field_meta->type() != FLOATS) {
-    //     LOG_ERROR("SQL syntax error: AVG's arg cannot be %d",
-    //               field_meta->type());
-    //     return RC::GENERIC_ERROR;
-    //   }
-    // }
+    // AVG参数要匹配
+    if (expr->func == AVG_FUNC) { /* 聚合函数 */
+      const char *table_name = expr->attr->relation_name;
+      const char *field_name = expr->attr->attribute_name;
+      Table *table = cur.begin()->second;
+      if (table_name != nullptr) {
+        table = cur[table_name];
+      }
+
+      const FieldMeta *field_meta = table->table_meta().field(field_name);
+      if (field_meta->type() != INTS && field_meta->type() != FLOATS) {
+        LOG_ERROR("SQL syntax error: AVG's arg cannot be %d",
+                  field_meta->type());
+        return RC::GENERIC_ERROR;
+      }
+    }
   }
   // Value无需另外检查语法
   return true;

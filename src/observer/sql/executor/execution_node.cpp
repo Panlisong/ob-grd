@@ -262,6 +262,14 @@ RC ProjectExeNode::init(TupleSet &&in, std::vector<ProjectionDesc *> &&descs) {
   descs_ = std::move(descs);
   for (auto *&desc : descs_) {
     out_schema_.add(desc->type(), COLUMN, "", "", desc->to_string().c_str());
+    auto is_aggregate = dynamic_cast<AggregateDesc *>(desc);
+    if (is_aggregate != nullptr) {
+      has_aggregate_ = true;
+      auto is_count = dynamic_cast<CountDesc *>(desc);
+      if (is_count == nullptr) {
+        only_count_ = false;
+      }
+    }
   }
   return rc;
 }
@@ -270,12 +278,23 @@ RC ProjectExeNode::execute(TupleSet &tuple_set) {
   tuple_set.clear();
   tuple_set.set_schema(out_schema_);
 
+  TupleSet tmp;
   for (auto &t : in_.tuples()) {
     Tuple tuple;
     for (auto *&desc : descs_) {
       tuple.add(desc->execute(t));
     }
+    tmp.add(std::move(tuple));
+    if (only_count_) {
+      break;
+    }
+  }
+
+  if (has_aggregate_) {
+    Tuple tuple;
+    tuple.append(tmp.get(tmp.size() - 1));
     tuple_set.add(std::move(tuple));
   }
+
   return RC::SUCCESS;
 }
