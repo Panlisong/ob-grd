@@ -132,7 +132,7 @@ void *ConDescAttr::execute(const Record &rec) {
   void *value = nullptr;
   get_value_from_data(rec.data + offset_, value);
   set_value(value);
-  if (record_data_is_null(rec, column_)) {
+  if (Table::record_data_is_null(rec, column_)) {
     set_type(ATTR_NULL);
   }
   return value;
@@ -216,8 +216,8 @@ bool ConDescSubquery::is_contains(const char *s, int len) {
 }
 
 int ConDescSubquery::is_contains(AttrType type, const char *value) {
-	for(auto value : values_){
-	}
+  for (auto value : values_) {
+  }
   // TODO: 所以is_contains未考虑null
   int res = 0;
   switch (type) {

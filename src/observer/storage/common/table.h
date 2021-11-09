@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_STORAGE_COMMON_TABLE_H__
 #define __OBSERVER_STORAGE_COMMON_TABLE_H__
 
+#include "storage/common/record_manager.h"
 #include "storage/common/table_meta.h"
 
 class DiskBufferPool;
@@ -84,6 +85,10 @@ public:
 
   int find_column_by_offset(int offset);
   static int null_field_offset() { return TableMeta::null_field_offset(); }
+  static bool record_data_is_null(const Record &rec, int column) {
+    int32_t *null_field = (int32_t *)(rec.data + null_field_offset());
+    return (((*null_field) & (1 << column)) != 0);
+  }
 
   void select_text(char *data, int page_id);
 
