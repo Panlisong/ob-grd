@@ -118,6 +118,9 @@ public:
     if (value() == nullptr) {
       set_value(cur);
     }
+    if (cur->type() == ATTR_NULL) {
+      return value();
+    }
     if (cur->compare(*value()) > 0) {
       set_value(cur);
     }
@@ -133,6 +136,9 @@ public:
     if (value() == nullptr) {
       set_value(cur);
     }
+    if (cur->type() == ATTR_NULL) {
+      return value();
+    }
     if (cur->compare(*value()) < 0) {
       set_value(cur);
     }
@@ -143,11 +149,15 @@ public:
 class AvgDesc : public AggregateDesc {
 public:
   AvgDesc(int total) : count_(0), total_(total) {
-    set_value(new FloatValue(0.0));
+    if (total == 0) {
+      set_value(new NullValue());
+    } else {
+      set_value(new FloatValue(0.0));
+    }
   }
   std::shared_ptr<TupleValue> execute(const Tuple &tuple) override {
     auto cur = ProjectionDesc::execute(tuple);
-    if (cur->type()==ATTR_NULL) {
+    if (cur->type() == ATTR_NULL) {
       return value();
     }
     // 累加
