@@ -294,6 +294,7 @@ TupleConDescAttr::TupleConDescAttr(AttrType type, int index) : index_(index) {
 
 std::shared_ptr<TupleValue> TupleConDescAttr::execute(const Tuple &tuple) {
   set_value(tuple.get_pointer(index_));
+  std::shared_ptr<TupleValue> v = value();
   return value();
 }
 
