@@ -66,7 +66,7 @@ public:
     other.get_value(&float_value);
     if (value_ - float_value < -1e-6) {
       return -1;
-    } else if (value_ - float_value > 1e6) {
+    } else if (value_ - float_value > 1e-6) {
       return 1;
     }
     return 0;
@@ -120,7 +120,7 @@ public:
     }
     if (value_ - other_value < -1e-6) {
       return -1;
-    } else if (value_ - other_value > 1e6) {
+    } else if (value_ - other_value > 1e-6) {
       return 1;
     }
     return 0;

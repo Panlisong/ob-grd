@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/executor/tuple.h"
 #include "sql/executor/value.h"
+#include <memory>
 #include <string>
 
 TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
@@ -350,11 +351,18 @@ std::shared_ptr<TupleValue> TupleConDescSubquery::execute(const Tuple &tuple) {
   return nullptr;
 }
 
-bool TupleConDescSubquery::is_contains(const TupleValue *value) {
-  // TODO: 这里生成新的TupleVaule或在compare中判断类型
-  // compare
-
+bool TupleConDescSubquery::is_contains(
+    std::shared_ptr<TupleValue> tuple_value) {
+  for (auto value : values_) {
+    if (tuple_value->compare(*value) == 0) {
+      return true;
+    }
+  }
   return false;
+}
+int TupleConDescSubquery::compare(std::shared_ptr<TupleValue> left_value) {
+  TupleValue *right_value = values_[0].get();
+  return left_value->compare(*right_value);
 }
 
 TupleConDescSubquery::~TupleConDescSubquery() {}
@@ -411,22 +419,22 @@ bool TupleFilter::non_subquery_filter(const Tuple &t) {
   auto lv = left_->execute(t);
   auto rv = right_->execute(t);
   // TODO: 需考虑ATTR_NULL
-  if (left_->type() != right_->type()) {
-    int i;
-    if (left_->type() == FLOATS) {
-      right_->value()->get_value(&i);
-      FloatValue *fv = new FloatValue((float)i);
-      right_->set_value(fv);
-      right_->set_type(FLOATS);
-    } else {
-      left_->value()->get_value(&i);
-      FloatValue *fv = new FloatValue((float)i);
-      left_->set_value(fv);
-      left_->set_type(FLOATS);
-    }
-    lv = left_->value();
-    rv = right_->value();
-  }
+  // if (left_->type() != right_->type()) {
+  //   int i;
+  //   if (left_->type() == FLOATS) {
+  //     right_->value()->get_value(&i);
+  //     FloatValue *fv = new FloatValue((float)i);
+  //     right_->set_value(fv);
+  //     right_->set_type(FLOATS);
+  //   } else {
+  //     left_->value()->get_value(&i);
+  //     FloatValue *fv = new FloatValue((float)i);
+  //     left_->set_value(fv);
+  //     left_->set_type(FLOATS);
+  //   }
+  //   lv = left_->value();
+  //   rv = right_->value();
+  // }
   int cmp_result = lv->compare(*rv);
   switch (op_) {
   case EQUAL_TO:
@@ -451,25 +459,28 @@ bool TupleFilter::non_subquery_filter(const Tuple &t) {
 bool TupleFilter::subquery_filter(const Tuple &t) {
   auto lv = left_->execute(t);
   auto cond_desc_subquery = dynamic_cast<TupleConDescSubquery *>(right_);
-  // TODO: 需考虑ATTR_NULL
-  if (left_->type() != right_->type()) {
-    // TODO: 子查询的类型转换
-    if (left_->type() == FLOATS) {
-    }
+  if (op_ == MEM_IN || op_ == MEM_NOT_IN) {
+    bool contains = cond_desc_subquery->is_contains(lv);
+    return op_ == MEM_IN ? contains : !contains;
   }
+
+  if (cond_desc_subquery->subquery_size() != 1) {
+    return false;
+  }
+
   switch (op_) {
   case EQUAL_TO:
+    return cond_desc_subquery->compare(lv) == 0;
   case LESS_EQUAL:
+    return cond_desc_subquery->compare(lv) <= 0;
   case NOT_EQUAL:
+    return cond_desc_subquery->compare(lv) != 0;
   case LESS_THAN:
+    return cond_desc_subquery->compare(lv) < 0;
   case GREAT_EQUAL:
+    return cond_desc_subquery->compare(lv) >= 0;
   case GREAT_THAN:
-    // TODO: 子查询的比较
-    break;
-  case MEM_IN:
-    return cond_desc_subquery->is_contains(lv.get());
-  case MEM_NOT_IN:
-    return !cond_desc_subquery->is_contains(lv.get());
+    return cond_desc_subquery->compare(lv) > 0;
   default:
     LOG_PANIC("Unkown operator type: %d", op_);
     break;

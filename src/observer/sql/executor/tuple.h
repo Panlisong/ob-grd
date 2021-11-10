@@ -277,7 +277,11 @@ public:
 
   RC init(TupleSet &&subquery);
 
-  bool is_contains(const TupleValue *value);
+  bool is_contains(std::shared_ptr<TupleValue> tuple_value);
+
+  int subquery_size() const { return values_.size(); }
+
+  int compare(std::shared_ptr<TupleValue> tuple_value);
 
 private:
   std::vector<std::shared_ptr<TupleValue>> values_;
