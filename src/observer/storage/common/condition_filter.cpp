@@ -296,12 +296,9 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
 }
 
 bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
-  LOG_INFO("%d %d", left_->is_null(), right_->is_null());
-
   char *lvalue = (char *)left_->execute(rec);
   char *rvalue = (char *)right_->execute(rec);
 
-  LOG_INFO("%d %d", left_->is_null(), right_->is_null());
   if (left_->is_null() && right_->is_null()) {
     // null is/is not null
     return comp_op_ == OP_IS;

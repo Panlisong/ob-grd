@@ -21,6 +21,9 @@ RC parse(char *st, Query *sqln);
 
 /*************************** Helper ******************************/
 bool is_comparable(AttrType lt, AttrType rt) {
+  if (lt == ATTR_NULL || rt == ATTR_NULL) {
+    return true;
+  }
   if (lt == DATES || rt == DATES || lt == CHARS || rt == CHARS) {
     return lt == rt;
   }
