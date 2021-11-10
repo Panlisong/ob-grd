@@ -232,11 +232,10 @@ static bool match_field(Table *table, const char *field_name) {
 }
 
 static bool check_column_attr(RelationTable &outer, RelationTable &cur,
-                              RelAttr *attr, TableRef *ref) {
-  bool multi_flag = cur.size() > 1;
+                              RelAttr *attr, TableRef *ref, bool multi) {
   Table *table = cur.begin()->second;
   if (attr->relation_name == nullptr) {
-    if (multi_flag) {
+    if (multi) {
       LOG_ERROR("SQL syntax error: need to write relation name explicitly");
       return false;
     }
@@ -256,7 +255,7 @@ static bool check_column_attr(RelationTable &outer, RelationTable &cur,
       table = outer_res->second;
       cur[table->name()] = table;
       ref = (TableRef *)malloc(sizeof(TableRef));
-      table_ref_init(ref, 0, table->name(), nullptr, nullptr);
+      table_ref_init(ref, 0, table->name(), nullptr, new ConditionList);
     }
   } else {
     table = cur_res->second;
@@ -267,12 +266,13 @@ static bool check_column_attr(RelationTable &outer, RelationTable &cur,
 
 // 用于检查SelectExpr
 static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
-                              RelationTable &cur, Selects &selects) {
+                              RelationTable &cur, Selects &selects,
+                              bool multi) {
   if (expr->has_subexpr) {
-    if (!check_select_expr(expr->left, outer, cur, selects)) {
+    if (!check_select_expr(expr->left, outer, cur, selects, multi)) {
       return false;
     }
-    if (!check_select_expr(expr->right, outer, cur, selects)) {
+    if (!check_select_expr(expr->right, outer, cur, selects, multi)) {
       return false;
     }
     return true;
@@ -280,7 +280,7 @@ static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
 
   if (expr->is_attr) {
     TableRef *ref = nullptr;
-    if (!check_column_attr(outer, cur, expr->attr, ref)) {
+    if (!check_column_attr(outer, cur, expr->attr, ref, multi)) {
       if (ref != nullptr) {
         free(ref);
       }
@@ -313,7 +313,7 @@ static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
 }
 
 RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
-                                       RelationTable &cur) {
+                                       RelationTable &cur, bool multi) {
   RC rc = RC::SUCCESS;
   int single_star = 0;
   bool error = false;
@@ -383,7 +383,7 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
     }
     // 如果是表达式，语法层面保证不会出现：
     // 'T.*' 或 '*' 作为运算的操作数
-    if (!check_select_expr(expr, outer, cur, selects)) {
+    if (!check_select_expr(expr, outer, cur, selects, multi)) {
       rc = RC::SQL_SYNTAX;
       break;
     }
@@ -400,12 +400,12 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
  */
 static bool check_condition_expr(const ConditionExpr *expr,
                                  RelationTable &outer, RelationTable &cur,
-                                 std::vector<TableRef *> &refs) {
+                                 std::vector<TableRef *> &refs, bool multi) {
   if (expr->has_subexpr == 1) {
-    if (!check_condition_expr(expr->left, outer, cur, refs)) {
+    if (!check_condition_expr(expr->left, outer, cur, refs, multi)) {
       return false;
     }
-    if (!check_condition_expr(expr->right, outer, cur, refs)) {
+    if (!check_condition_expr(expr->right, outer, cur, refs, multi)) {
       return false;
     }
     return true;
@@ -413,7 +413,7 @@ static bool check_condition_expr(const ConditionExpr *expr,
   // 叶子节点只有 'T.A' 或 'A'
   if (expr->is_attr) {
     TableRef *ref = nullptr;
-    if (!check_column_attr(outer, cur, expr->attr, ref)) {
+    if (!check_column_attr(outer, cur, expr->attr, ref, multi)) {
       if (ref != nullptr) {
         free(ref);
       }
@@ -428,13 +428,12 @@ static bool check_condition_expr(const ConditionExpr *expr,
 
 RC ExecuteStage::resolve_condtions(RelationTable &outer, RelationTable &cur,
                                    std::vector<TableRef *> &refs,
-                                   const ConditionList *conds,
-                                   size_t cond_num) {
+                                   const ConditionList *conds, bool multi) {
   RC rc = RC::SUCCESS;
-  for (size_t i = 0; i < cond_num; i++) {
+  for (size_t i = 0; i < conds->size(); i++) {
     const Condition &cond = conds->at(i);
     // 1. 先检查left ConditionExpr
-    if (!check_condition_expr(cond.left, outer, cur, refs)) {
+    if (!check_condition_expr(cond.left, outer, cur, refs, multi)) {
       rc = RC::SQL_SYNTAX;
       break;
     }
@@ -450,7 +449,7 @@ RC ExecuteStage::resolve_condtions(RelationTable &outer, RelationTable &cur,
         break;
       }
     } else { // 右表达式
-      if (!check_condition_expr(cond.right, outer, cur, refs)) {
+      if (!check_condition_expr(cond.right, outer, cur, refs, multi)) {
         rc = RC::SQL_SYNTAX;
         break;
       }
@@ -500,10 +499,12 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
   RC rc = RC::SUCCESS;
   // 1. 建立本层的RelationTable
   auto &cur = *selects.context;
+  bool multi = selects.ref_num > 1;
   for (size_t i = 0; i < selects.ref_num; i++) {
     TableRef *ref = selects.references->at(i);
     const char *table_name = ref->relation_name;
     if (ref->is_join) {
+      multi = true;
       rc = resolve_join_table(ref, outer, cur);
       if (rc != RC::SUCCESS) {
         return rc;
@@ -516,8 +517,7 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
   // 2. 检查condition，必要时候补充上文信息到from clause
   // ConditionFilter中有类型转换和检查，这里不用做
   std::vector<TableRef *> refs;
-  rc = resolve_condtions(outer, cur, refs, selects.conditions,
-                         selects.conditions->size());
+  rc = resolve_condtions(outer, cur, refs, selects.conditions, multi);
   if (rc != RC::SUCCESS) {
     for (auto t : refs) {
       free(t);
@@ -532,7 +532,7 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
   // 3. 检查 select clause，必要时补充上文信息到from clause
   // 属性名：多表必须T.A，T.*；单表A, *，单表情况下不允许多个*
   // 聚合函数参数：另有规定，例如AVG()不能测日期和字符串
-  return resolve_select_clause(selects, outer, cur);
+  return resolve_select_clause(selects, outer, cur, multi);
 }
 
 /////////////////////////////////////////////////////////////////////////////

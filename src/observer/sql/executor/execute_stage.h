@@ -53,12 +53,12 @@ protected:
   RC relations_init(const Selects &selects);
 
   RC resolve_select_clause(Selects &selects, RelationTable &outer,
-                           RelationTable &cur);
+                           RelationTable &cur, bool multi);
   RC resolve_join_table(TableRef *ref, RelationTable &outer,
                         RelationTable &cur);
   RC resolve_condtions(RelationTable &outer, RelationTable &cur,
                        std::vector<TableRef *> &refs,
-                       const ConditionList *conds, size_t cond_num);
+                       const ConditionList *conds, bool multi);
   RC resolve_select(Selects &selects, RelationTable &relations);
 
   RC do_select(Query *sql, SessionEvent *session_event);
