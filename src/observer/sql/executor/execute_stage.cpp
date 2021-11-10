@@ -836,8 +836,11 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
 
   std::stringstream ss;
   TupleSet tuple_set;
-  ::do_select(trx, selects, tuple_set);
-
+  rc = ::do_select(trx, selects, tuple_set);
+  if (rc != RC::SUCCESS) {
+    session_event->set_response("FAILURE\n");
+    return rc;
+  }
   tuple_set.print(ss, selects.context->size() > 1);
   session_event->set_response(ss.str());
   return rc;
@@ -847,11 +850,15 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
 static RC add_join_table(TableRef *ref, RelationTable relations,
                          const TupleSchema &product,
                          std::vector<ProjectionDesc *> &descs) {
+  RC rc = RC::SUCCESS;
   if (ref->child == nullptr) {
     return ProjectionDesc::from_table(relations[ref->relation_name], product,
                                       descs, relations.size() > 1);
   }
-  add_join_table(ref->child, relations, product, descs);
+  rc = add_join_table(ref->child, relations, product, descs);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
   return ProjectionDesc::from_table(relations[ref->relation_name], product,
                                     descs, relations.size() > 1);
 }
