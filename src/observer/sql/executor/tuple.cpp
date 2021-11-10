@@ -244,7 +244,7 @@ TupleConDescInternal::TupleConDescInternal(ArithOp op, TupleConDescNode *left,
   AttrType rt = right_->type();
   if (!is_computable(lt, rt)) {
     // TODO: 不可计算类型如何处理
-    set_type(ATTR_NULL);
+    set_type(UNDEFINED);
     return;
   }
 
@@ -259,26 +259,6 @@ std::shared_ptr<TupleValue> TupleConDescInternal::execute(const Tuple &tuple) {
   auto lv = left_->execute(tuple);
   auto rv = right_->execute(tuple);
   TupleValue *res = nullptr;
-  // TODO: 需考虑出现ATTR_NULL的情况
-  // 以下实现仅考虑INT和FLOAT
-  if (left_->type() != right_->type()) {
-    // 通知子节点类型转换
-    int i;
-    if (left_->type() == FLOATS) {
-      right_->value()->get_value(&i);
-      FloatValue *fv = new FloatValue((float)i);
-      right_->set_value(fv);
-      right_->set_type(FLOATS);
-    } else {
-      left_->value()->get_value(&i);
-      FloatValue *fv = new FloatValue((float)i);
-      left_->set_value(fv);
-      left_->set_type(FLOATS);
-    }
-    set_type(FLOATS);
-    lv = left_->value();
-    rv = right_->value();
-  }
   lv->compute(rv.get(), res, op_);
   set_value(res);
   return value();
@@ -408,6 +388,9 @@ RC TupleFilter::init(TupleSchema &product, const Condition &cond,
   } else {
     right_ = create_cond_desc_node(cond.right, product);
   }
+  if (left_->type() == UNDEFINED || right_->type() == UNDEFINED) {
+    return RC::SCHEMA_FIELD_MISSING;
+  }
   if (!is_comparable(left_->type(), right_->type())) {
     LOG_ERROR("Type dismatching.");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
@@ -418,23 +401,21 @@ RC TupleFilter::init(TupleSchema &product, const Condition &cond,
 bool TupleFilter::non_subquery_filter(const Tuple &t) {
   auto lv = left_->execute(t);
   auto rv = right_->execute(t);
-  // TODO: 需考虑ATTR_NULL
-  // if (left_->type() != right_->type()) {
-  //   int i;
-  //   if (left_->type() == FLOATS) {
-  //     right_->value()->get_value(&i);
-  //     FloatValue *fv = new FloatValue((float)i);
-  //     right_->set_value(fv);
-  //     right_->set_type(FLOATS);
-  //   } else {
-  //     left_->value()->get_value(&i);
-  //     FloatValue *fv = new FloatValue((float)i);
-  //     left_->set_value(fv);
-  //     left_->set_type(FLOATS);
-  //   }
-  //   lv = left_->value();
-  //   rv = right_->value();
-  // }
+
+  if (lv->type() == ATTR_NULL && rv->type() == ATTR_NULL) {
+    return op_ == OP_IS;
+  }
+
+  if (lv->type() == ATTR_NULL || rv->type() == ATTR_NULL) {
+    if (op_ != OP_IS && op_ != OP_IS_NOT) {
+      return false;
+    }
+    if (lv->type() == ATTR_NULL) {
+      return false;
+    }
+    return op_ == OP_IS ? lv->type() == ATTR_NULL : lv->type() != ATTR_NULL;
+  }
+
   int cmp_result = lv->compare(*rv);
   switch (op_) {
   case EQUAL_TO:

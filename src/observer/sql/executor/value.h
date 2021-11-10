@@ -215,7 +215,7 @@ class NullValue : public TupleValue {
 
   int compare(const TupleValue &other) const override { return 0; }
 
-  void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override{};
+  void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) override;
 
   AttrType type() const override { return ATTR_NULL; }
 };

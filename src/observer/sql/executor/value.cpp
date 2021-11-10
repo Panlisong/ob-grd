@@ -12,73 +12,91 @@ See the Mulan PSL v2 for more details. */
 #include <cmath>
 
 void IntValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
-  auto int_value = dynamic_cast<IntValue *>(rhs);
-  if (int_value != nullptr) {
-    // rhs为Int
-    int result = 0;
-    switch (op) {
-    case ADD:
-      result = value_ + int_value->value_;
-      break;
-    case SUB:
-      result = value_ - int_value->value_;
-      break;
-    case MUL:
-      result = value_ * int_value->value_;
-      break;
-    case DIV:
-      if (int_value->value_ == 0) {
-        // TODO: 运算异常
-        // 目前返回INT类型的null值
-        res = new IntValue(value_ > 0 ? INT_MAX : INT_MIN);
-        return;
-      }
-      result = value_ / int_value->value_;
-      break;
-    default:
-      LOG_PANIC("Unkown arithop type: %d", op);
-      break;
-    }
-    res = new IntValue(result);
+  float lvalue = float(value_);
+  float rvalue;
+  if (rhs->type() == FLOATS) {
+    rhs->get_value(&rvalue);
+  } else {
+    int int_rvalue;
+    rhs->get_value(&int_rvalue);
+    rvalue = float(int_rvalue);
   }
-}
+  if (op == DIV && (1e-6 < rvalue && rvalue < 1e-6)) {
+    res = new NullValue();
+    return;
+  }
 
-void FloatValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
-  auto float_value = dynamic_cast<FloatValue *>(rhs);
-  if (float_value != nullptr) {
-    // rhs为float
-    float result = 0;
-    switch (op) {
-    case ADD:
-      result = value_ + float_value->value_;
-      break;
-    case SUB:
-      result = value_ - float_value->value_;
-      break;
-    case MUL:
-      result = value_ * float_value->value_;
-      break;
-    case DIV:
-      if (float_value->value_ == 0) {
-        // TODO: 运算异常
-        // 目前返回INT类型的null值
-        res = new FloatValue(value_ > 0 ? INFINITY : -INFINITY);
-        return;
-      }
-      result = value_ / float_value->value_;
-      break;
-    default:
-      LOG_PANIC("Unkown arithop type: %d", op);
-      break;
-    }
+  float result = 0.0;
+  switch (op) {
+  case ADD:
+    result = lvalue + rvalue;
+    break;
+  case SUB:
+    result = lvalue - rvalue;
+    break;
+  case MUL:
+    result = lvalue * rvalue;
+    break;
+  case DIV:
+    result = lvalue / rvalue;
+    break;
+  default:
+    LOG_PANIC("Unkown arithop type: %d", op);
+    break;
+  }
+
+  if (rhs->type() == INTS) {
+    res = new IntValue(int(result));
+  } else {
     res = new FloatValue(result);
   }
 }
 
+void FloatValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
+  float lvalue = value_;
+  float rvalue;
+  if (rhs->type() == FLOATS) {
+    rhs->get_value(&rvalue);
+  } else {
+    int int_rvalue;
+    rhs->get_value(&int_rvalue);
+    rvalue = float(int_rvalue);
+  }
+  if (op == DIV && (1e-6 < rvalue && rvalue < 1e-6)) {
+    res = new NullValue();
+    return;
+  }
+
+  float result = 0.0;
+  switch (op) {
+  case ADD:
+    result = lvalue + rvalue;
+    break;
+  case SUB:
+    result = lvalue - rvalue;
+    break;
+  case MUL:
+    result = lvalue * rvalue;
+    break;
+  case DIV:
+    result = lvalue / rvalue;
+    break;
+  default:
+    LOG_PANIC("Unkown arithop type: %d", op);
+    break;
+  }
+
+  res = new FloatValue(result);
+}
+
 void StringValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
-  // TODO: 运算异常
+  res = new NullValue();
 }
 
 void DateValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
-  // TODO: 运算异常
+  res = new NullValue();
+}
+
+void NullValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
+  res = new NullValue();
 }
