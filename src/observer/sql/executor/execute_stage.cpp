@@ -432,24 +432,30 @@ RC ExecuteStage::resolve_condtions(RelationTable &outer, RelationTable &cur,
   RC rc = RC::SUCCESS;
   for (size_t i = 0; i < conds->size(); i++) {
     const Condition &cond = conds->at(i);
-    // 1. 先检查left ConditionExpr
-    if (!check_condition_expr(cond.left, outer, cur, refs, multi)) {
-      rc = RC::SQL_SYNTAX;
-      break;
-    }
-    // 2. 子查询或右表达式
+    // 1. 子查询
     if (cond.is_subquery == 1) { // 子查询
       // 合并 outer 和 cur 作为子查询的outer
       RelationTable cur_outer = outer;
       for (auto &p : cur) {
         cur_outer[p.first] = p.second;
       }
-      rc = resolve_select(*cond.subquery, cur_outer);
+      if (cond.left_subquery != nullptr) {
+        rc = resolve_select(*cond.left_subquery, cur_outer);
+      }
+      if (cond.right_subquery != nullptr) {
+        rc = resolve_select(*cond.right_subquery, cur_outer);
+      }
       if (rc != RC::SUCCESS) {
         break;
       }
-    } else { // 右表达式
-      if (!check_condition_expr(cond.right, outer, cur, refs, multi)) {
+    } else { // 2. 检查ConditionExpr
+      if (cond.left != nullptr &&
+          !check_condition_expr(cond.left, outer, cur, refs, multi)) {
+        rc = RC::SQL_SYNTAX;
+        break;
+      }
+      if (cond.right != nullptr &&
+          !check_condition_expr(cond.right, outer, cur, refs, multi)) {
         rc = RC::SQL_SYNTAX;
         break;
       }
@@ -558,10 +564,15 @@ RC ExecuteStage::join_table_relations_init(const TableRef *ref) {
   }
   // 子结点中的表信息已经收集完毕
   // 3. 检查 join condition
-  for (int i = ref->cond_num - 1; i >= 0; i--) {
+  for (size_t i = 0; i < ref->conditions->size(); i++) {
     const Condition &cond = ref->conditions->at(i);
-    if (cond.is_subquery) {
-      rc = relations_init(*cond.subquery);
+    if (cond.is_subquery == 1) {
+      if (cond.left_subquery != nullptr) {
+        rc = relations_init(*cond.left_subquery);
+      }
+      if (cond.right_subquery != nullptr) {
+        rc = relations_init(*cond.right_subquery);
+      }
       if (rc != RC::SUCCESS) {
         return rc;
       }
@@ -571,7 +582,7 @@ RC ExecuteStage::join_table_relations_init(const TableRef *ref) {
 }
 
 RC ExecuteStage::relations_init(const Selects &selects) {
-  for (size_t i = 0; i < selects.ref_num; i++) {
+  for (size_t i = 0; i < selects.references->size(); i++) {
     const TableRef *ref = selects.references->at(i);
     const char *table_name = ref->relation_name;
     if (ref->is_join) {
@@ -588,10 +599,15 @@ RC ExecuteStage::relations_init(const Selects &selects) {
   }
 
   RC rc = RC::SUCCESS;
-  for (int i = selects.cond_num - 1; i >= 0; i--) {
+  for (size_t i = 0; i < selects.conditions->size(); i++) {
     const Condition &cond = selects.conditions->at(i);
     if (cond.is_subquery) {
-      rc = relations_init(*cond.subquery);
+      if (cond.left_subquery != nullptr) {
+        rc = relations_init(*cond.left_subquery);
+      }
+      if (cond.right_subquery != nullptr) {
+        rc = relations_init(*cond.right_subquery);
+      }
       if (rc != RC::SUCCESS) {
         return rc;
       }
@@ -960,28 +976,38 @@ RC create_join_executor(Trx *trx, RelationTable &relations,
     if (cond.is_used == 1) {
       continue;
     }
-    collector.clear();
-    // 只与一个表相关的条件一定已经使用
-    get_one_mini_schema(cond.left, relations, collector);
-    if (!product_schema.contains_all(collector)) {
-      continue;
-    }
-
-    TupleSet subquery;
-    if (cond.is_subquery == 0) {
-      get_one_mini_schema(cond.right, relations, collector);
-      if (!product_schema.contains_all(collector)) {
-        continue;
-      }
-    } else {
-      rc = do_select(trx, *cond.subquery, subquery);
+    TupleSet left_subquery;
+    if (cond.left_subquery != nullptr) {
+      rc = do_select(trx, *cond.left_subquery, left_subquery);
       if (rc != RC::SUCCESS) {
         return rc;
       }
     }
+    TupleSet right_subquery;
+    if (cond.right_subquery != nullptr) {
+      rc = do_select(trx, *cond.right_subquery, right_subquery);
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
+    }
+    collector.clear();
+    // 只与一个表相关的条件一定已经使用
+    if (cond.left != nullptr) {
+      get_one_mini_schema(cond.left, relations, collector);
+      if (!product_schema.contains_all(collector)) {
+        continue;
+      }
+    }
+    if (cond.right != nullptr) {
+      get_one_mini_schema(cond.right, relations, collector);
+      if (!product_schema.contains_all(collector)) {
+        continue;
+      }
+    }
     cond.is_used = 1;
     TupleFilter *filter = new TupleFilter();
-    rc = filter->init(product_schema, cond, std::move(subquery));
+    rc = filter->init(product_schema, cond, std::move(left_subquery),
+                      std::move(right_subquery));
     if (rc != RC::SUCCESS) {
       delete filter;
       for (TupleFilter *&filter : filters) {
@@ -1001,33 +1027,47 @@ static RC add_filter(Trx *trx, RelationTable &relations, Table *table,
   RC rc = RC::SUCCESS;
   TupleSchema table_schema;
   TupleSchema::from_table(table, table_schema, false);
-  TupleSchema counter;
+  TupleSchema collector;
   for (size_t i = 0; i < cond_num; i++) {
     Condition &cond = conds->at(i);
     if (cond.is_used == 1) {
       // 使用过的条件直接跳过
       continue;
     }
-    counter.clear();
-    get_one_mini_schema(cond.left, relations, counter);
-    if (!table_schema.contains_all(counter)) {
-      continue;
+    TupleSet left_subquery;
+    if (cond.left_subquery != nullptr) {
+      rc = do_select(trx, *cond.left_subquery, left_subquery);
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
     }
-
-    TupleSet subquery;
-    if (cond.is_subquery == 0) {
-      get_one_mini_schema(cond.right, relations, counter);
-      if (!table_schema.contains_all(counter)) {
+    TupleSet right_subquery;
+    if (cond.right_subquery != nullptr) {
+      rc = do_select(trx, *cond.right_subquery, right_subquery);
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
+    }
+    collector.clear();
+    // 只与一个表相关的条件一定已经使用
+    if (cond.left != nullptr) {
+      get_one_mini_schema(cond.left, relations, collector);
+      if (!table_schema.contains_all(collector)) {
         continue;
       }
-    } else {
-      do_select(trx, *cond.subquery, subquery);
+    }
+    if (cond.right != nullptr) {
+      get_one_mini_schema(cond.right, relations, collector);
+      if (!table_schema.contains_all(collector)) {
+        continue;
+      }
     }
     cond.is_used = 1;
 
     Table &t = *table;
     DefaultConditionFilter *condition_filter = new DefaultConditionFilter(t);
-    rc = condition_filter->init(*table, cond, std::move(subquery));
+    rc = condition_filter->init(*table, cond, std::move(left_subquery),
+                                std::move(right_subquery));
     if (rc != RC::SUCCESS) {
       delete condition_filter;
       for (DefaultConditionFilter *&filter : cond_filters) {

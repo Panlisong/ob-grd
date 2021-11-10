@@ -39,6 +39,23 @@ bool is_computable(AttrType left, AttrType right) {
   return true;
 }
 
+CompOp get_neg_comp_op(CompOp op) {
+  switch (op) {
+  case GREAT_EQUAL:
+    return LESS_EQUAL;
+  case LESS_EQUAL:
+    return GREAT_EQUAL;
+  case GREAT_THAN:
+    return LESS_THAN;
+  case LESS_THAN:
+    return GREAT_THAN;
+  case EQUAL_TO:
+    return EQUAL_TO;
+  default:
+    return op;
+  }
+}
+
 int check_date(int year, int month, int day) {
   int day_max[13] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
   bool leap = false;
@@ -108,24 +125,52 @@ void non_subquery_cond_init(Condition *cond, ConditionExpr *left,
   cond->comp = op;
   ////////////////////////
   cond->is_subquery = 0;
-  cond->subquery = nullptr;
+  cond->left_subquery = nullptr;
+  cond->right_subquery = nullptr;
 }
+void com_subquery_init(Condition *cond, Selects *left, Selects *right,
+                       CompOp op) {
+  cond->is_subquery = 1;
+  cond->left_subquery = left;
+  cond->right_subquery = right;
+  cond->comp = op;
+  //////////////////////////
+  cond->left = nullptr;
+  cond->right = nullptr;
+}
+
+// 优先将子查询放入右侧
 void com_subquery_init(Condition *cond, ConditionExpr *left, Selects *subquery,
                        CompOp op) {
   cond->is_subquery = 1;
   cond->left = left;
-  cond->subquery = subquery;
+  cond->right_subquery = subquery;
   cond->comp = op;
   //////////////////////////
   cond->right = nullptr;
+  cond->left_subquery = nullptr;
 }
+
+// 优先将子查询放入右侧
 void membership_subquery_init(Condition *cond, ConditionExpr *left,
                               Selects *subquery, CompOp op) {
   cond->is_subquery = 1;
   cond->left = left;
-  cond->subquery = subquery;
+  cond->right_subquery = subquery;
   cond->comp = op;
   ///////////////////////////
+  cond->right = nullptr;
+  cond->left_subquery = nullptr;
+}
+
+void membership_subquery_init(Condition *cond, Selects *left, Selects *right,
+                              CompOp op) {
+  cond->is_subquery = 1;
+  cond->left_subquery = left;
+  cond->right_subquery = right;
+  cond->comp = op;
+  ///////////////////////////
+  cond->left = nullptr;
   cond->right = nullptr;
 }
 
@@ -431,9 +476,16 @@ void condition_expr_destory(ConditionExpr *expr) {
 void condition_destory(Condition *condition) {
   condition_expr_destory(condition->left);
   if (condition->is_subquery) {
-    selects_destroy(condition->subquery);
-    free(condition->subquery);
-    condition->subquery = nullptr;
+    if (condition->left_subquery != nullptr) {
+      selects_destroy(condition->left_subquery);
+      free(condition->left_subquery);
+      condition->left_subquery = nullptr;
+    }
+    if (condition->right_subquery != nullptr) {
+      selects_destroy(condition->right_subquery);
+      free(condition->right_subquery);
+      condition->right_subquery = nullptr;
+    }
   } else {
     condition_expr_destory(condition->right);
   }

@@ -266,16 +266,35 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
 }
 
 RC DefaultConditionFilter::init(Table &table, const Condition &condition,
-                                TupleSet &&subquery) {
+                                TupleSet &&left_subquey,
+                                TupleSet &&right_subquey) {
+  RC rc = RC::SUCCESS;
   const TableMeta &table_meta = table.table_meta();
-  ConDescNode *left = create_cond_desc_node(condition.left, table_meta);
+  ConDescNode *left = nullptr;
   ConDescNode *right = nullptr;
-  if (condition.is_subquery == 1) {
-    ConDescSubquery *cond_node = new ConDescSubquery();
-    cond_node->init(std::move(subquery));
-    right = cond_node;
-  } else {
+  if (condition.left != nullptr) {
+    left = create_cond_desc_node(condition.left, table_meta);
+  }
+  if (condition.right != nullptr) {
     right = create_cond_desc_node(condition.right, table_meta);
+  }
+  if (condition.left_subquery != nullptr) {
+    ConDescSubquery *left_node = new ConDescSubquery();
+    rc = left_node->init(std::move(left_subquey));
+    if (rc != RC::SUCCESS) {
+      delete left_node;
+      return rc;
+    }
+    left = left_node;
+  }
+  if (condition.right_subquery != nullptr) {
+    ConDescSubquery *right_node = new ConDescSubquery();
+    rc = right_node->init(std::move(right_subquey));
+    if (rc != RC::SUCCESS) {
+      delete right_node;
+      return rc;
+    }
+    right = right_node;
   }
 
   AttrType type_left = left->type();
@@ -438,12 +457,17 @@ RC CompositeConditionFilter::init(Trx *trx, Table &table,
   for (int i = 0; i < condition_num; i++) {
     DefaultConditionFilter *default_condition_filter =
         new DefaultConditionFilter(table);
-    TupleSet subquery;
     const Condition &cond = conditions->at(i);
-    if (cond.is_subquery == 1) {
-      do_select(trx, *cond.subquery, subquery);
+    TupleSet left;
+    if (cond.left_subquery != nullptr) {
+      do_select(trx, *cond.left_subquery, left);
     }
-    rc = default_condition_filter->init(table, cond, std::move(subquery));
+    TupleSet right;
+    if (cond.right_subquery != nullptr) {
+      do_select(trx, *cond.right_subquery, right);
+    }
+    rc = default_condition_filter->init(table, cond, std::move(left),
+                                        std::move(right));
     if (rc != RC::SUCCESS) {
       delete default_condition_filter;
       for (int j = i - 1; j >= 0; j--) {

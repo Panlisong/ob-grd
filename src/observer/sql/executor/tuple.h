@@ -291,7 +291,8 @@ class TupleFilter {
 public:
   TupleFilter();
   virtual ~TupleFilter();
-  RC init(TupleSchema &product, const Condition &cond, TupleSet &&tuple_set);
+  RC init(TupleSchema &product, const Condition &cond, TupleSet &&left,
+          TupleSet &&right);
   bool filter(const Tuple &t);
   bool non_subquery_filter(const Tuple &tuple);
   bool subquery_filter(const Tuple &tuple);

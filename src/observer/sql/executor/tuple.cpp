@@ -372,22 +372,34 @@ TupleFilter::~TupleFilter() {
 }
 
 RC TupleFilter::init(TupleSchema &product, const Condition &cond,
-                     TupleSet &&tuple_set) {
+                     TupleSet &&left, TupleSet &&right) {
   RC rc = RC::SUCCESS;
   op_ = cond.comp;
-  left_ = create_cond_desc_node(cond.left, product);
-  right_ = nullptr;
-  if (cond.is_subquery == 1) {
+  if (cond.left != nullptr) {
+    left_ = create_cond_desc_node(cond.left, product);
+  }
+  if (cond.right != nullptr) {
+    right_ = create_cond_desc_node(cond.right, product);
+  }
+  if (cond.left_subquery != nullptr) {
+    TupleConDescSubquery *left_node = new TupleConDescSubquery();
+    rc = left_node->init(std::move(left));
+    if (rc != RC::SUCCESS) {
+      delete left_node;
+      return rc;
+    }
+    left_ = left_node;
+  }
+  if (cond.right_subquery != nullptr) {
     TupleConDescSubquery *right_node = new TupleConDescSubquery();
-    rc = right_node->init(std::move(tuple_set));
+    rc = right_node->init(std::move(right));
     if (rc != RC::SUCCESS) {
       delete right_node;
       return rc;
     }
     right_ = right_node;
-  } else {
-    right_ = create_cond_desc_node(cond.right, product);
   }
+
   if (left_->type() == UNDEFINED || right_->type() == UNDEFINED) {
     return RC::SCHEMA_FIELD_MISSING;
   }

@@ -620,16 +620,37 @@ condition_list:
 
 condition:
 	non_subquery comOp non_subquery {
+		/* 非子查询 compareOp 非子查询 */
 		CompOp op = static_cast<CompOp>($2);
 		$$ = (Condition *)malloc(sizeof(Condition));
 		non_subquery_cond_init($$, $1, $3, op);
 	}
 	| non_subquery comOp subquery {
+		/* 非子查询 compareOp 子查询 */
 		CompOp op = static_cast<CompOp>($2);
 		$$ = (Condition *)malloc(sizeof(Condition));
 		com_subquery_init($$, $1, $3, op);
 	}
+	| subquery comOp non_subquery {
+		/* 子查询 compareOp 非子查询 */
+		CompOp op = static_cast<CompOp>($2);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		com_subquery_init($$, $3, $1, get_neg_comp_op(op));
+	}
+	| subquery comOp subquery {
+		/* 子查询 compareOp 子查询 */
+		CompOp op = static_cast<CompOp>($2);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		com_subquery_init($$, $3, $1, op);
+	}
 	| non_subquery membershipOp subquery {
+		/* 非子查询 IN/NOT IN 子查询 */
+		CompOp op = static_cast<CompOp>($2);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		membership_subquery_init($$, $1, $3, op);
+	}
+	| subquery membershipOp subquery {
+		/* 子查询 IN/NOT IN 子查询 */
 		CompOp op = static_cast<CompOp>($2);
 		$$ = (Condition *)malloc(sizeof(Condition));
 		membership_subquery_init($$, $1, $3, op);
