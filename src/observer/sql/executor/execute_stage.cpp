@@ -232,7 +232,7 @@ static bool match_field(Table *table, const char *field_name) {
 }
 
 static bool check_column_attr(RelationTable &outer, RelationTable &cur,
-                              RelAttr *attr, TableRef *ref, bool multi) {
+                              RelAttr *attr, TableRef *&ref, bool multi) {
   Table *table = cur.begin()->second;
   if (attr->relation_name == nullptr) {
     if (multi) {
