@@ -122,6 +122,8 @@ void ConDescAttr::get_value_from_data(char *data, void *&value) {
     value = (char *)malloc(sizeof(length_));
     memcpy(value, data, length_);
     break;
+  case ATTR_NULL:
+    break;
   default:
     LOG_PANIC("Unkown attr type: %d", type());
     break;
@@ -134,6 +136,8 @@ void *ConDescAttr::execute(const Record &rec) {
   set_value(value);
   if (Table::record_data_is_null(rec, column_)) {
     set_type(ATTR_NULL);
+  } else {
+    set_type(get_init_type());
   }
   return value;
 }
@@ -292,17 +296,23 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
 }
 
 bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
-  if (left_->is_const_null() && right_->is_const_null()) {
+  LOG_INFO("%d %d", left_->is_null(), right_->is_null());
+
+  char *lvalue = (char *)left_->execute(rec);
+  char *rvalue = (char *)right_->execute(rec);
+
+  LOG_INFO("%d %d", left_->is_null(), right_->is_null());
+  if (left_->is_null() && right_->is_null()) {
     // null is/is not null
     return comp_op_ == OP_IS;
   }
 
-  if (left_->is_const_null() || right_->is_const_null()) {
+  if (left_->is_null() || right_->is_null()) {
     if (comp_op_ != OP_IS && comp_op_ != OP_IS_NOT) {
       // return false unless is/is not.
       return false;
     }
-    if (left_->is_const_null()) {
+    if (left_->is_null()) {
       // null is/is not attr.
       return false;
     }
@@ -310,13 +320,14 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
     return comp_op_ == OP_IS ? left_->is_null() : !left_->is_null();
   }
 
-  char *lvalue = (char *)left_->execute(rec);
-  char *rvalue = (char *)right_->execute(rec);
-
   std::shared_ptr<TupleValue> left_value =
       get_tuple_value(left_->type(), lvalue);
   std::shared_ptr<TupleValue> right_value =
       get_tuple_value(right_->type(), rvalue);
+
+  if (left_->type() == ATTR_NULL && right_->type() == ATTR_NULL) {
+    return comp_op_ == OP_IS;
+  }
 
   if (!left_value->comparable(*right_value)) {
     LOG_ERROR("can not compare");
@@ -359,7 +370,7 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
     return false;
   }
 
-  if (left_->is_null() || left_->is_const_null()) {
+  if (left_->is_null()) {
     // null arithop something.
     return false;
   }

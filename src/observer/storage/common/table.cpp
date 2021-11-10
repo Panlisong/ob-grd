@@ -343,10 +343,14 @@ RC Table::make_record(int value_num, Tuples *tuple, char *&record_out) {
       // insert text.
       continue;
     }
-    if (field->nullable() == false && value->type == ATTR_NULL) {
-      LOG_ERROR("Invalid value type.field name=%s, not null but given=null",
-                field->name());
-      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    if (value->type == ATTR_NULL) {
+      if (field->nullable() == false) {
+        LOG_ERROR("Invalid value type.field name=%s, not null but given=null",
+                  field->name());
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      } else {
+        continue;
+      }
     }
     if (field->type() != value->type) {
       LOG_ERROR("Invalid value type. field name=%s, type=%d, nullable=%d but "

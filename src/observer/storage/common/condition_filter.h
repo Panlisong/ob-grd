@@ -29,10 +29,12 @@ public:
   virtual ~ConDescNode() = 0;
   virtual void *execute(const Record &rec) = 0;
 
+  void set_init_type(AttrType type) { init_type_ = type; }
+  AttrType get_init_type() { return init_type_; }
+
   void set_type(AttrType type) { type_ = type; }
   const AttrType type() const { return type_; }
   bool is_null() { return type_ == ATTR_NULL; }
-  virtual bool is_const_null() = 0;
 
   void set_value(void *value) {
     if (value_ != nullptr) {
@@ -45,6 +47,7 @@ public:
 
 private:
   AttrType type_;
+  AttrType init_type_;
   void *value_ = nullptr;
 };
 
@@ -53,7 +56,6 @@ public:
   ConDescInternal(ArithOp op, ConDescNode *left, ConDescNode *right);
   virtual ~ConDescInternal();
   void *execute(const Record &rec) override;
-  bool is_const_null() override { return false; }
 
   void *compute(void *lv, void *rv);
 
@@ -67,11 +69,11 @@ class ConDescAttr : public ConDescNode {
 public:
   ConDescAttr(AttrType type, int length, int offset, int column)
       : length_(length), offset_(offset), column_(column) {
+		set_init_type(type);
     set_type(type);
   }
   virtual ~ConDescAttr();
   void *execute(const Record &rec) override;
-  bool is_const_null() override { return false; }
 
   const int length() const { return length_; }
   const int offset() const { return offset_; }
@@ -87,12 +89,12 @@ private:
 class ConDescValue : public ConDescNode {
 public:
   ConDescValue(AttrType type, void *value) {
+		set_init_type(type);
     set_type(type);
     set_value(value);
   }
   virtual ~ConDescValue();
   void *execute(const Record &rec) override;
-  bool is_const_null() override { return type() == ATTR_NULL; }
 };
 
 class ConDescSubquery : public ConDescNode {
@@ -100,7 +102,6 @@ public:
   ConDescSubquery() = default;
   virtual ~ConDescSubquery();
   void *execute(const Record &rec) override;
-  bool is_const_null() override { return false; }
 
   RC init(TupleSet &&subquery);
 

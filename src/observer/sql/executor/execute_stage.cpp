@@ -842,6 +842,7 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
   session_event->set_response(ss.str());
   return rc;
 }
+
 /////////////////////////////////////////////////////////////////////////////////
 static RC add_join_table(TableRef *ref, RelationTable relations,
                          const TupleSchema &product,
