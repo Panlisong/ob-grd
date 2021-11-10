@@ -379,7 +379,6 @@ RC ProjectExeNode::execute_aggregate(TupleSet &tuple_set) {
 
 RC ProjectExeNode::execute(TupleSet &tuple_set) {
   tuple_set.clear();
-  tuple_set.set_schema(out_schema_);
 
   for (auto &t : in_.tuples()) {
     Tuple tuple;
@@ -396,5 +395,6 @@ RC ProjectExeNode::execute(TupleSet &tuple_set) {
     tuple_set.add(std::move(tuple));
   }
 
+  tuple_set.set_schema(out_schema_);
   return RC::SUCCESS;
 }
