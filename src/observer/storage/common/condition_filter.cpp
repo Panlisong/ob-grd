@@ -251,7 +251,10 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
   if (expr->has_subexpr == 0) {
     if (expr->is_attr) {
       auto field = table_meta.field(expr->attr->attribute_name);
-      int offset = field->offset();
+      if(field == nullptr)
+        return nullptr;
+        //新增了没有找到attribute的情况
+      int offset = field->offset();                         /////////////////////
       // TODO: const pointer.
       TableMeta tmp = table_meta;
       return new ConDescAttr(field->type(), field->len(), offset,
@@ -268,7 +271,7 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
 RC DefaultConditionFilter::init(Table &table, const Condition &condition,
                                 TupleSet &&subquery) {
   const TableMeta &table_meta = table.table_meta();
-  ConDescNode *left = create_cond_desc_node(condition.left, table_meta);
+  ConDescNode *left = create_cond_desc_node(condition.left, table_meta);      ///////////////////////////////////////
   ConDescNode *right = nullptr;
   if (condition.is_subquery == 1) {
     ConDescSubquery *cond_node = new ConDescSubquery();
@@ -277,6 +280,9 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   } else {
     right = create_cond_desc_node(condition.right, table_meta);
   }
+  if(left == nullptr || right == nullptr)
+    return RC::SCHEMA_FIELD_NOT_EXIST;
+    //这里做了初步的处理，可以进一步完善RC的分类
 
   AttrType type_left = left->type();
   AttrType type_right = right->type();

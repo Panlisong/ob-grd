@@ -81,7 +81,7 @@ const char *FieldMeta::name() const { return name_.c_str(); }
 
 AttrType FieldMeta::type() const { return attr_type_; }
 
-int FieldMeta::offset() const { return attr_offset_; }
+int FieldMeta::offset() const { return attr_offset_; }    ////////////////////////
 
 int FieldMeta::len() const { return attr_len_; }
 

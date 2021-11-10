@@ -766,6 +766,8 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   // 1. 生成ConditionFilter
   CompositeConditionFilter filter = CompositeConditionFilter();
   rc = filter.init(trx, *this, conditions, condition_num);
+  if(rc != RC::SUCCESS)
+    return rc;
 
   // 2. 创建Updater（获取Attr在Record中的实际偏移和大小）
   // (1) 检查更新字段是否存在
