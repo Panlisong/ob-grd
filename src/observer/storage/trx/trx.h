@@ -56,26 +56,32 @@ private:
 class UpdateTrxEvent : public TrxEvent {
 public:
   UpdateTrxEvent(Table *table, Record *old_record, const Value *new_value,
-                 int offset, int len, bool is_text, const FieldMeta &field_meta)
-      : table_(table), old_record_(old_record), offset_(offset), len_(len),
-        is_text_(is_text), field_meta_(field_meta) {
+                 int offset, int field_len, bool is_text,
+                 const FieldMeta &field_meta)
+      : table_(table), old_record_(old_record), offset_(offset),
+        field_len_(field_len), is_text_(is_text), field_meta_(field_meta) {
     int column = table_->find_column_by_offset(offset);
     int null_field_offset = table->null_field_offset();
     int32_t *old_null_field = (int32_t *)(old_record + null_field_offset);
     old_null_ = ((*old_null_field) & (1 << column)) != 0;
 
     if (!old_null_) {
-      old_value_ = new char[len_];
-      memcpy(old_value_, old_record->data + offset_, len_);
+      old_value_ = new char[field_len_];
+      memcpy(old_value_, old_record->data + offset_, field_len_);
     }
 
     if (new_value->data == nullptr) {
       new_null_ = true;
     } else {
       new_null_ = false;
-      new_value_ = new char[len_];
-      char *new_record = (char *)(new_value->data);
-      memcpy(new_value_, new_record, len_);
+      if (is_text) {
+        int text_len = strlen((char *)new_value->data);
+        new_value_ = new char[text_len];
+        memcpy(new_value_, (char *)new_value->data, text_len);
+      } else {
+        new_value_ = new char[field_len_];
+        memcpy(new_value_, (char *)new_value->data, field_len_);
+      }
     }
   }
   virtual ~UpdateTrxEvent();
@@ -83,11 +89,11 @@ public:
   const char *get_table_name() { return table_->name(); }
   RC commit() {
     return table_->commit_update(old_record_, new_null_, new_value_, offset_,
-                                 len_, is_text_);
+                                 field_len_, is_text_);
   }
   RC rollback() {
     return table_->rollback_update(old_record_, old_null_, old_value_, offset_,
-                                   len_);
+                                   field_len_);
   }
 
 private:
@@ -98,7 +104,7 @@ private:
   bool old_null_;
   bool new_null_;
   int offset_;
-  int len_;
+  int field_len_;
   bool is_text_;
   FieldMeta field_meta_;
 };
