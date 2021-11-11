@@ -54,8 +54,8 @@ protected:
 
   RC resolve_select_clause(Selects &selects, RelationTable &outer,
                            RelationTable &cur, bool multi);
-  RC resolve_join_table(TableRef *ref, RelationTable &outer,
-                        RelationTable &cur);
+  RC resolve_join_table(TableRef *ref, RelationTable &outer, RelationTable &cur,
+                        bool multi);
   RC resolve_condtions(RelationTable &outer, RelationTable &cur,
                        std::vector<TableRef *> &refs,
                        const ConditionList *conds, bool multi);

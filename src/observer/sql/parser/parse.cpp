@@ -49,9 +49,8 @@ CompOp get_neg_comp_op(CompOp op) {
     return LESS_THAN;
   case LESS_THAN:
     return GREAT_THAN;
-  case EQUAL_TO:
-    return EQUAL_TO;
   default:
+    /* '==' / '<>' / 'in' / 'not in' / 'is' / 'is not' */
     return op;
   }
 }
