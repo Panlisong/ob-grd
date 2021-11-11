@@ -81,7 +81,8 @@ void *ConDescInternal::compute(void *lv, void *rv) {
     LOG_PANIC("Unkown arithop type: %d", op_);
     break;
   }
-  if (left_->type() == INTS && right_->type() == INTS && op_ != DIV) {
+
+  if (left_->type() == INTS && right_->type() == INTS ) {
     int *r = (int *)malloc(sizeof(int));
     *r = (int)res;
     return r;
@@ -371,10 +372,10 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
   switch (comp_op_) {
   case EQUAL_TO:
     return 0 == cmp_result;
-  case LESS_EQUAL:
-    return cmp_result <= 0;
   case NOT_EQUAL:
     return cmp_result != 0;
+  case LESS_EQUAL:
+    return cmp_result <= 0;
   case LESS_THAN:
     return cmp_result < 0;
   case GREAT_EQUAL:
