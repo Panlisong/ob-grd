@@ -285,7 +285,7 @@ RC ProjectExeNode::execute(TupleSet &tuple_set) {
     tuple_set.add(std::move(tuple));
   }
 
-  if (has_aggregate_) {
+  if (has_aggregate_ && tuple_set.size() > 0) {
     Tuple tuple;
     tuple.append(tuple_set.get(tuple_set.size() - 1));
     tuple_set.clear();
