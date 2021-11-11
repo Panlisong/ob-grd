@@ -53,9 +53,10 @@ private:
 
 class ConDescInternal : public ConDescNode {
 public:
+  ConDescInternal() = default;
   ConDescInternal(ArithOp op, ConDescNode *left, ConDescNode *right);
   virtual ~ConDescInternal();
-  void *execute(const Record &rec) override;
+  virtual void *execute(const Record &rec) override;
 
   void *compute(void *lv, void *rv);
 
@@ -63,6 +64,19 @@ private:
   ArithOp op_;
   ConDescNode *left_;
   ConDescNode *right_;
+};
+
+class ConDescUnary : public ConDescInternal {
+public:
+  ConDescUnary(ArithOp op, ConDescNode *expr);
+  virtual ~ConDescUnary();
+  void *execute(const Record &rec) override;
+
+  void *compute(void *v);
+
+private:
+  ArithOp op_;
+  ConDescNode *expr_;
 };
 
 class ConDescAttr : public ConDescNode {

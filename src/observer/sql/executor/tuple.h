@@ -238,6 +238,7 @@ private:
 
 class TupleConDescInternal : public TupleConDescNode {
 public:
+  TupleConDescInternal() = default;
   TupleConDescInternal(ArithOp op, TupleConDescNode *left,
                        TupleConDescNode *right);
   virtual ~TupleConDescInternal();
@@ -247,6 +248,17 @@ private:
   ArithOp op_;
   TupleConDescNode *left_;
   TupleConDescNode *right_;
+};
+
+class TupleConDescUnary : public TupleConDescInternal {
+public:
+  TupleConDescUnary(ArithOp op, TupleConDescNode *expr);
+  virtual ~TupleConDescUnary();
+  std::shared_ptr<TupleValue> execute(const Tuple &tuple) override;
+
+private:
+  ArithOp op_;
+  TupleConDescNode *expr_;
 };
 
 class TupleConDescAttr : public TupleConDescNode {

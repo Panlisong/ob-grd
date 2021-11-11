@@ -76,10 +76,11 @@ typedef enum _CompOp {
 } CompOp;
 
 typedef enum _ArithOp {
-  ADD, //"+"      0
-  SUB, //"-"      1
-  MUL, //"*"      2
-  DIV, //"*"      3
+  ADD, //"+"         0
+  SUB, //"-"         1
+  MUL, //"*"         2
+  DIV, //"/"         3
+  NEG, // UNARYMINUS 4
   NO_ARITH_OP,
 } ArithOp;
 
@@ -161,6 +162,7 @@ struct _TableRef {
  */
 struct _SelectExpr {
   int has_subexpr;
+  int has_brace;
   ArithOp arithOp;
   SelectExpr *left;
   SelectExpr *right;

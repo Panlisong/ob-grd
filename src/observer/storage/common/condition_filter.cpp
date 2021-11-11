@@ -81,7 +81,7 @@ void *ConDescInternal::compute(void *lv, void *rv) {
     res = lvalue / rvalue;
     break;
   default:
-    LOG_PANIC("Unkown arithop type: %d", op_);
+    LOG_INFO("Unkown arithop type: %d", op_);
     break;
   }
 
@@ -107,6 +107,46 @@ ConDescInternal::~ConDescInternal() {
   delete left_;
   delete right_;
 }
+
+ConDescUnary::ConDescUnary(ArithOp op, ConDescNode *expr)
+    : op_(op), expr_(expr) {
+  set_type(expr->type());
+}
+
+void *ConDescUnary::compute(void *v) {
+  float value;
+  if (expr_->type() == INTS) {
+    value = float(*(int *)v);
+  } else {
+    value = *(float *)v;
+  }
+  float res = 0.0;
+  switch (op_) {
+  case NEG:
+    res = -value;
+    break;
+  default:
+    LOG_PANIC("Unkown unary arithop type: %d", op_);
+    break;
+  }
+  if (expr_->type() == INTS) {
+    int *r = (int *)malloc(sizeof(int));
+    *r = (int)res;
+    return r;
+  }
+  float *r = (float *)malloc(sizeof(float));
+  *r = res;
+  return r;
+}
+
+void *ConDescUnary::execute(const Record &rec) {
+  void *operand = expr_->execute(rec);
+  void *res = compute(operand);
+  set_value(res);
+  return res;
+}
+
+ConDescUnary::~ConDescUnary() { delete expr_; }
 
 void ConDescAttr::get_value_from_data(char *data, void *&value) {
   switch (type()) {
@@ -269,8 +309,9 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
   if (expr->has_subexpr == 0) {
     if (expr->is_attr) {
       auto field = table_meta.field(expr->attr->attribute_name);
-      if (field == nullptr)
+      if (field == nullptr) {
         return nullptr;
+      }
       //新增了没有找到attribute的情况
       int offset = field->offset(); /////////////////////
       // TODO: const pointer.
@@ -281,8 +322,11 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
       return new ConDescValue(expr->value->type, expr->value->data);
     }
   }
-  ConDescNode *left = create_cond_desc_node(expr->left, table_meta);
   ConDescNode *right = create_cond_desc_node(expr->right, table_meta);
+  if (expr->left == nullptr) {
+    return new ConDescUnary(expr->op, right);
+  }
+  ConDescNode *left = create_cond_desc_node(expr->left, table_meta);
   return new ConDescInternal(expr->op, left, right);
 }
 
