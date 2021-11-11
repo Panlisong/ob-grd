@@ -289,10 +289,6 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   if (condition.right != nullptr) {
     right = create_cond_desc_node(condition.right, table_meta);
   }
-  if (left == nullptr || right == nullptr) {
-    return RC::SCHEMA_FIELD_NOT_EXIST;
-    //这里做了初步的处理，可以进一步完善RC的分类
-  }
   if (condition.left_subquery != nullptr) {
     ConDescSubquery *left_node = new ConDescSubquery();
     rc = left_node->init(std::move(left_subquey));
@@ -310,6 +306,11 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
       return rc;
     }
     right = right_node;
+  }
+
+  if (left == nullptr || right == nullptr) {
+    return RC::SCHEMA_FIELD_NOT_EXIST;
+    //这里做了初步的处理，可以进一步完善RC的分类
   }
 
   AttrType type_left = left->type();
