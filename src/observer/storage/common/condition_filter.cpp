@@ -40,7 +40,6 @@ ConDescInternal::ConDescInternal(ArithOp op, ConDescNode *left,
   auto left_type = left->type();
   auto right_type = right->type();
   if (!is_computable(left_type, right_type)) {
-    // TODO: 不可计算类型如何处理
     set_type(ATTR_NULL);
     return;
   }
@@ -66,6 +65,12 @@ void *ConDescInternal::compute(void *lv, void *rv) {
   } else {
     rvalue = *(float *)rv;
   }
+
+  if (op_ == DIV && -1e-6 < rvalue && rvalue < 1e-6) {
+    set_type(ATTR_NULL);
+    return nullptr;
+  }
+
   float res = 0.0;
   switch (op_) {
   case ADD:
@@ -382,6 +387,7 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
   char *lvalue = (char *)left_->execute(rec);
   char *rvalue = (char *)right_->execute(rec);
 
+  LOG_INFO("%d %d", left_->type(), right_->type());
   if (left_->is_null() && right_->is_null()) {
     // null is/is not null
     return comp_op_ == OP_IS;
