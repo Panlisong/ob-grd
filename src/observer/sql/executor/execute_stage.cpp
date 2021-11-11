@@ -829,7 +829,6 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
 }
 
 RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
-
   RC rc = RC::SUCCESS;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
