@@ -14,6 +14,12 @@ See the Mulan PSL v2 for more details. */
 void IntValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
   float lvalue = float(value_);
   float rvalue;
+
+  if (rhs->type() == ATTR_NULL) {
+    res = new NullValue();
+    return;
+  }
+
   if (rhs->type() == FLOATS) {
     rhs->get_value(&rvalue);
   } else {
@@ -21,7 +27,7 @@ void IntValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
     rhs->get_value(&int_rvalue);
     rvalue = float(int_rvalue);
   }
-  if (op == DIV && (1e-6 < rvalue && rvalue < 1e-6)) {
+  if (op == DIV && (-1e-6 < rvalue && rvalue < 1e-6)) {
     res = new NullValue();
     return;
   }
@@ -45,7 +51,7 @@ void IntValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
     break;
   }
 
-  if (rhs->type() == INTS) {
+  if (rhs->type() == INTS && op != DIV) {
     res = new IntValue(int(result));
   } else {
     res = new FloatValue(result);
@@ -55,6 +61,12 @@ void IntValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
 void FloatValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
   float lvalue = value_;
   float rvalue;
+
+  if (rhs->type() == ATTR_NULL) {
+    res = new NullValue();
+    return;
+  }
+
   if (rhs->type() == FLOATS) {
     rhs->get_value(&rvalue);
   } else {
@@ -62,7 +74,7 @@ void FloatValue::compute(TupleValue *rhs, TupleValue *&res, ArithOp op) {
     rhs->get_value(&int_rvalue);
     rvalue = float(int_rvalue);
   }
-  if (op == DIV && (1e-6 < rvalue && rvalue < 1e-6)) {
+  if (op == DIV && (-1e-6 < rvalue && rvalue < 1e-6)) {
     res = new NullValue();
     return;
   }
