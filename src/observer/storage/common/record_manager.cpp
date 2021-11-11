@@ -553,6 +553,12 @@ RC RecordFileScanner::get_next_record(Record *rec) {
         current_record.rid.slot_num = -1;
       }
     }
+
+    if (current_record.rid.page_num == page_count) {
+      ret = RC::RECORD_EOF;
+      break;
+    }
+
     if (ret == RC::BUFFERPOOL_INVALID_PAGE_NUM) {
       continue;
     }

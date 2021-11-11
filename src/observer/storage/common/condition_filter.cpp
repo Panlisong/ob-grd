@@ -254,12 +254,6 @@ bool ConDescSubquery::contains(std::shared_ptr<TupleValue> tuple_value) {
   return false;
 }
 
-int ConDescSubquery::compare(char *lvalue, AttrType type) {
-  std::shared_ptr<TupleValue> left_value = get_tuple_value(type, lvalue);
-
-  return compare(left_value);
-}
-
 int ConDescSubquery::compare(std::shared_ptr<TupleValue> left_value) {
   TupleValue *right_value = get_value_in(0).get();
   return left_value->compare(*right_value);
@@ -445,10 +439,10 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
 }
 
 bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
-  ConDescSubquery *right_cond_desc_subquery =
-      dynamic_cast<ConDescSubquery *>(right_);
   ConDescSubquery *left_cond_desc_subquery =
       dynamic_cast<ConDescSubquery *>(left_);
+  ConDescSubquery *right_cond_desc_subquery =
+      dynamic_cast<ConDescSubquery *>(right_);
 
   if (left_cond_desc_subquery != nullptr &&
       right_cond_desc_subquery != nullptr) {
@@ -521,19 +515,29 @@ bool DefaultConditionFilter::one_subquery_filter(const Record &rec) const {
     return false;
   }
 
+  // right_value is null.
+  std::shared_ptr<TupleValue> left_value =
+      get_tuple_value(left_->type(), lvalue);
+  std::shared_ptr<TupleValue> right_value =
+      right_cond_desc_subquery->get_value_in(0);
+  if (left_value->comparable(*right_value) == false) {
+    return false;
+  }
+  LOG_INFO("%d", right_value->type());
+
   switch (comp_op_) {
   case EQUAL_TO:
-    return right_cond_desc_subquery->compare(lvalue, left_->type()) == 0;
+    return right_cond_desc_subquery->compare(left_value) == 0;
   case LESS_EQUAL:
-    return right_cond_desc_subquery->compare(lvalue, left_->type()) <= 0;
+    return right_cond_desc_subquery->compare(left_value) <= 0;
   case NOT_EQUAL:
-    return right_cond_desc_subquery->compare(lvalue, left_->type()) != 0;
+    return right_cond_desc_subquery->compare(left_value) != 0;
   case LESS_THAN:
-    return right_cond_desc_subquery->compare(lvalue, left_->type()) < 0;
+    return right_cond_desc_subquery->compare(left_value) < 0;
   case GREAT_EQUAL:
-    return right_cond_desc_subquery->compare(lvalue, left_->type()) >= 0;
+    return right_cond_desc_subquery->compare(left_value) >= 0;
   case GREAT_THAN:
-    return right_cond_desc_subquery->compare(lvalue, left_->type()) > 0;
+    return right_cond_desc_subquery->compare(left_value) > 0;
   default:
     LOG_PANIC("Unkown operator type: %d", comp_op_);
     break;

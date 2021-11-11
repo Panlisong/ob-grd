@@ -124,7 +124,6 @@ public:
 
   int subquery_size() { return values_.size(); }
 
-  int compare(char *lvalue, AttrType type);
   int compare(std::shared_ptr<TupleValue> tuple_value);
 
   std::shared_ptr<TupleValue> get_value_in(int index) { return values_[index]; }

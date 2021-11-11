@@ -766,7 +766,7 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   // 1. 生成ConditionFilter
   CompositeConditionFilter filter = CompositeConditionFilter();
   rc = filter.init(trx, *this, conditions, condition_num);
-  if(rc != RC::SUCCESS)
+  if (rc != RC::SUCCESS)
     return rc;
 
   // 2. 创建Updater（获取Attr在Record中的实际偏移和大小）
@@ -778,7 +778,9 @@ RC Table::update_records(Trx *trx, const char *attribute_name,
   }
   // (2) 检查类型是否匹配
   // 目前实现类型不同则报错
-  if (field_meta->type() != value->type && field_meta->nullable() == false) {
+  if (field_meta->type() == ATTR_TEXT && value->type == CHARS) {
+  } else if (field_meta->type() != value->type &&
+             field_meta->nullable() == false) {
     LOG_WARN("Type dismatching.");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }

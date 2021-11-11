@@ -312,7 +312,7 @@ TupleConDescValue::TupleConDescValue(Value *value) {
     v = new DateValue(*(time_t *)value->data);
     break;
   case ATTR_NULL:
-    // TODO: null value
+    v = new NullValue();
     break;
   default:
     LOG_PANIC("Unkown attr type: %d", value->type);
@@ -474,31 +474,102 @@ bool TupleFilter::non_subquery_filter(const Tuple &t) {
   return false;
 }
 
-bool TupleFilter::subquery_filter(const Tuple &t) {
-  auto lv = left_->execute(t);
-  auto cond_desc_subquery = dynamic_cast<TupleConDescSubquery *>(right_);
+bool TupleFilter::subquery_filter(const Tuple &tuple) {
+  TupleConDescSubquery *left_cond_desc_subquery =
+      dynamic_cast<TupleConDescSubquery *>(left_);
+  TupleConDescSubquery *right_cond_desc_subquery =
+      dynamic_cast<TupleConDescSubquery *>(right_);
+  if (left_cond_desc_subquery != nullptr &&
+      right_cond_desc_subquery != nullptr) {
+    return two_subquery_filter(tuple);
+  }
+
+  return one_subquery_filter(tuple);
+}
+
+bool TupleFilter::two_subquery_filter(const Tuple &tuple) {
+  TupleConDescSubquery *left_cond_desc_subquery =
+      dynamic_cast<TupleConDescSubquery *>(left_);
+  TupleConDescSubquery *right_cond_desc_subquery =
+      dynamic_cast<TupleConDescSubquery *>(right_);
+
+  if (left_cond_desc_subquery->subquery_size() != 1) {
+    return false;
+  }
+
+  std::shared_ptr<TupleValue> left_tuple_value =
+      left_cond_desc_subquery->get_value_in(0);
+
   if (op_ == MEM_IN || op_ == MEM_NOT_IN) {
-    bool contains = cond_desc_subquery->is_contains(lv);
+    bool contains = right_cond_desc_subquery->is_contains(left_tuple_value);
     return op_ == MEM_IN ? contains : !contains;
   }
 
-  if (cond_desc_subquery->subquery_size() != 1) {
+  if (right_cond_desc_subquery->subquery_size() != 1) {
     return false;
   }
 
   switch (op_) {
   case EQUAL_TO:
-    return cond_desc_subquery->compare(lv) == 0;
+    return right_cond_desc_subquery->compare(left_tuple_value) == 0;
   case LESS_EQUAL:
-    return cond_desc_subquery->compare(lv) <= 0;
+    return right_cond_desc_subquery->compare(left_tuple_value) <= 0;
   case NOT_EQUAL:
-    return cond_desc_subquery->compare(lv) != 0;
+    return right_cond_desc_subquery->compare(left_tuple_value) != 0;
   case LESS_THAN:
-    return cond_desc_subquery->compare(lv) < 0;
+    return right_cond_desc_subquery->compare(left_tuple_value) < 0;
   case GREAT_EQUAL:
-    return cond_desc_subquery->compare(lv) >= 0;
+    return right_cond_desc_subquery->compare(left_tuple_value) >= 0;
   case GREAT_THAN:
-    return cond_desc_subquery->compare(lv) > 0;
+    return right_cond_desc_subquery->compare(left_tuple_value) > 0;
+  default:
+    LOG_PANIC("Unkown operator type: %d", op_);
+    break;
+  }
+  return false;
+
+  return true;
+}
+
+bool TupleFilter::one_subquery_filter(const Tuple &tuple) {
+  auto lv = left_->execute(tuple);
+  TupleConDescSubquery *right_cond_desc_subquery =
+      dynamic_cast<TupleConDescSubquery *>(right_);
+
+  if (op_ == MEM_IN || op_ == MEM_NOT_IN) {
+    bool contains = right_cond_desc_subquery->is_contains(lv);
+    return op_ == MEM_IN ? contains : !contains;
+  }
+
+  if (right_cond_desc_subquery->subquery_size() != 1) {
+    return false;
+  }
+
+  if (left_->type() == ATTR_NULL) {
+    // null arithop something.
+    return false;
+  }
+
+  // right_value is null.
+  std::shared_ptr<TupleValue> right_value =
+      right_cond_desc_subquery->get_value_in(0);
+  if (lv->comparable(*right_value) == false) {
+    return false;
+  }
+
+  switch (op_) {
+  case EQUAL_TO:
+    return right_cond_desc_subquery->compare(lv) == 0;
+  case LESS_EQUAL:
+    return right_cond_desc_subquery->compare(lv) <= 0;
+  case NOT_EQUAL:
+    return right_cond_desc_subquery->compare(lv) != 0;
+  case LESS_THAN:
+    return right_cond_desc_subquery->compare(lv) < 0;
+  case GREAT_EQUAL:
+    return right_cond_desc_subquery->compare(lv) >= 0;
+  case GREAT_THAN:
+    return right_cond_desc_subquery->compare(lv) > 0;
   default:
     LOG_PANIC("Unkown operator type: %d", op_);
     break;
