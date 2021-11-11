@@ -680,13 +680,7 @@ public:
     old_rec->rid = old_record->rid;
     old_rec->data = new char[table_.table_meta_.record_size()];
 
-    Record *new_rec = new Record();
-    new_rec->rid = old_record->rid;
-    new_rec->data = new char[table_.table_meta_.record_size()];
-
     memcpy(old_rec->data, old_record->data, table_.table_meta_.record_size());
-    memcpy(new_rec->data, old_record->data, table_.table_meta_.record_size());
-    memcpy(new_rec->data + field_meta_.offset(), value_, field_meta_.len());
 
     // 检查unique完整性约束
     for (auto index : table_.indexes_) {
@@ -704,7 +698,7 @@ public:
           // 从新record中提取索引字段(key)
           char value[index->attr_length()];
           memset(value, 0, sizeof value);
-          index->get_index_column(new_rec->data, value);
+          index->get_index_column(old_record->data, value);
 
           // 判断插入B+树的key是否存在
           auto scanner = index->create_scanner(EQUAL_TO, value);
@@ -724,7 +718,7 @@ public:
     }
 
     UpdateTrxEvent *event = new UpdateTrxEvent(
-        &table_, new_rec, value_, offset_, len_, is_text_, field_meta_);
+        &table_, old_rec, value_, offset_, len_, is_text_, field_meta_);
     trx_->pending(event);
     updated_count_++;
 
@@ -1106,6 +1100,7 @@ RC Table::update_text(Record *record, char *new_value, int offset) {
       return rc;
     }
   }
+  page_id = *(int *)(record->data + offset + remain_len);
 
   int field_len = 8;
   int new_len = strlen(new_value);
