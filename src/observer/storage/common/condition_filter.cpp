@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include "condition_filter.h"
 #include "common/log/log.h"
 #include "record_manager.h"
+#include "sql/parser/parse_defs.h"
 #include "storage/common/table.h"
 #include <cmath>
 #include <stddef.h>
@@ -84,7 +85,6 @@ void *ConDescInternal::compute(void *lv, void *rv) {
     break;
   }
 
-  LOG_INFO("%f %f %f", lvalue, rvalue, res);
   if (left_->type() == INTS && right_->type() == INTS && op_ != DIV) {
     int *r = (int *)malloc(sizeof(int));
     *r = (int)res;
@@ -152,11 +152,17 @@ void *ConDescValue::execute(const Record &rec) { return value(); }
 
 ConDescValue::~ConDescValue() {}
 
-RC ConDescSubquery::init(TupleSet &&subquery) {
+RC ConDescSubquery::init(TupleSet &&subquery, CompOp op) {
   const auto schema = subquery.get_schema();
   if (schema.fields().size() > 1) {
     // TODO: 子查询列数>1
     return RC::GENERIC_ERROR;
+  }
+  if (op != MEM_IN && op != MEM_NOT_IN) {
+    if (subquery.size() > 1) {
+      LOG_ERROR("subquery return multi rows");
+      return RC::GENERIC_ERROR;
+    }
   }
   set_type(schema.fields().begin()->type());
   for (auto &tuple : subquery.tuples()) {
@@ -295,7 +301,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   }
   if (condition.left_subquery != nullptr) {
     ConDescSubquery *left_node = new ConDescSubquery();
-    rc = left_node->init(std::move(left_subquey));
+    rc = left_node->init(std::move(left_subquey), condition.comp);
     if (rc != RC::SUCCESS) {
       delete left_node;
       return rc;
@@ -304,7 +310,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   }
   if (condition.right_subquery != nullptr) {
     ConDescSubquery *right_node = new ConDescSubquery();
-    rc = right_node->init(std::move(right_subquey));
+    rc = right_node->init(std::move(right_subquey), condition.comp);
     if (rc != RC::SUCCESS) {
       delete right_node;
       return rc;

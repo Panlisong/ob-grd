@@ -103,15 +103,15 @@ public:
   virtual ~ConDescSubquery();
   void *execute(const Record &rec) override;
 
-  RC init(TupleSet &&subquery);
+  RC init(TupleSet &&subquery, CompOp op);
 
   bool contains(AttrType type, const char *value);
-	bool contains(std::shared_ptr<TupleValue> tuple_value);
+  bool contains(std::shared_ptr<TupleValue> tuple_value);
 
   int subquery_size() { return values_.size(); }
 
   int compare(char *lvalue, AttrType type);
-	int compare(std::shared_ptr<TupleValue> tuple_value);
+  int compare(std::shared_ptr<TupleValue> tuple_value);
 
   std::shared_ptr<TupleValue> get_value_in(int index) { return values_[index]; }
 
