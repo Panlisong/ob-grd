@@ -283,6 +283,8 @@ public:
 
   int compare(std::shared_ptr<TupleValue> tuple_value);
 
+  std::shared_ptr<TupleValue> get_value_in(int index) { return values_[index]; }
+
 private:
   std::vector<std::shared_ptr<TupleValue>> values_;
 };
@@ -296,6 +298,8 @@ public:
   bool filter(const Tuple &t);
   bool non_subquery_filter(const Tuple &tuple);
   bool subquery_filter(const Tuple &tuple);
+  bool one_subquery_filter(const Tuple &tuple);
+  bool two_subquery_filter(const Tuple &tuple);
 
 private:
   // 一个TupleFilter处理一个Condition，类似ConditionFilter
