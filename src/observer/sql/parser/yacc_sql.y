@@ -520,15 +520,12 @@ select_arith_expr:
 	| LBRACE select_arith_expr RBRACE {
 		/* "(" expr ")" */
 		$$ = $2;
+		$$->has_brace = 1;
 	}
 	| SUB_OP select_arith_expr %prec UNARYMINUS {
-		/* "-" expr => 0 "-" expr */
-		Value *zero = (Value *)malloc(sizeof(Value));
-		value_init_integer(zero, 0);
-		SelectExpr *zero_expr = (SelectExpr *)malloc(sizeof(SelectExpr));
-		select_value_init(zero_expr, zero);
+		/* "-" expr */
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
-		append_subexpr($$, zero_expr, $2, SUB);
+		append_subexpr($$, nullptr, $2, NEG);
 	}
 	;
 
@@ -717,13 +714,9 @@ non_subquery:
 		$$ = $2;
 	}
 	| SUB_OP non_subquery %prec UNARYMINUS {
-		/* "-" expr => 0 "-" expr */
-		Value *zero = (Value *)malloc(sizeof(Value));
-		value_init_integer(zero, 0);
-		ConditionExpr *zero_expr = (ConditionExpr *)malloc(sizeof(ConditionExpr));
-		cond_value_init(zero_expr, zero);
+		/* "-" expr  */
 		$$ = (ConditionExpr *) malloc(sizeof(ConditionExpr));
-		append_cond_expr($$, zero_expr, $2, SUB);
+		append_cond_expr($$, nullptr, $2, NEG);
 	}
 	;
 

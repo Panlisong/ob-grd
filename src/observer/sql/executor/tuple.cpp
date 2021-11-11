@@ -269,6 +269,20 @@ TupleConDescInternal::~TupleConDescInternal() {
   delete right_;
 }
 
+TupleConDescUnary::TupleConDescUnary(ArithOp op, TupleConDescNode *expr)
+    : op_(op), expr_(expr) {}
+
+std::shared_ptr<TupleValue> TupleConDescUnary::execute(const Tuple &tuple) {
+  auto v = expr_->execute(tuple);
+  TupleValue *res = nullptr;
+  IntValue zero = IntValue(0);
+  zero.compute(v.get(), res, SUB);
+  set_value(res);
+  return value();
+}
+
+TupleConDescUnary::~TupleConDescUnary() { delete expr_; }
+
 TupleConDescAttr::TupleConDescAttr(AttrType type, int index) : index_(index) {
   set_type(type);
 }
@@ -367,8 +381,11 @@ TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
       return new TupleConDescValue(expr->value);
     }
   }
-  TupleConDescNode *left = create_cond_desc_node(expr->left, product);
   TupleConDescNode *right = create_cond_desc_node(expr->right, product);
+  if (expr->left == nullptr) {
+    return new TupleConDescUnary(expr->op, right);
+  }
+  TupleConDescNode *left = create_cond_desc_node(expr->left, product);
   return new TupleConDescInternal(expr->op, left, right);
 }
 

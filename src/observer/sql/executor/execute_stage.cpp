@@ -269,10 +269,12 @@ static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
                               RelationTable &cur, Selects &selects,
                               bool multi) {
   if (expr->has_subexpr) {
-    if (!check_select_expr(expr->left, outer, cur, selects, multi)) {
+    if (expr->left != nullptr &&
+        !check_select_expr(expr->left, outer, cur, selects, multi)) {
       return false;
     }
-    if (!check_select_expr(expr->right, outer, cur, selects, multi)) {
+    if (expr->right != nullptr &&
+        !check_select_expr(expr->right, outer, cur, selects, multi)) {
       return false;
     }
     return true;
@@ -402,10 +404,12 @@ static bool check_condition_expr(const ConditionExpr *expr,
                                  RelationTable &outer, RelationTable &cur,
                                  std::vector<TableRef *> &refs, bool multi) {
   if (expr->has_subexpr == 1) {
-    if (!check_condition_expr(expr->left, outer, cur, refs, multi)) {
+    if (expr->left != nullptr &&
+        !check_condition_expr(expr->left, outer, cur, refs, multi)) {
       return false;
     }
-    if (!check_condition_expr(expr->right, outer, cur, refs, multi)) {
+    if (expr->right != nullptr &&
+        !check_condition_expr(expr->right, outer, cur, refs, multi)) {
       return false;
     }
     return true;
@@ -621,10 +625,20 @@ RC ExecuteStage::relations_init(const Selects &selects) {
 static void get_mini_schema(const SelectExpr *expr, RelationTable &relations,
                             RelAttrTable &mini_schema) {
   if (expr->has_subexpr == 1) {
-    get_mini_schema(expr->left, relations, mini_schema);
-    get_mini_schema(expr->right, relations, mini_schema);
+    if (expr->left != nullptr) {
+      get_mini_schema(expr->left, relations, mini_schema);
+    }
+    if (expr->right != nullptr) {
+      get_mini_schema(expr->right, relations, mini_schema);
+    }
     return;
   }
+
+  if (expr->is_attr == 0) {
+    // Skip value
+    return;
+  }
+
   Table *table = nullptr;
   const RelAttr *attr = expr->attr;
   const char *table_name = attr->relation_name;
@@ -653,8 +667,12 @@ static void get_mini_schema(const SelectExpr *expr, RelationTable &relations,
 static void get_mini_schema(const ConditionExpr *expr, RelationTable &relations,
                             RelAttrTable &rel_attr_table) {
   if (expr->has_subexpr == 1) {
-    get_mini_schema(expr->left, relations, rel_attr_table);
-    get_mini_schema(expr->right, relations, rel_attr_table);
+    if (expr->left != nullptr) {
+      get_mini_schema(expr->left, relations, rel_attr_table);
+    }
+    if (expr->right != nullptr) {
+      get_mini_schema(expr->right, relations, rel_attr_table);
+    }
     return;
   }
   if (expr->is_attr) {
@@ -947,8 +965,12 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
 static void get_one_mini_schema(const ConditionExpr *expr,
                                 RelationTable &relations, TupleSchema &schema) {
   if (expr->has_subexpr == 1) {
-    get_one_mini_schema(expr->left, relations, schema);
-    get_one_mini_schema(expr->right, relations, schema);
+    if (expr->left != nullptr) {
+      get_one_mini_schema(expr->left, relations, schema);
+    }
+    if (expr->right != nullptr) {
+      get_one_mini_schema(expr->right, relations, schema);
+    }
     return;
   }
   if (expr->is_attr) {

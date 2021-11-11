@@ -116,7 +116,7 @@ RC JoinExeNode::execute(TupleSet &tuple_set) {
 /////////////////////////////////////////////////////////////////////////////
 ProjectionDesc::~ProjectionDesc() { delete desc_; }
 
-static std::string op_str_table[NO_ARITH_OP] = {"+", "-", "*", "/"};
+static std::string op_str_table[NO_ARITH_OP] = {"+", "-", "*", "/", "-"};
 static std::string func[FUNC_NUM] = {"", "", "MAX", "MIN", "COUNT", "AVG"};
 
 static void col_to_string(SelectExpr *expr, std::string &res, bool multi) {
@@ -145,11 +145,30 @@ TupleConDescNode *create_project_desc_node(SelectExpr *expr,
                                            const TupleSchema &product,
                                            std::string &alias, bool multi) {
   if (expr->has_subexpr == 1) {
-    TupleConDescNode *left =
-        create_project_desc_node(expr->left, product, alias, multi);
-    alias += op_str_table[expr->arithOp];
-    TupleConDescNode *right =
-        create_project_desc_node(expr->right, product, alias, multi);
+    TupleConDescNode *left = nullptr;
+    TupleConDescNode *right = nullptr;
+
+    // 双元运算
+    if (expr->left != nullptr && expr->right != nullptr) {
+      std::string lalias;
+      std::string ralias;
+      left = create_project_desc_node(expr->left, product, lalias, multi);
+      right = create_project_desc_node(expr->right, product, ralias, multi);
+      alias = lalias + op_str_table[expr->arithOp] + ralias;
+    } else {
+      // 单元运算
+      std::string child;
+      right = create_project_desc_node(expr->right, product, child, multi);
+      alias = op_str_table[expr->arithOp] + child;
+    }
+
+    if (expr->has_brace == 1) {
+      alias = "(" + alias + ")";
+    }
+
+    if (left == nullptr) {
+      return new TupleConDescUnary(expr->arithOp, right);
+    }
     return new TupleConDescInternal(expr->arithOp, left, right);
   }
   // 非表达式
@@ -214,6 +233,7 @@ ProjectionDesc *ProjectionDesc::get_projection_desc(SelectExpr *expr,
                                                     TupleSet &in) {
   ProjectionDesc *projection_desc = nullptr;
   switch (expr->func) {
+  case EXPR:
   case COLUMN:
     projection_desc = new ProjectionDesc;
     break;
