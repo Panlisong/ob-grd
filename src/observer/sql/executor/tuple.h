@@ -275,7 +275,7 @@ public:
   virtual ~TupleConDescSubquery();
   std::shared_ptr<TupleValue> execute(const Tuple &tuple) override;
 
-  RC init(TupleSet &&subquery);
+  RC init(TupleSet &&subquery, CompOp op);
 
   bool is_contains(std::shared_ptr<TupleValue> tuple_value);
 

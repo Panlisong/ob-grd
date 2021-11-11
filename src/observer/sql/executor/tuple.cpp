@@ -314,12 +314,20 @@ std::shared_ptr<TupleValue> TupleConDescValue::execute(const Tuple &tuple) {
 
 TupleConDescValue::~TupleConDescValue() {}
 
-RC TupleConDescSubquery::init(TupleSet &&subquery) {
+RC TupleConDescSubquery::init(TupleSet &&subquery, CompOp op) {
   const auto schema = subquery.get_schema();
   if (schema.fields().size() > 1) {
     // TODO: 子查询列数>1
     return RC::GENERIC_ERROR;
   }
+
+  if (op != MEM_IN && op != MEM_NOT_IN) {
+    if (subquery.size() > 1) {
+      LOG_ERROR("subquery return multi rows");
+      return RC::GENERIC_ERROR;
+    }
+  }
+
   set_type(schema.fields().begin()->type());
   for (auto &tuple : subquery.tuples()) {
     values_.emplace_back(tuple.get_pointer(0));
@@ -383,7 +391,7 @@ RC TupleFilter::init(TupleSchema &product, const Condition &cond,
   }
   if (cond.left_subquery != nullptr) {
     TupleConDescSubquery *left_node = new TupleConDescSubquery();
-    rc = left_node->init(std::move(left));
+    rc = left_node->init(std::move(left), cond.comp);
     if (rc != RC::SUCCESS) {
       delete left_node;
       return rc;
@@ -392,7 +400,7 @@ RC TupleFilter::init(TupleSchema &product, const Condition &cond,
   }
   if (cond.right_subquery != nullptr) {
     TupleConDescSubquery *right_node = new TupleConDescSubquery();
-    rc = right_node->init(std::move(right));
+    rc = right_node->init(std::move(right), cond.comp);
     if (rc != RC::SUCCESS) {
       delete right_node;
       return rc;
