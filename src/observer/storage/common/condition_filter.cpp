@@ -401,13 +401,14 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
 }
 
 bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
-  ConDescSubquery *left_cond_desc_subquery =
-      dynamic_cast<ConDescSubquery *>(left_);
   ConDescSubquery *right_cond_desc_subquery =
       dynamic_cast<ConDescSubquery *>(right_);
+  ConDescSubquery *left_cond_desc_subquery =
+      dynamic_cast<ConDescSubquery *>(left_);
 
   if (left_cond_desc_subquery != nullptr &&
       right_cond_desc_subquery != nullptr) {
+    return two_subquery_filter(rec);
   }
 
   return one_subquery_filter(rec);
