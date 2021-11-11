@@ -44,7 +44,9 @@ ConDescInternal::ConDescInternal(ArithOp op, ConDescNode *left,
     return;
   }
 
-  if (left_type == right_type) {
+  if (op == DIV) {
+    set_type(FLOATS);
+  } else if (left_type == right_type) {
     set_type(left_type);
   } else {
     set_type(FLOATS);
@@ -82,7 +84,8 @@ void *ConDescInternal::compute(void *lv, void *rv) {
     break;
   }
 
-  if (left_->type() == INTS && right_->type() == INTS ) {
+  LOG_INFO("%f %f %f", lvalue, rvalue, res);
+  if (left_->type() == INTS && right_->type() == INTS && op_ != DIV) {
     int *r = (int *)malloc(sizeof(int));
     *r = (int)res;
     return r;
