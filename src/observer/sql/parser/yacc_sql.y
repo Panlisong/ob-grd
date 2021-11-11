@@ -165,6 +165,7 @@ typedef std::deque<RelAttr *> GroupByList;
 %type <group_list> group
 %type <group_list> group_by_list
 %type <val> value
+%type <val> const_value
 %type <ocol> order_col
 %type <ocol_list> order
 %type <ocol_list> order_col_list
@@ -184,6 +185,7 @@ typedef std::deque<RelAttr *> GroupByList;
 // 优先级：按照声明顺序优先级由低到高
 %left ADD_OP SUB_OP
 %left STAR DIV_OP
+%left UNARYMINUS
 
 %%
 
@@ -349,7 +351,7 @@ tuple_list:
 	{	/* do nothing here */	}
 
 tuple: 
-	LBRACE value value_list RBRACE {
+	LBRACE const_value value_list RBRACE {
 		insert_value_append(&CONTEXT->ssql->sstr.insertion, $2);
 		// tuple reduce: tuple_num ++
 		(CONTEXT->ssql->sstr.insertion.tuple_num)++;
@@ -357,10 +359,21 @@ tuple:
 
 value_list:
     /* empty */
-    | COMMA value value_list  {
+    | COMMA const_value value_list  {
 		insert_value_append(&CONTEXT->ssql->sstr.insertion, $2);
 	}
     ;
+const_value:
+	SUB_OP NUMBER {
+		$$ = (Value *)malloc(sizeof(Value));
+		value_init_integer($$, -$2);
+	}
+	| SUB_OP FLOAT {
+		$$ = (Value *)malloc(sizeof(Value));	
+  		value_init_float($$, -$2);
+	}
+	| value { $$ = $1; }
+	;
 value:
     NUMBER{
 		$$ = (Value *)malloc(sizeof(Value));	
@@ -405,7 +418,7 @@ delete:		/*  delete 语句的语法解析树*/
     }
     ;
 update:			/*  update 语句的语法解析树*/
-    UPDATE ID SET ID EQ value where[wh] SEMICOLON {
+    UPDATE ID SET ID EQ const_value where[wh] SEMICOLON {
 		CONTEXT->ssql->flag = SCF_UPDATE;//"update";
 		updates_init(&CONTEXT->ssql->sstr.update, $2, $4, $6, $wh);
 	}
@@ -477,18 +490,22 @@ select_expr:
  */
 select_arith_expr: 
 	select_arith_expr ADD_OP select_arith_expr {
+		/* expr "+" expr */
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
 		append_subexpr($$, $1, $3, ADD);
 	}
 	| select_arith_expr SUB_OP select_arith_expr {
+		/* expr "-" expr */
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
 		append_subexpr($$, $1, $3, SUB);
 	}
 	| select_arith_expr STAR select_arith_expr {
+		/* expr "*" expr */
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
 		append_subexpr($$, $1, $3, MUL);
 	}
 	| select_arith_expr DIV_OP select_arith_expr {
+		/* expr "/" expr */
 		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
 		append_subexpr($$, $1, $3, DIV);
 	}
@@ -501,7 +518,17 @@ select_arith_expr:
 		select_value_init($$, $1);	
 	}
 	| LBRACE select_arith_expr RBRACE {
+		/* "(" expr ")" */
 		$$ = $2;
+	}
+	| SUB_OP select_arith_expr %prec UNARYMINUS {
+		/* "-" expr => 0 "-" expr */
+		Value *zero = (Value *)malloc(sizeof(Value));
+		value_init_integer(zero, 0);
+		SelectExpr *zero_expr = (SelectExpr *)malloc(sizeof(SelectExpr));
+		select_value_init(zero_expr, zero);
+		$$ = (SelectExpr *) malloc(sizeof(SelectExpr));
+		append_subexpr($$, zero_expr, $2, SUB);
 	}
 	;
 
@@ -620,16 +647,37 @@ condition_list:
 
 condition:
 	non_subquery comOp non_subquery {
+		/* 非子查询 compareOp 非子查询 */
 		CompOp op = static_cast<CompOp>($2);
 		$$ = (Condition *)malloc(sizeof(Condition));
 		non_subquery_cond_init($$, $1, $3, op);
 	}
 	| non_subquery comOp subquery {
+		/* 非子查询 compareOp 子查询 */
 		CompOp op = static_cast<CompOp>($2);
 		$$ = (Condition *)malloc(sizeof(Condition));
 		com_subquery_init($$, $1, $3, op);
 	}
+	| subquery comOp non_subquery {
+		/* 子查询 compareOp 非子查询 */
+		CompOp op = static_cast<CompOp>($2);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		com_subquery_init($$, $3, $1, get_neg_comp_op(op));
+	}
+	| subquery comOp subquery {
+		/* 子查询 compareOp 子查询 */
+		CompOp op = static_cast<CompOp>($2);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		com_subquery_init($$, $3, $1, op);
+	}
 	| non_subquery membershipOp subquery {
+		/* 非子查询 IN/NOT IN 子查询 */
+		CompOp op = static_cast<CompOp>($2);
+		$$ = (Condition *)malloc(sizeof(Condition));
+		membership_subquery_init($$, $1, $3, op);
+	}
+	| subquery membershipOp subquery {
+		/* 子查询 IN/NOT IN 子查询 */
 		CompOp op = static_cast<CompOp>($2);
 		$$ = (Condition *)malloc(sizeof(Condition));
 		membership_subquery_init($$, $1, $3, op);
@@ -667,6 +715,15 @@ non_subquery:
 	}
 	| LBRACE non_subquery RBRACE {
 		$$ = $2;
+	}
+	| SUB_OP non_subquery %prec UNARYMINUS {
+		/* "-" expr => 0 "-" expr */
+		Value *zero = (Value *)malloc(sizeof(Value));
+		value_init_integer(zero, 0);
+		ConditionExpr *zero_expr = (ConditionExpr *)malloc(sizeof(ConditionExpr));
+		cond_value_init(zero_expr, zero);
+		$$ = (ConditionExpr *) malloc(sizeof(ConditionExpr));
+		append_cond_expr($$, zero_expr, $2, SUB);
 	}
 	;
 

@@ -192,6 +192,10 @@ std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
 
 bool ConDescSubquery::contains(AttrType type, const char *value) {
   std::shared_ptr<TupleValue> tuple_value = get_tuple_value(type, value);
+  return contains(tuple_value);
+}
+
+bool ConDescSubquery::contains(std::shared_ptr<TupleValue> tuple_value) {
   for (auto value : values_) {
     if (tuple_value->compare(*value) == 0) {
       return true;
@@ -203,7 +207,11 @@ bool ConDescSubquery::contains(AttrType type, const char *value) {
 int ConDescSubquery::compare(char *lvalue, AttrType type) {
   std::shared_ptr<TupleValue> left_value = get_tuple_value(type, lvalue);
 
-  TupleValue *right_value = values_[0].get();
+  return compare(left_value);
+}
+
+int ConDescSubquery::compare(std::shared_ptr<TupleValue> left_value) {
+  TupleValue *right_value = get_value_in(0).get();
   return left_value->compare(*right_value);
 }
 
@@ -251,10 +259,10 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
   if (expr->has_subexpr == 0) {
     if (expr->is_attr) {
       auto field = table_meta.field(expr->attr->attribute_name);
-      if(field == nullptr)
+      if (field == nullptr)
         return nullptr;
-        //新增了没有找到attribute的情况
-      int offset = field->offset();                         /////////////////////
+      //新增了没有找到attribute的情况
+      int offset = field->offset(); /////////////////////
       // TODO: const pointer.
       TableMeta tmp = table_meta;
       return new ConDescAttr(field->type(), field->len(), offset,
@@ -269,20 +277,40 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
 }
 
 RC DefaultConditionFilter::init(Table &table, const Condition &condition,
-                                TupleSet &&subquery) {
+                                TupleSet &&left_subquey,
+                                TupleSet &&right_subquey) {
+  RC rc = RC::SUCCESS;
   const TableMeta &table_meta = table.table_meta();
-  ConDescNode *left = create_cond_desc_node(condition.left, table_meta);      ///////////////////////////////////////
+  ConDescNode *left = nullptr;
   ConDescNode *right = nullptr;
-  if (condition.is_subquery == 1) {
-    ConDescSubquery *cond_node = new ConDescSubquery();
-    cond_node->init(std::move(subquery));
-    right = cond_node;
-  } else {
+  if (condition.left != nullptr) {
+    left = create_cond_desc_node(condition.left, table_meta);
+  }
+  if (condition.right != nullptr) {
     right = create_cond_desc_node(condition.right, table_meta);
   }
-  if(left == nullptr || right == nullptr)
+  if (left == nullptr || right == nullptr) {
     return RC::SCHEMA_FIELD_NOT_EXIST;
     //这里做了初步的处理，可以进一步完善RC的分类
+  }
+  if (condition.left_subquery != nullptr) {
+    ConDescSubquery *left_node = new ConDescSubquery();
+    rc = left_node->init(std::move(left_subquey));
+    if (rc != RC::SUCCESS) {
+      delete left_node;
+      return rc;
+    }
+    left = left_node;
+  }
+  if (condition.right_subquery != nullptr) {
+    ConDescSubquery *right_node = new ConDescSubquery();
+    rc = right_node->init(std::move(right_subquey));
+    if (rc != RC::SUCCESS) {
+      delete right_node;
+      return rc;
+    }
+    right = right_node;
+  }
 
   AttrType type_left = left->type();
   AttrType type_right = right->type();
@@ -362,14 +390,73 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
 }
 
 bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
-  char *lvalue = (char *)left_->execute(rec);
-  ConDescSubquery *cond_desc_subquery = dynamic_cast<ConDescSubquery *>(right_);
+  ConDescSubquery *left_cond_desc_subquery =
+      dynamic_cast<ConDescSubquery *>(left_);
+  ConDescSubquery *right_cond_desc_subquery =
+      dynamic_cast<ConDescSubquery *>(right_);
+
+  if (left_cond_desc_subquery != nullptr &&
+      right_cond_desc_subquery != nullptr) {
+  }
+
+  return one_subquery_filter(rec);
+}
+
+bool DefaultConditionFilter::two_subquery_filter(const Record &rec) const {
+  ConDescSubquery *left_cond_desc_subquery =
+      dynamic_cast<ConDescSubquery *>(left_);
+  ConDescSubquery *right_cond_desc_subquery =
+      dynamic_cast<ConDescSubquery *>(right_);
+
+  if (left_cond_desc_subquery->subquery_size() != 1) {
+    return false;
+  }
+
+  std::shared_ptr<TupleValue> left_tuple_value =
+      left_cond_desc_subquery->get_value_in(0);
+
   if (comp_op_ == MEM_IN || comp_op_ == MEM_NOT_IN) {
-    bool contains = cond_desc_subquery->contains(left_->type(), lvalue);
+    bool contains = right_cond_desc_subquery->contains(left_tuple_value);
     return comp_op_ == MEM_IN ? contains : !contains;
   }
 
-  if (cond_desc_subquery->subquery_size() != 1) {
+  if (right_cond_desc_subquery->subquery_size() != 1) {
+    return false;
+  }
+
+  switch (comp_op_) {
+  case EQUAL_TO:
+    return right_cond_desc_subquery->compare(left_tuple_value) == 0;
+  case LESS_EQUAL:
+    return right_cond_desc_subquery->compare(left_tuple_value) <= 0;
+  case NOT_EQUAL:
+    return right_cond_desc_subquery->compare(left_tuple_value) != 0;
+  case LESS_THAN:
+    return right_cond_desc_subquery->compare(left_tuple_value) < 0;
+  case GREAT_EQUAL:
+    return right_cond_desc_subquery->compare(left_tuple_value) >= 0;
+  case GREAT_THAN:
+    return right_cond_desc_subquery->compare(left_tuple_value) > 0;
+  default:
+    LOG_PANIC("Unkown operator type: %d", comp_op_);
+    break;
+  }
+  return false;
+
+  return true;
+}
+
+bool DefaultConditionFilter::one_subquery_filter(const Record &rec) const {
+  char *lvalue = (char *)left_->execute(rec);
+  ConDescSubquery *right_cond_desc_subquery =
+      dynamic_cast<ConDescSubquery *>(right_);
+
+  if (comp_op_ == MEM_IN || comp_op_ == MEM_NOT_IN) {
+    bool contains = right_cond_desc_subquery->contains(left_->type(), lvalue);
+    return comp_op_ == MEM_IN ? contains : !contains;
+  }
+
+  if (right_cond_desc_subquery->subquery_size() != 1) {
     return false;
   }
 
@@ -380,17 +467,17 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
 
   switch (comp_op_) {
   case EQUAL_TO:
-    return cond_desc_subquery->compare(lvalue, left_->type()) == 0;
+    return right_cond_desc_subquery->compare(lvalue, left_->type()) == 0;
   case LESS_EQUAL:
-    return cond_desc_subquery->compare(lvalue, left_->type()) <= 0;
+    return right_cond_desc_subquery->compare(lvalue, left_->type()) <= 0;
   case NOT_EQUAL:
-    return cond_desc_subquery->compare(lvalue, left_->type()) != 0;
+    return right_cond_desc_subquery->compare(lvalue, left_->type()) != 0;
   case LESS_THAN:
-    return cond_desc_subquery->compare(lvalue, left_->type()) < 0;
+    return right_cond_desc_subquery->compare(lvalue, left_->type()) < 0;
   case GREAT_EQUAL:
-    return cond_desc_subquery->compare(lvalue, left_->type()) >= 0;
+    return right_cond_desc_subquery->compare(lvalue, left_->type()) >= 0;
   case GREAT_THAN:
-    return cond_desc_subquery->compare(lvalue, left_->type()) > 0;
+    return right_cond_desc_subquery->compare(lvalue, left_->type()) > 0;
   default:
     LOG_PANIC("Unkown operator type: %d", comp_op_);
     break;
@@ -444,12 +531,17 @@ RC CompositeConditionFilter::init(Trx *trx, Table &table,
   for (int i = 0; i < condition_num; i++) {
     DefaultConditionFilter *default_condition_filter =
         new DefaultConditionFilter(table);
-    TupleSet subquery;
     const Condition &cond = conditions->at(i);
-    if (cond.is_subquery == 1) {
-      do_select(trx, *cond.subquery, subquery);
+    TupleSet left;
+    if (cond.left_subquery != nullptr) {
+      do_select(trx, *cond.left_subquery, left);
     }
-    rc = default_condition_filter->init(table, cond, std::move(subquery));
+    TupleSet right;
+    if (cond.right_subquery != nullptr) {
+      do_select(trx, *cond.right_subquery, right);
+    }
+    rc = default_condition_filter->init(table, cond, std::move(left),
+                                        std::move(right));
     if (rc != RC::SUCCESS) {
       delete default_condition_filter;
       for (int j = i - 1; j >= 0; j--) {

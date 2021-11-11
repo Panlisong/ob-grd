@@ -127,7 +127,8 @@ struct _ConditionExpr {
 struct _Condition {
   int is_used = 0; // 生成Filter时避免重复选取
   int is_subquery;
-  Selects *subquery;
+  Selects *left_subquery;
+  Selects *right_subquery;
   ConditionExpr *left;
   ConditionExpr *right;
   CompOp comp; // comparison operator
@@ -305,6 +306,7 @@ typedef struct Query {
 //////////////////////////////////////////////////////
 bool is_computable(AttrType left, AttrType right);
 bool is_comparable(AttrType lt, AttrType rt);
+CompOp get_neg_comp_op(CompOp op);
 
 //////////////////////////////////////////////////////
 void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
@@ -341,10 +343,14 @@ void tuple_destory(Tuples *tuple);
 //////////////////////////////////////////////////////
 void non_subquery_cond_init(Condition *cond, ConditionExpr *left,
                             ConditionExpr *right, CompOp op);
+void com_subquery_init(Condition *cond, Selects *left, Selects *right,
+                       CompOp op);
 void com_subquery_init(Condition *cond, ConditionExpr *left, Selects *subquery,
                        CompOp op);
 void membership_subquery_init(Condition *cond, ConditionExpr *left,
                               Selects *subquery, CompOp op);
+void membership_subquery_init(Condition *cond, Selects *left, Selects *right,
+                              CompOp op);
 void condition_destory(Condition *condition);
 
 //////////////////////////////////////////////////////

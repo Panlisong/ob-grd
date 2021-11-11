@@ -142,7 +142,8 @@ typedef std::deque<RelAttr *> GroupByList;
     SSS = 324,                     /* SSS  */
     DATE = 325,                    /* DATE  */
     STAR = 326,                    /* STAR  */
-    STRING_V = 327                 /* STRING_V  */
+    STRING_V = 327,                /* STRING_V  */
+    UNARYMINUS = 328               /* UNARYMINUS  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -172,7 +173,7 @@ union YYSTYPE
   OrderColList *ocol_list;
   GroupByList *group_list;
 
-#line 176 "yacc_sql.tab.hpp"
+#line 177 "yacc_sql.tab.hpp"
 
 };
 typedef union YYSTYPE YYSTYPE;

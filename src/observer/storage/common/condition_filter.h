@@ -69,7 +69,7 @@ class ConDescAttr : public ConDescNode {
 public:
   ConDescAttr(AttrType type, int length, int offset, int column)
       : length_(length), offset_(offset), column_(column) {
-		set_init_type(type);
+    set_init_type(type);
     set_type(type);
   }
   virtual ~ConDescAttr();
@@ -89,7 +89,7 @@ private:
 class ConDescValue : public ConDescNode {
 public:
   ConDescValue(AttrType type, void *value) {
-		set_init_type(type);
+    set_init_type(type);
     set_type(type);
     set_value(value);
   }
@@ -106,10 +106,14 @@ public:
   RC init(TupleSet &&subquery);
 
   bool contains(AttrType type, const char *value);
+	bool contains(std::shared_ptr<TupleValue> tuple_value);
 
   int subquery_size() { return values_.size(); }
 
   int compare(char *lvalue, AttrType type);
+	int compare(std::shared_ptr<TupleValue> tuple_value);
+
+  std::shared_ptr<TupleValue> get_value_in(int index) { return values_[index]; }
 
 private:
   std::vector<std::shared_ptr<TupleValue>> values_;
@@ -133,10 +137,13 @@ public:
   virtual ~DefaultConditionFilter();
 
   RC init(ConDescNode *left, ConDescNode *right, CompOp comp_op);
-  RC init(Table &table, const Condition &condition, TupleSet &&subquery);
+  RC init(Table &table, const Condition &condition, TupleSet &&left,
+          TupleSet &&right);
 
   virtual bool filter(const Record &rec) const;
   bool subquery_filter(const Record &rec) const;
+  bool two_subquery_filter(const Record &rec) const;
+  bool one_subquery_filter(const Record &rec) const;
   bool non_subquery_filter(const Record &rec) const;
 
 public:
