@@ -533,6 +533,13 @@ bool TupleFilter::one_subquery_filter(const Tuple &tuple) {
     return false;
   }
 
+  // right_value is null.
+  std::shared_ptr<TupleValue> right_value =
+      right_cond_desc_subquery->get_value_in(0);
+  if (lv->comparable(*right_value) == false) {
+    return false;
+  }
+
   switch (op_) {
   case EQUAL_TO:
     return right_cond_desc_subquery->compare(lv) == 0;
