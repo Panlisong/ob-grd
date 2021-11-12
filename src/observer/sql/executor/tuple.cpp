@@ -226,7 +226,7 @@ int TupleSet::not_null_size(int column) const {
   return not_null_size;
 }
 
-void TupleSet::update(int index , const Tuple& val){
+void TupleSet::update(int index, const Tuple &val) {
   tuples_[index].update(val);
   return;
 }
@@ -275,8 +275,12 @@ std::shared_ptr<TupleValue> TupleConDescInternal::execute(const Tuple &tuple) {
 }
 
 TupleConDescInternal::~TupleConDescInternal() {
-  delete left_;
-  delete right_;
+  if (left_ != nullptr) {
+    delete left_;
+  }
+  if (right_ != nullptr) {
+    delete right_;
+  }
 }
 
 TupleConDescUnary::TupleConDescUnary(ArithOp op, TupleConDescNode *expr)
@@ -291,7 +295,11 @@ std::shared_ptr<TupleValue> TupleConDescUnary::execute(const Tuple &tuple) {
   return value();
 }
 
-TupleConDescUnary::~TupleConDescUnary() { delete expr_; }
+TupleConDescUnary::~TupleConDescUnary() {
+  if (expr_ != nullptr) {
+    delete expr_;
+  }
+}
 
 TupleConDescAttr::TupleConDescAttr(AttrType type, int index) : index_(index) {
   set_type(type);
