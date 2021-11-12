@@ -155,7 +155,11 @@ void *ConDescUnary::execute(const Record &rec) {
   return res;
 }
 
-ConDescUnary::~ConDescUnary() { delete expr_; }
+ConDescUnary::~ConDescUnary() {
+  if (expr_ != nullptr) {
+    delete expr_;
+  }
+}
 
 void ConDescAttr::get_value_from_data(char *data, void *&value) {
   switch (type()) {
