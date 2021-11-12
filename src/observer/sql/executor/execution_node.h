@@ -204,7 +204,7 @@ public:
   
   void set_order_num(size_t v) {OrderExeNode::order_num = v;}
   void set_orders(OrderColList* l) {OrderExeNode::orders = l;}
-  void sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , int asc);
+  void sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , std::vector<int> ascs);
 
 private:
   size_t order_num;          // Length of orders
