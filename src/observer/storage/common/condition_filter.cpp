@@ -109,8 +109,12 @@ void *ConDescInternal::execute(const Record &rec) {
 }
 
 ConDescInternal::~ConDescInternal() {
-  delete left_;
-  delete right_;
+  if (left_ != nullptr) {
+    delete left_;
+  }
+  if (right_ != nullptr) {
+    delete right_;
+  }
 }
 
 ConDescUnary::ConDescUnary(ArithOp op, ConDescNode *expr)
