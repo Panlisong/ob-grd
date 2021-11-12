@@ -58,6 +58,11 @@ void Tuple::append(const Tuple &other) {
   values_.insert(values_.end(), other.values_.begin(), other.values_.end());
 }
 
+void Tuple::update(const Tuple &val) {
+  values_.clear();
+  append(val);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 std::string TupleField::to_string() const {
@@ -219,6 +224,11 @@ int TupleSet::not_null_size(int column) const {
   }
 
   return not_null_size;
+}
+
+void TupleSet::update(int index , const Tuple& val){
+  tuples_[index].update(val);
+  return;
 }
 
 const Tuple &TupleSet::get(int index) const { return tuples_[index]; }

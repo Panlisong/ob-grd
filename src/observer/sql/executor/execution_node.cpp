@@ -277,71 +277,83 @@ ProjectExeNode::~ProjectExeNode() {
 }
 
 
-void OrderExeNode::sort_tuple(TupleSet &tuple_set , int index , int asc){
+void OrderExeNode::sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , int asc){
   int cur_size = tuple_set.size();
-  std::vector<Tuple>cur_tuples=tuple_set.tuples();
-  AttrType tmp=tuple_set.get_schema().field(index).type();
+  // for(size_t i = 0 ; i < tuple_set.tuples().size() ; ++i){
+  //   tmp_tuple.append(tuple_set.tuples()[i]);
+  //   cur_tuples.add(tmp_tuple);
+  // }
   int compare=0,val1,val2;
   float f1,f2;
   std::string s1,s2;
   time_t t1,t2;
+  Tuple swaptuple;
+  size_t index;
   for(int i = 0 ; i < cur_size - 1 ; ++i){
     for(int j = i + 1 ; j < cur_size ; ++j){
-      switch(tmp){
-        case INTS:
-        {
-          cur_tuples[i].get(index).get_value(&val1);
-          cur_tuples[j].get(index).get_value(&val2);
-          if (val1 - val2 < -1e-6) {
-            compare =-1;
-          } else if (val1- val2 > 1e-6) {
-            compare = 1;
-          } else {
+      compare=index=0;
+      while(compare==0 && index < indexes.size()){
+        AttrType tmp=tuple_set.get_schema().field(index).type();
+        switch(tmp){
+          case INTS:
+          {
+            tuple_set.tuples()[i].get(index).get_value(&val1);
+            tuple_set.tuples()[j].get(index).get_value(&val2);
+            if (val1 - val2 < -1e-6) {
+              compare =-1;
+            } else if (val1- val2 > 1e-6) {
+              compare = 1;
+            } else {
+              compare = 0;
+            }
+            break;
+          }
+          case CHARS:
+          {
+            tuple_set.tuples()[i].get(index).get_value(&s1);
+            tuple_set.tuples()[j].get(index).get_value(&s2);
+            compare = strcmp(s1.c_str(), s2.c_str());
+            break;
+          }
+          case FLOATS:
+          {
+            tuple_set.tuples()[i].get(index).get_value(&f1);
+            tuple_set.tuples()[j].get(index).get_value(&f2);
+            if (f1 - f2 < -1e-6) {
+              compare = -1;
+            } else if (f1- f2 > 1e-6) {
+              compare = 1;
+            } else {
+              compare = 0;
+            }
+            break;
+          }
+          case DATES:
+          {
+            tuple_set.tuples()[i].get(index).get_value(&t1);
+            tuple_set.tuples()[j].get(index).get_value(&t2);
+            long long res = t1 - t2;
+            if(res > 0LL) {
+              compare = 1;
+            } else if (res < 0LL) {
+              compare = -1;
+            }
             compare = 0;
+            break;
           }
-          break;
-        }
-        case CHARS:
-        {
-          cur_tuples[i].get(index).get_value(&s1);
-          cur_tuples[j].get(index).get_value(&s2);
-          compare = strcmp(s1.c_str(), s2.c_str());
-          break;
-        }
-        case FLOATS:
-        {
-          cur_tuples[i].get(index).get_value(&f1);
-          cur_tuples[j].get(index).get_value(&f2);
-          if (f1 - f2 < -1e-6) {
-            compare = -1;
-          } else if (f1- f2 > 1e-6) {
-            compare = 1;
-          } else {
-            compare = 0;
+          default:
+          {
+            LOG_ERROR("Unsupported sort type.\n");
+            return;
           }
-          break;
+        
         }
-        case DATES:
-        {
-          cur_tuples[i].get(index).get_value(&t1);
-          cur_tuples[j].get(index).get_value(&t2);
-          long long res = t1 - t2;
-          if(res > 0LL) {
-            compare = 1;
-          } else if (res < 0LL) {
-            compare = -1;
-          }
-          compare = 0;
-          break;
-        }
-        default:
-        {
-          LOG_ERROR("Unsupported sort type.\n");
-          return;
-        }
+        ++index;
       }
       if((compare == -1 && asc == 0) || (compare == 1 && asc == 1)){
-        std::swap(cur_tuples[i] , cur_tuples[j]);
+        swaptuple.update(tuple_set.tuples()[i]);
+        tuple_set.update(i,tuple_set.tuples()[j]);
+        tuple_set.update(j,swaptuple);
       }
     }
   }
@@ -365,6 +377,7 @@ RC OrderExeNode::execute(TupleSet &tuple_set){
   int index = -1 , flag = 0; //1:升序，0：降序
   TupleSchema cur_schema=tuple_set.schema();
   std::vector<TupleField> cur_field;
+  std::vector<int>compare_indexes;
   for (size_t i = 0; i < order_num ; ++i){
     index = -1;
     cur_col = cur_list->at(i);
@@ -383,11 +396,12 @@ RC OrderExeNode::execute(TupleSet &tuple_set){
                                          cur_col->attr->attribute_name);
     }
     if(index != -1){
-      sort_tuple(tuple_set, index, flag); 
+      compare_indexes.push_back(index);
     } else {
       return RC::SCHEMA_FIELD_NOT_EXIST;
     }
   }
+  sort_tuple(tuple_set, compare_indexes, flag); 
   return rc; 
 }
 
