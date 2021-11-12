@@ -193,6 +193,24 @@ public:
   }
 };
 
+class OrderExeNode : public ExecutionNode {
+public:
+  OrderExeNode(){};
+  ~OrderExeNode(){};
+
+  RC execute(TupleSet &tuple_set) override;
+  size_t get_order_num() {return order_num;}
+  OrderColList* get_orders() {return orders;}
+  
+  void set_order_num(size_t v) {OrderExeNode::order_num = v;}
+  void set_orders(OrderColList* l) {OrderExeNode::orders = l;}
+  void sort_tuple(TupleSet &tuple_set , int index , int asc);
+
+private:
+  size_t order_num;          // Length of orders
+  OrderColList *orders;
+};
+
 class ProjectExeNode : public ExecutionNode {
 public:
   ProjectExeNode() = default;
