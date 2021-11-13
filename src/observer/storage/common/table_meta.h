@@ -54,7 +54,7 @@ public:
   int record_size() const;
 
 public:
-  int find_column_by_offset(int offset);
+  int find_column_by_offset(int offset) const;
 
 public:
   int serialize(std::ostream &os) const override;

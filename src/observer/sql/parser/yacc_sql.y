@@ -12,6 +12,7 @@
 
 typedef struct ParserContext {
   Query *ssql;
+  int query_id;
 } ParserContext;
 
 void yyerror(yyscan_t scanner, const char *str)
@@ -42,7 +43,7 @@ typedef struct _TableRef TableRef;
 typedef struct _Condition Condition;
 typedef struct _ConditionExpr ConditionExpr;
 typedef struct _OrderCol OrderCol;
-typedef std::deque<Condition> ConditionList;
+typedef std::deque<Condition *> ConditionList;
 typedef std::deque<SelectExpr *> SelectExprList;
 typedef std::deque<TableRef *> TableRefList;
 typedef std::deque<OrderCol *> OrderColList;
@@ -436,13 +437,14 @@ select:
 		SelectExprList *expr_list = $exprlist;
 		expr_list->push_front($expr);
 		$$->exprs = expr_list;
-		$$->expr_num = expr_list->size();
+		for (size_t i = 0;i < expr_list->size();i ++) {
+			set_expr_parent(expr_list->at(i), $$);
+		}
 
 		// 2. append table_ref
 		TableRefList *ref_list = $reflist;
 		ref_list->push_front($ref);
 		$$->references = ref_list;
-		$$->ref_num = ref_list->size();
 
 		// 3. append condtion_list(可选项，可能为空)
 		selects_append_conditions($$, $wh);
@@ -453,7 +455,11 @@ select:
 		// 5. append order_list(可选项，可能为空)
 		selects_append_order($$, $od);
 		
-		$$->context = new RelationTable();
+		$$->relations = new RelationTable;
+		$$->context = new SelectContext;
+
+		$$->parent = nullptr;
+		$$->id = CONTEXT->query_id ++;
 	}
 	;
 /*************************** SELECT CLAUSE ****************************/
@@ -616,7 +622,7 @@ join_condition:
 	}
 	| ON condition condition_list {
 		$$ = $3;
-		$$->push_front(*$2);
+		$$->push_front($2);
 	}
 	;
 
@@ -628,7 +634,7 @@ where:
 	}
     | WHERE condition condition_list {
 		$$ = $3;
-		$$->push_front(*$2);
+		$$->push_front($2);
 	}
     ;
 
@@ -640,7 +646,7 @@ condition_list:
 	}
     | AND condition condition_list {
 		$$ = $3;
-		$$->push_front(*$2);
+		$$->push_front($2);
 	}
     ;
 

@@ -14,11 +14,11 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_SQL_PARSER_PARSE_DEFS_H__
 #define __OBSERVER_SQL_PARSER_PARSE_DEFS_H__
 
+#include "symbol_table.h"
 #include <deque>
 #include <stddef.h>
 #include <string>
 #include <time.h>
-#include <unordered_map>
 #include <vector>
 
 class Table;
@@ -38,11 +38,13 @@ typedef struct _TableRef TableRef;
 typedef struct _Condition Condition;
 typedef struct _ConditionExpr ConditionExpr;
 typedef struct _OrderCol OrderCol;
-typedef std::deque<Condition> ConditionList;
+typedef std::deque<Condition *> ConditionList;
+typedef std::deque<ConditionExpr *> CondExprList;
 typedef std::deque<SelectExpr *> SelectExprList;
 typedef std::deque<TableRef *> TableRefList;
 typedef std::deque<OrderCol *> OrderColList;
 typedef std::deque<RelAttr *> GroupByList;
+typedef SymbolTable<std::string, Selects> SelectContext;
 
 // Built-in Function类型
 typedef enum _FuncName {
@@ -114,6 +116,9 @@ struct _ConditionExpr {
   int is_attr;
   Value *value;
   RelAttr *attr;
+  /////////////////////////
+  bool binded = false;
+  Condition *parent;
 };
 
 /**
@@ -133,6 +138,10 @@ struct _Condition {
   ConditionExpr *left;
   ConditionExpr *right;
   CompOp comp; // comparison operator
+  /////////////////////////////////////////
+  SelectExprList *binded_exprs;
+  CondExprList *binded_conds;
+  Selects *parent;
 };
 
 /** TableRef结构体
@@ -171,6 +180,9 @@ struct _SelectExpr {
   Value *value;
   FuncName func;
   RelAttr *attr;
+  ////////////////////////
+  bool binded = false;
+  Selects *parent;
 };
 
 struct _OrderCol {
@@ -180,9 +192,7 @@ struct _OrderCol {
 
 // struct of select
 struct _Selects {
-  size_t expr_num;           // Length of attrs in Expression clause
   SelectExprList *exprs;     // Select expression in Select clause
-  size_t ref_num;            // Length of table references in From clause
   TableRefList *references;  // Table references in From clause
   size_t cond_num;           // Length of conditions in Where clause
   ConditionList *conditions; // conditions in Where clause
@@ -191,7 +201,16 @@ struct _Selects {
   size_t order_num;          // Length of orders
   OrderColList *orders;      // cols in OrderBy List
   ///////////////////////////////////////////////////////////////////////////
-  RelationTable *context;
+  RelationTable *relations;
+  SelectContext *context;
+  Condition *parent;
+  int id;
+
+  bool operator==(const Selects &other) const {
+    printf("%d", id == other.id);
+    return id == other.id;
+  }
+  bool operator!=(const Selects &other) const { return !(id == other.id); }
 };
 
 typedef struct {
@@ -308,7 +327,10 @@ typedef struct Query {
 //////////////////////////////////////////////////////
 bool is_computable(AttrType left, AttrType right);
 bool is_comparable(AttrType lt, AttrType rt);
+int check_date(int year, int month, int day);
 CompOp get_neg_comp_op(CompOp op);
+void set_expr_parent(ConditionExpr *expr, Condition *cond);
+void set_expr_parent(SelectExpr *expr, Selects *select);
 
 //////////////////////////////////////////////////////
 void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
@@ -338,7 +360,6 @@ void value_init_string(Value *value, const char *v);
 void value_init_date(Value *value, time_t v);
 void value_init_null(Value *value);
 
-int check_date(int year, int month, int day);
 void value_destroy(Value *value);
 void tuple_destory(Tuples *tuple);
 

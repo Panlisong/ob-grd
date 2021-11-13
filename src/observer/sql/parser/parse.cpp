@@ -70,6 +70,31 @@ int check_date(int year, int month, int day) {
   return day <= day_max[month];
 }
 
+void set_expr_parent(ConditionExpr *expr, Condition *cond) {
+  if (expr == nullptr) {
+    return;
+  }
+  if (expr->left != nullptr) {
+    set_expr_parent(expr->left, cond);
+  }
+  if (expr->right != nullptr) {
+    set_expr_parent(expr->right, cond);
+  }
+  expr->parent = cond;
+}
+
+void set_expr_parent(SelectExpr *expr, Selects *select) {
+  if (expr == nullptr) {
+    return;
+  }
+  if (expr->left != nullptr) {
+    set_expr_parent(expr->left, select);
+  }
+  if (expr->right != nullptr) {
+    set_expr_parent(expr->right, select);
+  }
+  expr->parent = select;
+}
 /*************************** Initialize ******************************/
 void table_ref_init(TableRef *ref, int is_join, const char *relation_name,
                     TableRef *child, ConditionList *cond_list) {
@@ -116,12 +141,16 @@ void value_init_null(Value *value) {
   value->data = nullptr;
 }
 
-/////////////////////////////////////////////////////////////////////////
+/////////////////////////////// Condition  ////////////////////////////////////
 void non_subquery_cond_init(Condition *cond, ConditionExpr *left,
                             ConditionExpr *right, CompOp op) {
   cond->left = left;
   cond->right = right;
   cond->comp = op;
+  set_expr_parent(left, cond);
+  set_expr_parent(right, cond);
+  cond->binded_conds = new CondExprList;
+  cond->binded_exprs = new SelectExprList;
   ////////////////////////
   cond->is_subquery = 0;
   cond->left_subquery = nullptr;
@@ -133,6 +162,10 @@ void com_subquery_init(Condition *cond, Selects *left, Selects *right,
   cond->left_subquery = left;
   cond->right_subquery = right;
   cond->comp = op;
+  left->parent = cond;
+  right->parent = cond;
+  cond->binded_conds = new CondExprList;
+  cond->binded_exprs = new SelectExprList;
   //////////////////////////
   cond->left = nullptr;
   cond->right = nullptr;
@@ -145,6 +178,10 @@ void com_subquery_init(Condition *cond, ConditionExpr *left, Selects *subquery,
   cond->left = left;
   cond->right_subquery = subquery;
   cond->comp = op;
+  subquery->parent = cond;
+  set_expr_parent(left, cond);
+  cond->binded_conds = new CondExprList;
+  cond->binded_exprs = new SelectExprList;
   //////////////////////////
   cond->right = nullptr;
   cond->left_subquery = nullptr;
@@ -157,6 +194,10 @@ void membership_subquery_init(Condition *cond, ConditionExpr *left,
   cond->left = left;
   cond->right_subquery = subquery;
   cond->comp = op;
+  subquery->parent = cond;
+  set_expr_parent(left, cond);
+  cond->binded_conds = new CondExprList;
+  cond->binded_exprs = new SelectExprList;
   ///////////////////////////
   cond->right = nullptr;
   cond->left_subquery = nullptr;
@@ -168,11 +209,16 @@ void membership_subquery_init(Condition *cond, Selects *left, Selects *right,
   cond->left_subquery = left;
   cond->right_subquery = right;
   cond->comp = op;
+  left->parent = cond;
+  right->parent = cond;
+  cond->binded_conds = new CondExprList;
+  cond->binded_exprs = new SelectExprList;
   ///////////////////////////
   cond->left = nullptr;
   cond->right = nullptr;
 }
 
+/////////////////////////////// ConditionExpr //////////////////////////////////
 void append_cond_expr(ConditionExpr *expr, ConditionExpr *left,
                       ConditionExpr *right, ArithOp op) {
   expr->has_subexpr = 1;
@@ -183,6 +229,8 @@ void append_cond_expr(ConditionExpr *expr, ConditionExpr *left,
   expr->is_attr = 0;
   expr->attr = nullptr;
   expr->value = nullptr;
+  expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void cond_attr_init(ConditionExpr *expr, RelAttr *attr) {
@@ -194,6 +242,8 @@ void cond_attr_init(ConditionExpr *expr, RelAttr *attr) {
   expr->right = nullptr;
   expr->op = NO_ARITH_OP;
   expr->value = nullptr;
+  expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void cond_value_init(ConditionExpr *expr, Value *v) {
@@ -205,9 +255,11 @@ void cond_value_init(ConditionExpr *expr, Value *v) {
   expr->op = NO_ARITH_OP;
   expr->is_attr = 0;
   expr->attr = nullptr;
+  expr->parent = nullptr;
+  expr->binded = false;
 }
 
-///////////////////////////////////////////////////////
+//////////////////////////////// CREATE TABLE ///////////////////////////////
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type,
                     size_t length, int nullable) {
   attr_info->name = strdup(name);
@@ -216,7 +268,7 @@ void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type,
   attr_info->nullable = nullable;
 }
 
-///////////////////////////////////////////////////////
+///////////////////////////////// SelectExpr ////////////////////////////////
 void append_subexpr(SelectExpr *expr, SelectExpr *left, SelectExpr *right,
                     ArithOp op) {
   expr->has_subexpr = 1;
@@ -228,25 +280,30 @@ void append_subexpr(SelectExpr *expr, SelectExpr *left, SelectExpr *right,
   ///////////////////
   expr->is_attr = 0;
   expr->attr = nullptr;
+  expr->parent = nullptr;
+  expr->value = nullptr;
+  expr->binded = false;
 }
 
 void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr) {
   expr->func = func;
   expr->attr = attr;
   expr->is_attr = 1;
-  ///////////////////
+
   expr->has_subexpr = 0;
   expr->has_brace = 0;
   expr->arithOp = NO_ARITH_OP;
   expr->value = nullptr;
   expr->left = nullptr;
   expr->right = nullptr;
+  expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void select_attr_init(SelectExpr *expr, RelAttr *attr) {
   expr->attr = attr;
   expr->is_attr = 1;
-  ///////////////////
+
   expr->has_subexpr = 0;
   expr->has_brace = 0;
   expr->func = COLUMN;
@@ -254,11 +311,13 @@ void select_attr_init(SelectExpr *expr, RelAttr *attr) {
   expr->value = nullptr;
   expr->left = nullptr;
   expr->right = nullptr;
+  expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void select_value_init(SelectExpr *expr, Value *value) {
   expr->value = value;
-  ///////////////////
+
   expr->has_brace = 0;
   expr->is_attr = 0;
   expr->attr = nullptr;
@@ -267,9 +326,14 @@ void select_value_init(SelectExpr *expr, Value *value) {
   expr->arithOp = NO_ARITH_OP;
   expr->left = nullptr;
   expr->right = nullptr;
+  expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void selects_append_conditions(Selects *selects, ConditionList *cond_list) {
+  for (size_t i = 0; i < cond_list->size(); i++) {
+    cond_list->at(i)->parent = selects;
+  }
   selects->conditions = cond_list;
   selects->cond_num = cond_list->size();
 }
@@ -431,10 +495,13 @@ void select_expr_destroy(SelectExpr *expr) {
     select_expr_destroy(expr->left);
     select_expr_destroy(expr->right);
   } else {
-    if (expr->is_attr) {
+    if (expr->attr != nullptr) {
       attr_destroy(expr->attr);
-    } else {
+    }
+    if (expr->value != nullptr) {
       value_destroy(expr->value);
+      free(expr->value);
+      expr->value = nullptr;
     }
   }
   free(expr);
@@ -449,8 +516,8 @@ void table_ref_destory(TableRef *ref) {
   ref->relation_name = nullptr;
 
   // 2. free on cluase
-  for (auto &cond : *ref->conditions) {
-    condition_destory(&cond);
+  for (auto cond : *ref->conditions) {
+    condition_destory(cond);
   }
   delete ref->conditions;
   ref->conditions = nullptr;
@@ -465,9 +532,11 @@ void condition_expr_destory(ConditionExpr *expr) {
     condition_expr_destory(expr->left);
     condition_expr_destory(expr->right);
   } else {
-    if (expr->is_attr) {
+    if (expr->attr != nullptr) {
       attr_destroy(expr->attr);
-    } else {
+      expr->attr = nullptr;
+    }
+    if (expr->value != nullptr) {
       value_destroy(expr->value);
       free(expr->value);
       expr->value = nullptr;
@@ -515,7 +584,6 @@ void selects_destroy(Selects *selects) {
   }
   delete selects->exprs;
   selects->exprs = nullptr;
-  selects->expr_num = 0;
 
   // 2. free from clause
   for (auto ref : *selects->references) {
@@ -523,11 +591,10 @@ void selects_destroy(Selects *selects) {
   }
   delete selects->references;
   selects->references = nullptr;
-  selects->ref_num = 0;
 
   // 3. free where clause
-  for (auto &cond : *selects->conditions) {
-    condition_destory(&cond);
+  for (auto cond : *selects->conditions) {
+    condition_destory(cond);
   }
   delete selects->conditions;
   selects->conditions = nullptr;
@@ -550,7 +617,7 @@ void selects_destroy(Selects *selects) {
   selects->order_num = 0;
 
   // 6. free context
-  delete selects->context;
+  delete selects->relations;
 }
 
 //////////////////////////// Insert ////////////////////////////////
@@ -581,8 +648,8 @@ void inserts_destroy(Inserts *inserts) {
 //////////////////////////// Delete ////////////////////////////////
 void deletes_destroy(Deletes *deletes) {
   // 1. free where clause
-  for (auto &cond : *deletes->conditions) {
-    condition_destory(&cond);
+  for (auto cond : *deletes->conditions) {
+    condition_destory(cond);
   }
   delete deletes->conditions;
   deletes->conditions = nullptr;
@@ -603,8 +670,8 @@ void updates_destroy(Updates *updates) {
 
   // 2. free update value
   value_destroy(updates->value);
-  for (auto &cond : *updates->conditions) {
-    condition_destory(&cond);
+  for (auto cond : *updates->conditions) {
+    condition_destory(cond);
   }
 
   // 3. free where clause

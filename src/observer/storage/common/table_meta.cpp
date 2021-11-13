@@ -308,7 +308,7 @@ void TableMeta::desc(std::ostream &os) const {
   os << ')' << std::endl;
 }
 
-int TableMeta::find_column_by_offset(int offset) {
+int TableMeta::find_column_by_offset(int offset) const {
   int size = fields_.size();
   for (int i = 0; i < size; i++) {
     offset -= fields_[i].len();

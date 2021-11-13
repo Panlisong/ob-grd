@@ -21,13 +21,11 @@ See the Mulan PSL v2 for more details. */
 struct Record;
 class Table;
 
-typedef enum ConvertFlag { NO_CONVERT, INT_TO_FLOATS } ConvertFlag;
-
 class ConDescNode {
 public:
   ConDescNode() = default;
   virtual ~ConDescNode() = 0;
-  virtual void *execute(const Record &rec) = 0;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) = 0;
 
   void set_init_type(AttrType type) { init_type_ = type; }
   AttrType get_init_type() { return init_type_; }
@@ -56,7 +54,7 @@ public:
   ConDescInternal() = default;
   ConDescInternal(ArithOp op, ConDescNode *left, ConDescNode *right);
   virtual ~ConDescInternal();
-  virtual void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
   void *compute(void *lv, void *rv);
 
@@ -70,9 +68,7 @@ class ConDescUnary : public ConDescInternal {
 public:
   ConDescUnary(ArithOp op, ConDescNode *expr);
   virtual ~ConDescUnary();
-  void *execute(const Record &rec) override;
-
-  void *compute(void *v);
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
 private:
   ArithOp op_;
@@ -87,7 +83,7 @@ public:
     set_type(type);
   }
   virtual ~ConDescAttr();
-  void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
   const int length() const { return length_; }
   const int offset() const { return offset_; }
@@ -108,18 +104,17 @@ public:
     set_value(value);
   }
   virtual ~ConDescValue();
-  void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 };
 
 class ConDescSubquery : public ConDescNode {
 public:
   ConDescSubquery() = default;
   virtual ~ConDescSubquery();
-  void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
-  RC init(TupleSet &&subquery, CompOp op);
+  RC init(Trx *trx, Selects *subquery);
 
-  bool contains(AttrType type, const char *value);
   bool contains(std::shared_ptr<TupleValue> tuple_value);
 
   int subquery_size() { return values_.size(); }
@@ -129,6 +124,8 @@ public:
   std::shared_ptr<TupleValue> get_value_in(int index) { return values_[index]; }
 
 private:
+  Trx *trx_;
+  Selects *select_;
   std::vector<std::shared_ptr<TupleValue>> values_;
 };
 
@@ -150,8 +147,7 @@ public:
   virtual ~DefaultConditionFilter();
 
   RC init(ConDescNode *left, ConDescNode *right, CompOp comp_op);
-  RC init(Table &table, const Condition &condition, TupleSet &&left,
-          TupleSet &&right);
+  RC init(Table &table, const Condition &condition, Trx *trx);
 
   virtual bool filter(const Record &rec) const;
   bool subquery_filter(const Record &rec) const;
@@ -167,9 +163,13 @@ public:
   CompOp comp_op() const { return comp_op_; }
 
 private:
+  typedef std::pair<ConDescNode *, SelectExpr *> DSEP;
+  typedef std::pair<ConDescNode *, ConditionExpr *> DCEP;
   ConDescNode *left_ = nullptr;
   ConDescNode *right_ = nullptr;
   CompOp comp_op_ = NO_OP;
+  std::vector<DSEP> bind_select_exprs_;
+  std::vector<DCEP> bind_cond_exprs_;
   Table &table_;
 };
 

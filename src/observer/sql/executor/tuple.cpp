@@ -16,9 +16,12 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <string>
 
+extern RC do_select(Trx *trx, Selects &selects, TupleSet &res);
+
 TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                         TupleSchema &product);
 
+///////////////////////////////////////////////////////////////
 Tuple::Tuple(const Tuple &other) {
   LOG_PANIC("Copy constructor of tuple is not supported");
   exit(1);
@@ -142,7 +145,7 @@ int TupleSchema::index_of_field(const char *table_name,
   return -1;
 }
 
-void TupleSchema::print(std::ostream &os, bool multi) const {
+void TupleSchema::print(std::ostream &os) const {
   if (fields_.empty()) {
     os << "No schema";
     return;
@@ -184,13 +187,13 @@ void TupleSet::clear() {
   schema_.clear();
 }
 
-void TupleSet::print(std::ostream &os, bool multi) const {
+void TupleSet::print(std::ostream &os) const {
   if (schema_.fields().empty()) {
     LOG_WARN("Got empty schema");
     return;
   }
 
-  schema_.print(os, multi);
+  schema_.print(os);
 
   for (const Tuple &item : tuples_) {
     const std::vector<std::shared_ptr<TupleValue>> &values = item.values();
@@ -346,28 +349,30 @@ std::shared_ptr<TupleValue> TupleConDescValue::execute(const Tuple &tuple) {
 
 TupleConDescValue::~TupleConDescValue() {}
 
-RC TupleConDescSubquery::init(TupleSet &&subquery, CompOp op) {
-  const auto schema = subquery.get_schema();
-  if (schema.fields().size() > 1) {
-    // TODO: 子查询列数>1
+RC TupleConDescSubquery::init(Trx *trx, Selects *select) {
+  trx_ = trx;
+  if (select->exprs->size() > 1) {
+    LOG_ERROR("subquery return multi columns");
     return RC::GENERIC_ERROR;
   }
 
-  if (op != MEM_IN && op != MEM_NOT_IN) {
-    if (subquery.size() > 1) {
-      LOG_ERROR("subquery return multi rows");
-      return RC::GENERIC_ERROR;
-    }
-  }
-
-  set_type(schema.fields().begin()->type());
-  for (auto &tuple : subquery.tuples()) {
-    values_.emplace_back(tuple.get_pointer(0));
-  }
+  select_ = select;
   return RC::SUCCESS;
 }
 
 std::shared_ptr<TupleValue> TupleConDescSubquery::execute(const Tuple &tuple) {
+  TupleSet res;
+  for (size_t i = 0; i < select_->conditions->size(); i++) {
+    // 新的子查询，将Condition标志位清空
+    select_->conditions->at(i)->is_used = 0;
+  }
+  do_select(trx_, *select_, res);
+  const auto schema = res.get_schema();
+  set_type(schema.fields().begin()->type());
+  values_.clear();
+  for (auto &tuple : res.tuples()) {
+    values_.emplace_back(tuple.get_pointer(0));
+  }
   return nullptr;
 }
 
@@ -391,7 +396,7 @@ TupleConDescSubquery::~TupleConDescSubquery() {}
 TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                         TupleSchema &product) {
   if (expr->has_subexpr == 0) {
-    if (expr->is_attr) {
+    if (!expr->binded && expr->is_attr) {
       RelAttr *attr = expr->attr;
       int i = product.index_of_field(attr->relation_name, attr->attribute_name);
       return new TupleConDescAttr(product.field(i).type(), i);
@@ -414,8 +419,7 @@ TupleFilter::~TupleFilter() {
   delete right_;
 }
 
-RC TupleFilter::init(TupleSchema &product, const Condition &cond,
-                     TupleSet &&left, TupleSet &&right) {
+RC TupleFilter::init(Trx *trx, TupleSchema &product, const Condition &cond) {
   RC rc = RC::SUCCESS;
   op_ = cond.comp;
   if (cond.left != nullptr) {
@@ -426,7 +430,7 @@ RC TupleFilter::init(TupleSchema &product, const Condition &cond,
   }
   if (cond.left_subquery != nullptr) {
     TupleConDescSubquery *left_node = new TupleConDescSubquery();
-    rc = left_node->init(std::move(left), cond.comp);
+    rc = left_node->init(trx, cond.left_subquery);
     if (rc != RC::SUCCESS) {
       delete left_node;
       return rc;
@@ -435,7 +439,7 @@ RC TupleFilter::init(TupleSchema &product, const Condition &cond,
   }
   if (cond.right_subquery != nullptr) {
     TupleConDescSubquery *right_node = new TupleConDescSubquery();
-    rc = right_node->init(std::move(right), cond.comp);
+    rc = right_node->init(trx, cond.right_subquery);
     if (rc != RC::SUCCESS) {
       delete right_node;
       return rc;
