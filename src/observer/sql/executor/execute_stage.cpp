@@ -39,9 +39,8 @@ RC create_selection_executor(Trx *trx, Selects &selects, Table *table,
 RC create_join_executor(Trx *trx, RelationTable &relations,
                         ConditionList *conds, TupleSet &tl, TupleSet &tr,
                         JoinExeNode &join_node);
-RC create_order_executor(const Selects & selects, TupleSet &tuple_set,
-                         OrderExeNode &order
-                        );
+RC create_order_executor(const Selects &selects, TupleSet &tuple_set,
+                         OrderExeNode &order);
 RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
                               const TupleSchema &product,
                               ProjectExeNode &project);
@@ -835,15 +834,15 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
   }
   // 3 根据order clause对tuple_set进行排序
   //   在projection之前进行，防止projection之后对应的attribute缺失
-  if(selects.order_num!=0){
-    OrderExeNode* order_node = new OrderExeNode;
+  if (selects.order_num != 0) {
+    OrderExeNode *order_node = new OrderExeNode;
     rc = create_order_executor(selects, tuple_set, *order_node);
-    if(rc!=RC::SUCCESS){
+    if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to create order-by executor node.");
       return rc;
     }
     rc = order_node->execute(tuple_set);
-    if(rc!=RC::SUCCESS){
+    if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to execute order-by executor node.");
       return rc;
     }
@@ -860,7 +859,7 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
   for (auto &tmp_node : select_nodes) {
     delete tmp_node.second;
   }
-	delete project_node;
+  // delete project_node;
 
   return rc;
 }
@@ -935,46 +934,47 @@ static RC add_all_relations(const Selects &selects, const TupleSchema &product,
   return rc;
 }
 
-RC create_order_executor(const Selects & selects, TupleSet &tuple_set,
-                         OrderExeNode &order
-                        ){
+RC create_order_executor(const Selects &selects, TupleSet &tuple_set,
+                         OrderExeNode &order) {
   //语法树已经对排序的attr和顺序有了较为完整的描述
   //因此执行节点的execute()可以直接排序
   //创建节点的过程主要用于检查order-by的属性是否合法
   RC rc = RC::SUCCESS;
-  OrderColList* orders = selects.orders;
-  RelAttr* cur_attr;
+  OrderColList *orders = selects.orders;
+  RelAttr *cur_attr;
   std::string table_name;
-  Table* cur_table;
-  int flag=0;
-  for(size_t i = 0; i < orders->size(); ++i){
-    cur_attr=orders->at(i)->attr;
-    if(cur_attr->attribute_name == nullptr){
+  Table *cur_table;
+  int flag = 0;
+  for (size_t i = 0; i < orders->size(); ++i) {
+    cur_attr = orders->at(i)->attr;
+    if (cur_attr->attribute_name == nullptr) {
       return RC::SCHEMA_FIELD_MISSING;
     }
-    if(cur_attr->relation_name == nullptr){
+    if (cur_attr->relation_name == nullptr) {
       table_name.clear();
     } else {
-      table_name=orders->at(i)->attr->relation_name;
+      table_name = orders->at(i)->attr->relation_name;
     }
-    if(!table_name.empty()){
+    if (!table_name.empty()) {
       cur_table = (*selects.context)[table_name];
-      if(cur_table->table_meta().field(cur_attr->attribute_name) == nullptr){
+      if (cur_table->table_meta().field(cur_attr->attribute_name) == nullptr) {
         return RC::SCHEMA_FIELD_NOT_EXIST;
       }
     } else {
-      flag=0;
-      //find if there exists a table in the context that has this attr
-      //first paired first sort 
-      for(std::unordered_map<std::string, Table *>::iterator i = selects.context->begin();
-             i != selects.context->end() ; ++i){
-        cur_table=(*i).second;
-        if(cur_table->table_meta().field(cur_attr->attribute_name) != nullptr){
+      flag = 0;
+      // find if there exists a table in the context that has this attr
+      // first paired first sort
+      for (std::unordered_map<std::string, Table *>::iterator i =
+               selects.context->begin();
+           i != selects.context->end(); ++i) {
+        cur_table = (*i).second;
+        if (cur_table->table_meta().field(cur_attr->attribute_name) !=
+            nullptr) {
           flag = 1;
           break;
         }
       }
-      if(flag == 0){
+      if (flag == 0) {
         return RC::SCHEMA_FIELD_NOT_EXIST;
       }
     }
