@@ -278,6 +278,7 @@ void append_subexpr(SelectExpr *expr, SelectExpr *left, SelectExpr *right,
   expr->is_attr = 0;
   expr->attr = nullptr;
   expr->parent = nullptr;
+  expr->value = nullptr;
 }
 
 void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr) {
@@ -487,10 +488,13 @@ void select_expr_destroy(SelectExpr *expr) {
     select_expr_destroy(expr->left);
     select_expr_destroy(expr->right);
   } else {
-    if (expr->is_attr) {
+    if (expr->attr != nullptr) {
       attr_destroy(expr->attr);
-    } else {
+    }
+    if (expr->value != nullptr) {
       value_destroy(expr->value);
+      free(expr->value);
+      expr->value = nullptr;
     }
   }
   free(expr);
@@ -521,9 +525,11 @@ void condition_expr_destory(ConditionExpr *expr) {
     condition_expr_destory(expr->left);
     condition_expr_destory(expr->right);
   } else {
-    if (expr->is_attr) {
+    if (expr->attr != nullptr) {
       attr_destroy(expr->attr);
-    } else {
+      expr->attr = nullptr;
+    }
+    if (expr->value != nullptr) {
       value_destroy(expr->value);
       free(expr->value);
       expr->value = nullptr;

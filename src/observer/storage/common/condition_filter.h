@@ -117,7 +117,7 @@ public:
   virtual ~ConDescSubquery();
   void *execute(const Record &rec) override;
 
-  RC init(Trx *trx, Selects *subquery);
+  RC init(Trx *trx, Selects *subquery, CompOp op);
 
   bool contains(AttrType type, const char *value);
   bool contains(std::shared_ptr<TupleValue> tuple_value);
@@ -168,9 +168,13 @@ public:
   CompOp comp_op() const { return comp_op_; }
 
 private:
+  typedef std::pair<ConDescNode *, SelectExpr *> DSEP;
+  typedef std::pair<ConDescNode *, ConditionExpr *> DCEP;
   ConDescNode *left_;
   ConDescNode *right_;
   CompOp comp_op_ = NO_OP;
+  std::vector<DSEP> bind_select_exprs_;
+  std::vector<DCEP> bind_cond_exprs_;
   Table &table_;
 };
 

@@ -25,6 +25,7 @@ extern RC do_select(Trx *trx, Selects &selects, TupleSet &res);
 
 ConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                    const TableMeta &table_meta);
+ConDescNode *create_cond_desc_attr(RelAttr *attr, const TableMeta &table_meta);
 
 //////////////////////////////////////////////////////////////////////////////
 ConDescNode::~ConDescNode() {
@@ -197,27 +198,34 @@ void *ConDescValue::execute(const Record &rec) { return value(); }
 
 ConDescValue::~ConDescValue() {}
 
-RC ConDescSubquery::init(Trx *trx, Selects *subquery) {
+RC ConDescSubquery::init(Trx *trx, Selects *subquery, CompOp op) {
   trx_ = trx;
+  if (subquery->exprs->size() > 1) {
+    LOG_ERROR("subquery return multi columns");
+    return RC::GENERIC_ERROR;
+  }
+  // TODO: check type
+  set_type(FLOATS);
   select_ = subquery;
   return RC::SUCCESS;
 }
 
 void *ConDescSubquery::execute(const Record &rec) {
   TupleSet res;
+  for (size_t i = 0; i < select_->conditions->size(); i++) {
+    // 新的子查询，将Condition标志位清空
+    select_->conditions->at(i)->is_used = 0;
+  }
   do_select(trx_, *select_, res);
   const auto schema = res.get_schema();
-  if (schema.fields().size() > 1) {
-    // TODO: 子查询列数>1
-    return nullptr;
-  }
   // if (op != MEM_IN && op != MEM_NOT_IN) {
-  //   if (subquery.size() > 1) {
+  //   if (res.size() > 1) {
   //     LOG_ERROR("subquery return multi rows");
   //     return RC::GENERIC_ERROR;
   //   }
   // }
   set_type(schema.fields().begin()->type());
+  values_.clear();
   for (auto &tuple : res.tuples()) {
     values_.emplace_back(tuple.get_pointer(0));
   }
@@ -309,20 +317,21 @@ RC DefaultConditionFilter::init(ConDescNode *left, ConDescNode *right,
   return RC::SUCCESS;
 }
 
+ConDescNode *create_cond_desc_attr(RelAttr *attr, const TableMeta &table_meta) {
+  auto field = table_meta.field(attr->attribute_name);
+  if (field == nullptr) {
+    return nullptr;
+  }
+  int offset = field->offset();
+  return new ConDescAttr(field->type(), field->len(), offset,
+                         table_meta.find_column_by_offset(offset));
+}
+
 ConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                    const TableMeta &table_meta) {
   if (expr->has_subexpr == 0) {
     if (!expr->binded && expr->is_attr) {
-      auto field = table_meta.field(expr->attr->attribute_name);
-      if (field == nullptr) {
-        return nullptr;
-      }
-      //新增了没有找到attribute的情况
-      int offset = field->offset(); /////////////////////
-      // TODO: const pointer.
-      TableMeta tmp = table_meta;
-      return new ConDescAttr(field->type(), field->len(), offset,
-                             tmp.find_column_by_offset(offset));
+      return create_cond_desc_attr(expr->attr, table_meta);
     } else {
       return new ConDescValue(expr->value->type, expr->value->data);
     }
@@ -349,7 +358,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   }
   if (condition.left_subquery != nullptr) {
     ConDescSubquery *left_node = new ConDescSubquery();
-    rc = left_node->init(trx, condition.left_subquery);
+    rc = left_node->init(trx, condition.left_subquery, condition.comp);
     if (rc != RC::SUCCESS) {
       delete left_node;
       return rc;
@@ -358,12 +367,27 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   }
   if (condition.right_subquery != nullptr) {
     ConDescSubquery *right_node = new ConDescSubquery();
-    rc = right_node->init(trx, condition.right_subquery);
+    rc = right_node->init(trx, condition.right_subquery, condition.comp);
     if (rc != RC::SUCCESS) {
       delete right_node;
       return rc;
     }
     right = right_node;
+  }
+
+  // 没有时（non-subquery or 非关联）是空的deque
+  for (size_t i = 0; i < condition.binded_conds->size(); i++) {
+    ConditionExpr *expr = condition.binded_conds->at(i);
+    ConDescNode *node = create_cond_desc_attr(expr->attr, table_meta);
+    assert(node != nullptr);
+    bind_cond_exprs_.push_back({node, expr});
+  }
+
+  for (size_t i = 0; i < condition.binded_exprs->size(); i++) {
+    SelectExpr *expr = condition.binded_exprs->at(i);
+    ConDescNode *node = create_cond_desc_attr(expr->attr, table_meta);
+    assert(node != nullptr);
+    bind_select_exprs_.push_back({node, expr});
   }
 
   if (left == nullptr || right == nullptr) {
@@ -450,6 +474,35 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
 }
 
 bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
+  // 分配关联值
+  for (size_t i = 0; i < bind_cond_exprs_.size(); i++) {
+    auto bind_attr_expr = bind_cond_exprs_.at(i).second;
+    auto execution_node =
+        reinterpret_cast<ConDescAttr *>(bind_cond_exprs_.at(i).first);
+    Value *v = (Value *)malloc(sizeof(Value));
+    v->type = execution_node->type();
+    v->data = execution_node->execute(rec);
+    v->len = execution_node->length();
+    if (bind_attr_expr->value != nullptr) {
+      free(bind_attr_expr->value);
+    }
+    bind_attr_expr->value = v;
+  }
+
+  for (size_t i = 0; i < bind_select_exprs_.size(); i++) {
+    auto bind_attr_expr = bind_select_exprs_.at(i).second;
+    auto execution_node =
+        reinterpret_cast<ConDescAttr *>(bind_cond_exprs_.at(i).first);
+    Value *v = (Value *)malloc(sizeof(Value));
+    v->type = execution_node->type();
+    v->data = execution_node->execute(rec);
+    v->len = execution_node->length();
+    if (bind_attr_expr->value != nullptr) {
+      free(bind_attr_expr->value);
+    }
+    bind_attr_expr->value = v;
+  }
+
   ConDescSubquery *left_cond_desc_subquery =
       dynamic_cast<ConDescSubquery *>(left_);
   ConDescSubquery *right_cond_desc_subquery =
@@ -468,6 +521,9 @@ bool DefaultConditionFilter::two_subquery_filter(const Record &rec) const {
       dynamic_cast<ConDescSubquery *>(left_);
   ConDescSubquery *right_cond_desc_subquery =
       dynamic_cast<ConDescSubquery *>(right_);
+
+  left_cond_desc_subquery->execute(rec);
+  right_cond_desc_subquery->execute(rec);
 
   if (left_cond_desc_subquery->subquery_size() != 1) {
     return false;
@@ -511,6 +567,7 @@ bool DefaultConditionFilter::one_subquery_filter(const Record &rec) const {
   char *lvalue = (char *)left_->execute(rec);
   ConDescSubquery *right_cond_desc_subquery =
       dynamic_cast<ConDescSubquery *>(right_);
+  right_cond_desc_subquery->execute(rec);
 
   if (comp_op_ == MEM_IN || comp_op_ == MEM_NOT_IN) {
     bool contains = right_cond_desc_subquery->contains(left_->type(), lvalue);

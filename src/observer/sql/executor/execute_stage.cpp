@@ -662,7 +662,8 @@ static void get_mini_schema(const ConditionExpr *expr, RelationTable &relations,
     }
     return;
   }
-  if (expr->is_attr) {
+  if (expr->is_attr && !expr->binded) {
+    // bind attr 当作Value 直接跳过检查
     const RelAttr *attr = expr->attr;
     const char *table_name = attr->relation_name;
     const char *field_name = attr->attribute_name;
@@ -969,7 +970,8 @@ static void get_one_mini_schema(const ConditionExpr *expr,
     }
     return;
   }
-  if (expr->is_attr) {
+  if (expr->is_attr && !expr->binded) {
+    // binded attr当作Value直接跳过
     get_one_mini_schema(expr->attr, relations, schema);
   }
 }
