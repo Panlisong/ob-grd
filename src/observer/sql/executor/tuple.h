@@ -139,7 +139,7 @@ public:
   bool is_empty() const;
   int size() const;
   int not_null_size(int column) const;
-  void update(int index , const Tuple& val);
+  void update(int index, const Tuple &val);
 
   const Tuple &get(int index) const;
   const std::vector<Tuple> &tuples() const;
@@ -313,11 +313,11 @@ public:
   TupleFilter();
   virtual ~TupleFilter();
   RC init(Trx *trx, TupleSchema &product, const Condition &cond);
-  bool filter(const Tuple &t);
+  bool filter(const Tuple &t, RC &ret);
   bool non_subquery_filter(const Tuple &tuple);
-  bool subquery_filter(const Tuple &tuple);
-  bool one_subquery_filter(const Tuple &tuple);
-  bool two_subquery_filter(const Tuple &tuple);
+  bool subquery_filter(const Tuple &tuple, RC &ret);
+  bool one_subquery_filter(const Tuple &tuple, RC &ret);
+  bool two_subquery_filter(const Tuple &tuple, RC &ret);
 
 private:
   // 一个TupleFilter处理一个Condition，类似ConditionFilter

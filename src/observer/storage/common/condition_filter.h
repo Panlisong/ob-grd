@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "rc.h"
 #include "sql/executor/tuple.h"
 #include "sql/parser/parse.h"
+#include <memory>
 
 struct Record;
 class Table;
@@ -25,7 +26,7 @@ class ConDescNode {
 public:
   ConDescNode() = default;
   virtual ~ConDescNode() = 0;
-	virtual std::shared_ptr<TupleValue> execute(const Record &rec) = 0;
+  virtual std::shared_ptr<TupleValue> execute(const Record &rec) = 0;
 
   void set_init_type(AttrType type) { init_type_ = type; }
   AttrType get_init_type() { return init_type_; }
@@ -34,19 +35,9 @@ public:
   const AttrType type() const { return type_; }
   bool is_null() { return type_ == ATTR_NULL; }
 
-  void set_value(void *value) {
-    if (value_ != nullptr) {
-      free(value_);
-      value_ = nullptr;
-    }
-    value_ = value;
-  }
-  void *value() const { return value_; }
-
 private:
   AttrType type_;
   AttrType init_type_;
-  void *value_ = nullptr;
 };
 
 class ConDescInternal : public ConDescNode {
@@ -54,7 +45,7 @@ public:
   ConDescInternal() = default;
   ConDescInternal(ArithOp op, ConDescNode *left, ConDescNode *right);
   virtual ~ConDescInternal();
-	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
+  virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
   void *compute(void *lv, void *rv);
 
@@ -68,7 +59,7 @@ class ConDescUnary : public ConDescInternal {
 public:
   ConDescUnary(ArithOp op, ConDescNode *expr);
   virtual ~ConDescUnary();
-	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
+  virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
 private:
   ArithOp op_;
@@ -83,7 +74,7 @@ public:
     set_type(type);
   }
   virtual ~ConDescAttr();
-	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
+  virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
   const int length() const { return length_; }
   const int offset() const { return offset_; }
@@ -98,20 +89,23 @@ private:
 
 class ConDescValue : public ConDescNode {
 public:
-  ConDescValue(AttrType type, void *value) {
+  ConDescValue(AttrType type, std::shared_ptr<TupleValue> value) {
     set_init_type(type);
     set_type(type);
-    set_value(value);
+    value_ = value;
   }
   virtual ~ConDescValue();
-	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
+  virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
+
+private:
+  std::shared_ptr<TupleValue> value_;
 };
 
 class ConDescSubquery : public ConDescNode {
 public:
   ConDescSubquery() = default;
   virtual ~ConDescSubquery();
-	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
+  virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
   RC init(Trx *trx, Selects *subquery);
 
@@ -138,7 +132,7 @@ public:
    * @param rec
    * @return true means match condition, false means failed to match.
    */
-  virtual bool filter(const Record &rec) const = 0;
+  virtual bool filter(const Record &rec, RC &ret) const = 0;
 };
 
 class DefaultConditionFilter : public ConditionFilter {
@@ -149,10 +143,10 @@ public:
   RC init(ConDescNode *left, ConDescNode *right, CompOp comp_op);
   RC init(Table &table, const Condition &condition, Trx *trx);
 
-  virtual bool filter(const Record &rec) const;
-  bool subquery_filter(const Record &rec) const;
-  bool two_subquery_filter(const Record &rec) const;
-  bool one_subquery_filter(const Record &rec) const;
+  virtual bool filter(const Record &rec, RC &ret) const;
+  bool subquery_filter(const Record &rec, RC &ret) const;
+  bool two_subquery_filter(const Record &rec, RC &ret) const;
+  bool one_subquery_filter(const Record &rec, RC &ret) const;
   bool non_subquery_filter(const Record &rec) const;
 
 public:
@@ -181,7 +175,7 @@ public:
   RC init(const ConditionFilter *filters[], int filter_num);
   RC init(Trx *trx, Table &table, const ConditionList *conditions,
           int condition_num);
-  virtual bool filter(const Record &rec) const;
+  virtual bool filter(const Record &rec, RC &ret) const;
 
 public:
   int filter_num() const { return filter_num_; }

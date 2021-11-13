@@ -566,8 +566,11 @@ RC RecordFileScanner::get_next_record(Record *rec) {
     ret = record_page_handler_.get_next_record(&current_record);
     if (RC::SUCCESS == ret) {
       if (condition_filter_ == nullptr ||
-          condition_filter_->filter(current_record)) {
+          condition_filter_->filter(current_record, ret)) {
         break; // got one
+      }
+      if (ret != RC::SUCCESS) {
+        break;
       }
     } else if (RC::RECORD_EOF == ret) {
       current_record.rid.page_num++;

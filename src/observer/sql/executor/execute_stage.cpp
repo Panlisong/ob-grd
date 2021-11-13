@@ -226,17 +226,18 @@ static RC schema_add_field(Table *table, const char *field_name,
 }
 
 ///////////////////////////////////////////////////////////////////////////
-static bool match_field(Table *table, const char *field_name) {
+static bool match_field(Table *table, const char *field_name, AttrType &type) {
   const FieldMeta *field_meta = table->table_meta().field(field_name);
   if (nullptr == field_meta) {
     LOG_WARN("No such field. %s.%s", table->name(), field_name);
     return false;
   }
+  type = field_meta->type();
   return true;
 }
 
 static bool check_column_attr(SelectContext &context, RelAttr *attr,
-                              Selects *&to_bind, bool multi) {
+                              Selects *&to_bind, bool multi, AttrType &type) {
   auto relations = context.head()->begin()->second->relations;
   Table *table = relations->begin()->second;
   if (attr->relation_name == nullptr) {
@@ -246,7 +247,7 @@ static bool check_column_attr(SelectContext &context, RelAttr *attr,
     }
     // 单表缺省relation的情况
     attr->relation_name = strdup(table->name());
-    return match_field(table, attr->attribute_name);
+    return match_field(table, attr->attribute_name, type);
   }
 
   auto res = relations->find(attr->relation_name);
@@ -264,7 +265,7 @@ static bool check_column_attr(SelectContext &context, RelAttr *attr,
     table = res->second;
   }
 
-  return match_field(table, attr->attribute_name);
+  return match_field(table, attr->attribute_name, type);
 }
 
 static Condition *get_condition(Selects *parent, SelectExpr *ancestor) {
@@ -287,14 +288,25 @@ static bool check_select_expr(SelectExpr *expr, SelectContext &context,
         !check_select_expr(expr->right, context, multi)) {
       return false;
     }
+    expr->type = expr->right->type;
+    if (expr->left != nullptr) {
+      if (!is_computable(expr->left->type, expr->type)) {
+        return false;
+      }
+      if (expr->left->type == FLOATS || expr->right->type == FLOATS) {
+        expr->type = FLOATS;
+      }
+    }
     return true;
   }
 
   if (expr->is_attr) {
     Selects *to_bind = nullptr;
-    if (!check_column_attr(context, expr->attr, to_bind, multi)) {
+    AttrType type;
+    if (!check_column_attr(context, expr->attr, to_bind, multi, type)) {
       return false;
     }
+    expr->type = type;
     if (to_bind != nullptr) {
       expr->binded = true;
       auto belong_to = get_condition(to_bind, expr);
@@ -316,8 +328,10 @@ static bool check_select_expr(SelectExpr *expr, SelectContext &context,
         return RC::GENERIC_ERROR;
       }
     }
+  } else {
+    // Value无需另外检查语法
+    expr->type = expr->value->type;
   }
-  // Value无需另外检查语法
   return true;
 }
 
@@ -420,20 +434,33 @@ static bool check_condition_expr(ConditionExpr *expr, SelectContext &context,
         !check_condition_expr(expr->right, context, multi)) {
       return false;
     }
+    expr->type = expr->right->type;
+    if (expr->left != nullptr) {
+      if (!is_computable(expr->left->type, expr->type)) {
+        return false;
+      }
+      if (expr->left->type == FLOATS || expr->right->type == FLOATS) {
+        expr->type = FLOATS;
+      }
+    }
     return true;
   }
   // 叶子节点只有 'T.A' 或 'A'
   if (expr->is_attr) {
     Selects *to_bind = nullptr;
-    if (!check_column_attr(context, expr->attr, to_bind, multi)) {
+    AttrType type;
+    if (!check_column_attr(context, expr->attr, to_bind, multi, type)) {
       return false;
     }
+    expr->type = type;
     if (to_bind != nullptr) {
       expr->binded = true;
       auto belong_to = get_condition(to_bind, expr);
       assert(belong_to != nullptr);
       belong_to->binded_conds->push_back(expr);
     }
+  } else {
+    expr->type = expr->value->type;
   }
   return true;
 }
@@ -444,18 +471,16 @@ RC ExecuteStage::resolve_condtions(const ConditionList *conds,
   for (size_t i = 0; i < conds->size(); i++) {
     const Condition &cond = *conds->at(i);
     // 1. 子查询
-    if (cond.is_subquery == 1) { // 子查询
-      // 合并 outer 和 cur 作为子查询的outer
-      if (cond.left_subquery != nullptr) {
-        rc = resolve_select(*cond.left_subquery);
-      }
-      if (cond.right_subquery != nullptr) {
-        rc = resolve_select(*cond.right_subquery);
-      }
-      if (rc != RC::SUCCESS) {
-        break;
-      }
+    if (cond.left_subquery != nullptr) {
+      rc = resolve_select(*cond.left_subquery);
     }
+    if (cond.right_subquery != nullptr) {
+      rc = resolve_select(*cond.right_subquery);
+    }
+    if (rc != RC::SUCCESS) {
+      break;
+    }
+
     // 2. 检查ConditionExpr
     if (cond.left != nullptr &&
         !check_condition_expr(cond.left, context, multi)) {
@@ -818,7 +843,11 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
       JoinExeNode *join_node = new JoinExeNode;
       rc = create_join_executor(trx, relations, selects.conditions, tuple_set,
                                 tuple_sets[i + 1], *join_node);
-      join_node->execute(tuple_set);
+      rc = join_node->execute(tuple_set);
+      if (rc != RC::SUCCESS) {
+        delete join_node;
+        return rc;
+      }
       delete join_node;
     }
   }

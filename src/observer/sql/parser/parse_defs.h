@@ -119,6 +119,7 @@ struct _ConditionExpr {
   /////////////////////////
   bool binded = false;
   Condition *parent;
+  AttrType type;
 };
 
 /**
@@ -183,6 +184,7 @@ struct _SelectExpr {
   ////////////////////////
   bool binded = false;
   Selects *parent;
+  AttrType type;
 };
 
 struct _OrderCol {
