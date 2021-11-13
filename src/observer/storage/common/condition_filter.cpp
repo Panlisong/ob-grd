@@ -148,32 +148,6 @@ ConDescUnary::ConDescUnary(ArithOp op, ConDescNode *expr)
   set_type(expr->type());
 }
 
-void *ConDescUnary::compute(void *v) {
-  float value;
-  if (expr_->type() == INTS) {
-    value = float(*(int *)v);
-  } else {
-    value = *(float *)v;
-  }
-  float res = 0.0;
-  switch (op_) {
-  case NEG:
-    res = -value;
-    break;
-  default:
-    LOG_PANIC("Unkown unary arithop type: %d", op_);
-    break;
-  }
-  if (expr_->type() == INTS) {
-    int *r = (int *)malloc(sizeof(int));
-    *r = (int)res;
-    return r;
-  }
-  float *r = (float *)malloc(sizeof(float));
-  *r = res;
-  return r;
-}
-
 std::shared_ptr<TupleValue> ConDescUnary::execute(const Record &rec) {
   std::shared_ptr<TupleValue> operand = expr_->execute(rec);
   IntValue *zero = new IntValue(0);
@@ -217,6 +191,10 @@ void ConDescAttr::get_value_from_data(char *data, void *&value) {
 }
 
 std::shared_ptr<TupleValue> ConDescAttr::execute(const Record &rec) {
+  if (Table::record_data_is_null(rec, column_)) {
+    return std::make_shared<NullValue>();
+  }
+
   char *value = rec.data + offset_;
   switch (type()) {
   case INTS: {
