@@ -117,7 +117,7 @@ public:
   virtual ~ConDescSubquery();
   void *execute(const Record &rec) override;
 
-  RC init(TupleSet &&subquery, CompOp op);
+  RC init(Trx *trx, Selects *subquery);
 
   bool contains(AttrType type, const char *value);
   bool contains(std::shared_ptr<TupleValue> tuple_value);
@@ -129,6 +129,8 @@ public:
   std::shared_ptr<TupleValue> get_value_in(int index) { return values_[index]; }
 
 private:
+  Trx *trx_;
+  Selects *select_;
   std::vector<std::shared_ptr<TupleValue>> values_;
 };
 
@@ -150,8 +152,7 @@ public:
   virtual ~DefaultConditionFilter();
 
   RC init(ConDescNode *left, ConDescNode *right, CompOp comp_op);
-  RC init(Table &table, const Condition &condition, TupleSet &&left,
-          TupleSet &&right);
+  RC init(Table &table, const Condition &condition, Trx *trx);
 
   virtual bool filter(const Record &rec) const;
   bool subquery_filter(const Record &rec) const;

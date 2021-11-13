@@ -231,9 +231,10 @@ static bool match_field(Table *table, const char *field_name) {
   return true;
 }
 
-static bool check_column_attr(RelationTable &outer, RelationTable &cur,
-                              RelAttr *attr, TableRef *&ref, bool multi) {
-  Table *table = cur.begin()->second;
+static bool check_column_attr(SelectContext &context, RelAttr *attr,
+                              Selects *&to_bind, bool multi) {
+  auto relations = context.head()->begin()->second->relations;
+  Table *table = relations->begin()->second;
   if (attr->relation_name == nullptr) {
     if (multi) {
       LOG_ERROR("SQL syntax error: need to write relation name explicitly");
@@ -244,63 +245,65 @@ static bool check_column_attr(RelationTable &outer, RelationTable &cur,
     return match_field(table, attr->attribute_name);
   }
 
-  auto cur_res = cur.find(attr->relation_name);
-  auto outer_res = outer.find(attr->relation_name);
-  if (cur_res == cur.end()) {
-    if (outer_res == outer.end()) {
+  auto res = relations->find(attr->relation_name);
+  if (res == relations->end()) {
+    to_bind = context.lookup(attr->relation_name);
+    if (to_bind == nullptr) {
       LOG_ERROR("SQL semantic error: table %s does not exist",
                 attr->relation_name);
       return false;
     } else {
-      table = outer_res->second;
-      cur[table->name()] = table;
-      ref = (TableRef *)malloc(sizeof(TableRef));
-      table_ref_init(ref, 0, table->name(), nullptr, new ConditionList);
+      // 关联的主表放入上下文信息中
+      table = to_bind->relations->at(attr->relation_name);
     }
   } else {
-    table = cur_res->second;
+    table = res->second;
   }
 
   return match_field(table, attr->attribute_name);
 }
 
+static Condition *get_condition(Selects *parent, SelectExpr *ancestor) {
+  auto cond = ancestor->parent->parent;
+  while (cond != nullptr && cond->parent != parent) {
+    cond = cond->parent->parent;
+  }
+  return cond;
+}
+
 // 用于检查SelectExpr
-static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
-                              RelationTable &cur, Selects &selects,
+static bool check_select_expr(SelectExpr *expr, SelectContext &context,
                               bool multi) {
   if (expr->has_subexpr) {
     if (expr->left != nullptr &&
-        !check_select_expr(expr->left, outer, cur, selects, multi)) {
+        !check_select_expr(expr->left, context, multi)) {
       return false;
     }
     if (expr->right != nullptr &&
-        !check_select_expr(expr->right, outer, cur, selects, multi)) {
+        !check_select_expr(expr->right, context, multi)) {
       return false;
     }
     return true;
   }
 
   if (expr->is_attr) {
-    TableRef *ref = nullptr;
-    if (!check_column_attr(outer, cur, expr->attr, ref, multi)) {
-      if (ref != nullptr) {
-        free(ref);
-      }
+    Selects *to_bind = nullptr;
+    if (!check_column_attr(context, expr->attr, to_bind, multi)) {
       return false;
     }
-    if (ref != nullptr) {
-      // check_cloumn_attr返回的TableRef非空，说明缺少上文信息
-      selects.references->push_back(ref);
-      selects.ref_num++;
+    if (to_bind != nullptr) {
+      expr->binded = true;
+      auto belong_to = get_condition(to_bind, expr);
+      assert(belong_to != nullptr);
+      belong_to->binded_exprs->push_back(expr);
     }
+
     // AVG参数要匹配
     if (expr->func == AVG_FUNC) { /* 聚合函数 */
       const char *table_name = expr->attr->relation_name;
       const char *field_name = expr->attr->attribute_name;
-      Table *table = cur.begin()->second;
-      if (table_name != nullptr) {
-        table = cur[table_name];
-      }
+      auto relations = context.head()->begin()->second->relations;
+      Table *table = relations->at(table_name);
 
       const FieldMeta *field_meta = table->table_meta().field(field_name);
       if (field_meta->type() != INTS && field_meta->type() != FLOATS) {
@@ -314,11 +317,11 @@ static bool check_select_expr(SelectExpr *expr, RelationTable &outer,
   return true;
 }
 
-RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
-                                       RelationTable &cur, bool multi) {
+RC ExecuteStage::resolve_select_clause(Selects &selects, bool multi) {
   RC rc = RC::SUCCESS;
   int single_star = 0;
   bool error = false;
+  auto &relations = *selects.relations;
 
   // 1. 检查 '*' 是否是否使用正确
   for (size_t i = 0; i < selects.exprs->size(); i++) {
@@ -352,20 +355,21 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
         continue;
       }
       // 'T.*'只需检查T是否存在
-      auto res = cur.find(table_name);
-      auto outer_res = outer.find(table_name);
-      if (res == cur.end()) {
-        if (outer_res == outer.end()) {
-          error = true;
-          LOG_ERROR("SQL semantic error: table %s does not exist", table_name);
-          break;
-        } else {
-          TableRef *ref = new TableRef;
-          table_ref_init(ref, 0, table_name, nullptr, nullptr);
-          selects.references->push_back(ref);
-          selects.ref_num++;
-          cur[table_name] = outer[table_name];
-        }
+      auto res = relations.find(table_name);
+      if (res == relations.end()) {
+        // auto outer_select = selects.context->lookup(table_name);
+        // if (outer_select == nullptr) {
+        //   error = true;
+        //   LOG_ERROR("SQL semantic error: table %s does not exist",
+        //   table_name); break;
+        // } else {
+        //   // WARNING: 此时子查询返回多列，故无需考虑
+        //   error = true;
+        //   LOG_ERROR("SQL semantic error: subquery returns multi columns");
+        //   break;
+        // }
+        error = true;
+        break;
       }
     }
   }
@@ -385,7 +389,7 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
     }
     // 如果是表达式，语法层面保证不会出现：
     // 'T.*' 或 '*' 作为运算的操作数
-    if (!check_select_expr(expr, outer, cur, selects, multi)) {
+    if (!check_select_expr(expr, *selects.context, multi)) {
       rc = RC::SQL_SYNTAX;
       break;
     }
@@ -394,60 +398,55 @@ RC ExecuteStage::resolve_select_clause(Selects &selects, RelationTable &outer,
 }
 
 /////////////////////////////////////////////////////////////////////////////
-/**
- * refs@out: 需补充的上文信息
- * PS: 对于
- *  1. select的select clause和where clause而言，补充的信息直接放入from clause
- *  2. join table的on clause而言，补充的信息作为当前join table节点的子孙
- */
-static bool check_condition_expr(const ConditionExpr *expr,
-                                 RelationTable &outer, RelationTable &cur,
-                                 std::vector<TableRef *> &refs, bool multi) {
+static Condition *get_condition(Selects *parent, ConditionExpr *ancestor) {
+  auto cond = ancestor->parent;
+  while (cond != nullptr && *cond->parent != *parent) {
+    cond = cond->parent->parent;
+  }
+  return cond;
+}
+static bool check_condition_expr(ConditionExpr *expr, SelectContext &context,
+                                 bool multi) {
   if (expr->has_subexpr == 1) {
     if (expr->left != nullptr &&
-        !check_condition_expr(expr->left, outer, cur, refs, multi)) {
+        !check_condition_expr(expr->left, context, multi)) {
       return false;
     }
     if (expr->right != nullptr &&
-        !check_condition_expr(expr->right, outer, cur, refs, multi)) {
+        !check_condition_expr(expr->right, context, multi)) {
       return false;
     }
     return true;
   }
   // 叶子节点只有 'T.A' 或 'A'
   if (expr->is_attr) {
-    TableRef *ref = nullptr;
-    if (!check_column_attr(outer, cur, expr->attr, ref, multi)) {
-      if (ref != nullptr) {
-        free(ref);
-      }
+    Selects *to_bind = nullptr;
+    if (!check_column_attr(context, expr->attr, to_bind, multi)) {
       return false;
     }
-    if (ref != nullptr) {
-      refs.push_back(ref);
+    if (to_bind != nullptr) {
+      expr->binded = true;
+      auto belong_to = get_condition(to_bind, expr);
+      assert(belong_to != nullptr);
+      belong_to->binded_conds->push_back(expr);
     }
   }
   return true;
 }
 
-RC ExecuteStage::resolve_condtions(RelationTable &outer, RelationTable &cur,
-                                   std::vector<TableRef *> &refs,
-                                   const ConditionList *conds, bool multi) {
+RC ExecuteStage::resolve_condtions(const ConditionList *conds,
+                                   SelectContext &context, bool multi) {
   RC rc = RC::SUCCESS;
   for (size_t i = 0; i < conds->size(); i++) {
-    const Condition &cond = conds->at(i);
+    const Condition &cond = *conds->at(i);
     // 1. 子查询
     if (cond.is_subquery == 1) { // 子查询
       // 合并 outer 和 cur 作为子查询的outer
-      RelationTable cur_outer = outer;
-      for (auto &p : cur) {
-        cur_outer[p.first] = p.second;
-      }
       if (cond.left_subquery != nullptr) {
-        rc = resolve_select(*cond.left_subquery, cur_outer);
+        rc = resolve_select(*cond.left_subquery);
       }
       if (cond.right_subquery != nullptr) {
-        rc = resolve_select(*cond.right_subquery, cur_outer);
+        rc = resolve_select(*cond.right_subquery);
       }
       if (rc != RC::SUCCESS) {
         break;
@@ -455,12 +454,12 @@ RC ExecuteStage::resolve_condtions(RelationTable &outer, RelationTable &cur,
     }
     // 2. 检查ConditionExpr
     if (cond.left != nullptr &&
-        !check_condition_expr(cond.left, outer, cur, refs, multi)) {
+        !check_condition_expr(cond.left, context, multi)) {
       rc = RC::SQL_SYNTAX;
       break;
     }
     if (cond.right != nullptr &&
-        !check_condition_expr(cond.right, outer, cur, refs, multi)) {
+        !check_condition_expr(cond.right, context, multi)) {
       rc = RC::SQL_SYNTAX;
       break;
     }
@@ -470,53 +469,42 @@ RC ExecuteStage::resolve_condtions(RelationTable &outer, RelationTable &cur,
 }
 
 /////////////////////////////////////////////////////////////////////////////
-RC ExecuteStage::resolve_join_table(TableRef *ref, RelationTable &outer,
-                                    RelationTable &cur, bool multi) {
+RC ExecuteStage::resolve_join_table(TableRef *ref, Selects &selects,
+                                    bool multi) {
   RC rc = RC::SUCCESS;
+  auto &cur = *selects.relations;
   if (ref->child == nullptr) {
     cur[ref->relation_name] = relations_[ref->relation_name];
     return rc;
   }
   // 递归地处理左节点
-  rc = resolve_join_table(ref->child, outer, cur, multi);
+  rc = resolve_join_table(ref->child, selects, multi);
   if (rc != RC::SUCCESS) {
     return rc;
   }
   // 右节点加入本层RelationTable
   cur[ref->relation_name] = relations_[ref->relation_name];
 
-  std::vector<TableRef *> refs;
-  rc = resolve_condtions(outer, cur, refs, ref->conditions, multi);
+  rc = resolve_condtions(ref->conditions, *selects.context, multi);
   if (rc != RC::SUCCESS) {
-    for (auto t : refs) {
-      free(t);
-    }
     return rc;
-  }
-  // make join table
-  auto cur_node = ref;
-  for (auto t : refs) {
-    t->is_join = 1;
-    t->child = cur_node->child;
-    cur_node->child = t;
-    cur_node = t;
   }
 
   return rc;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
+RC ExecuteStage::resolve_select(Selects &selects) {
   RC rc = RC::SUCCESS;
   // 1. 建立本层的RelationTable
-  auto &cur = *selects.context;
+  auto &cur = *selects.relations;
   bool multi = selects.references->size() > 1;
   for (size_t i = 0; i < selects.references->size(); i++) {
     TableRef *ref = selects.references->at(i);
     const char *table_name = ref->relation_name;
     if (ref->is_join) {
       multi = true;
-      rc = resolve_join_table(ref, outer, cur, multi);
+      rc = resolve_join_table(ref, selects, multi);
       if (rc != RC::SUCCESS) {
         return rc;
       }
@@ -525,29 +513,23 @@ RC ExecuteStage::resolve_select(Selects &selects, RelationTable &outer) {
     }
   }
 
-  // 2. 检查condition，必要时候补充上文信息到from clause
+  // 2. 检查condition，必要时候补充上文信息
   // ConditionFilter中有类型转换和检查，这里不用做
-  std::vector<TableRef *> refs;
-  rc = resolve_condtions(outer, cur, refs, selects.conditions, multi);
+  rc = resolve_condtions(selects.conditions, *selects.context, multi);
   if (rc != RC::SUCCESS) {
-    for (auto t : refs) {
-      free(t);
-    }
     return rc;
   }
-  // 加入from clause
-  for (auto t : refs) {
-    selects.references->push_back(t);
-    selects.ref_num++;
-  }
-  // 3. 检查 select clause，必要时补充上文信息到from clause
-  // 属性名：多表必须T.A，T.*；单表A, *，单表情况下不允许多个*
+
+  // 3. 检查 select clause，必要时补充上文信息
+  // 多表必须T.A，T.*，表名必须存在；单表A, *
+  // 任何情况下不允许多个*，属性必须是表中的字段
   // 聚合函数参数：另有规定，例如AVG()不能测日期和字符串
-  return resolve_select_clause(selects, outer, cur, multi);
+  return resolve_select_clause(selects, multi);
 }
 
 /////////////////////////////////////////////////////////////////////////////
-RC ExecuteStage::join_table_relations_init(const TableRef *ref) {
+RC ExecuteStage::join_table_relations_init(const TableRef *ref,
+                                           Selects &selects) {
   RC rc = RC::SUCCESS;
   if (ref == nullptr) {
     return rc;
@@ -561,16 +543,17 @@ RC ExecuteStage::join_table_relations_init(const TableRef *ref) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
   relations_[table_name] = table;
+  relations_symtab_.add_id(table_name, &selects);
 
   // 2. 再查左结点
-  rc = join_table_relations_init(ref->child);
+  rc = join_table_relations_init(ref->child, selects);
   if (rc != RC::SUCCESS) {
     return rc;
   }
   // 子结点中的表信息已经收集完毕
   // 3. 检查 join condition
   for (size_t i = 0; i < ref->conditions->size(); i++) {
-    const Condition &cond = ref->conditions->at(i);
+    const Condition &cond = *ref->conditions->at(i);
     if (cond.is_subquery == 1) {
       if (cond.left_subquery != nullptr) {
         rc = relations_init(*cond.left_subquery);
@@ -586,12 +569,13 @@ RC ExecuteStage::join_table_relations_init(const TableRef *ref) {
   return rc;
 }
 
-RC ExecuteStage::relations_init(const Selects &selects) {
+RC ExecuteStage::relations_init(Selects &selects) {
+  relations_symtab_.enterscope();
   for (size_t i = 0; i < selects.references->size(); i++) {
     const TableRef *ref = selects.references->at(i);
     const char *table_name = ref->relation_name;
     if (ref->is_join) {
-      join_table_relations_init(ref);
+      join_table_relations_init(ref, selects);
     } else {
       // normal table reference
       Table *table =
@@ -600,12 +584,14 @@ RC ExecuteStage::relations_init(const Selects &selects) {
         return RC::SCHEMA_TABLE_NOT_EXIST;
       }
       relations_[table_name] = table;
+      relations_symtab_.add_id(table_name, &selects);
     }
   }
+  *selects.context = relations_symtab_;
 
   RC rc = RC::SUCCESS;
   for (size_t i = 0; i < selects.conditions->size(); i++) {
-    const Condition &cond = selects.conditions->at(i);
+    const Condition &cond = *selects.conditions->at(i);
     if (cond.is_subquery) {
       if (cond.left_subquery != nullptr) {
         rc = relations_init(*cond.left_subquery);
@@ -618,6 +604,7 @@ RC ExecuteStage::relations_init(const Selects &selects) {
       }
     }
   }
+  relations_symtab_.exitscope();
   return rc;
 }
 
@@ -692,16 +679,16 @@ static void get_mini_schema(const Condition &cond, RelationTable &relations,
   if (cond.left != nullptr) {
     get_mini_schema(cond.left, relations, counter);
   }
-  int left_cnt = counter.size();
   if (cond.right != nullptr) {
     get_mini_schema(cond.right, relations, counter);
   }
-  if (left_cnt > 1) {
-    // 左表达式已经涉及超过1个关系
-    for (auto &t : counter) {
-      mini_schema[t.first].merge(t.second);
-    }
-  } else if (counter.size() > 1) {
+  for (size_t i = 0; i < cond.binded_conds->size(); i++) {
+    get_mini_schema(cond.binded_conds->at(i), relations, counter);
+  }
+  for (size_t i = 0; i < cond.binded_exprs->size(); i++) {
+    get_mini_schema(cond.binded_exprs->at(i), relations, counter);
+  }
+  if (counter.size() > 1) {
     // 否则，只有左右表达式涉及两个以上关系才需添加进mini_schema
     for (auto &t : counter) {
       mini_schema[t.first].merge(t.second);
@@ -716,13 +703,13 @@ static void get_mini_schema(const TableRef *ref, RelationTable &relations,
   }
   get_mini_schema(ref->child, relations, mini_schema);
   for (size_t i = 0; i < ref->conditions->size(); i++) {
-    const Condition &cond = ref->conditions->at(i);
+    const Condition &cond = *ref->conditions->at(i);
     get_mini_schema(cond, relations, mini_schema);
   }
 }
 
 static void get_mini_schema(const Selects &selects, RelAttrTable &mini_schema) {
-  RelationTable &relations = *selects.context;
+  RelationTable &relations = *selects.relations;
   // 扫描select clause，这是一定要添加的
   for (size_t i = 0; i < selects.exprs->size(); i++) {
     const SelectExpr *expr = selects.exprs->at(i);
@@ -730,7 +717,7 @@ static void get_mini_schema(const Selects &selects, RelAttrTable &mini_schema) {
   }
   // 扫描where clause
   for (size_t i = 0; i < selects.conditions->size(); i++) {
-    const Condition &cond = selects.conditions->at(i);
+    const Condition &cond = *selects.conditions->at(i);
     get_mini_schema(cond, relations, mini_schema);
   }
   // 扫描join的on clause
@@ -771,7 +758,7 @@ RC do_join_table(TableRef *ref, Trx *trx, RelationTable &relations,
 }
 
 RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
-  RelationTable &relations = *selects.context;
+  RelationTable &relations = *selects.relations;
   // 0.1 收集所有关系的底层最简schema
   RelAttrTable mini_schema;
   get_mini_schema(selects, mini_schema);
@@ -852,7 +839,10 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
   Trx *trx = session->current_trx();
   Selects &selects = sql->sstr.selection;
 
-  // 0.1 初始化[关系名->Table Object]表
+  // 0.1 初始化Context
+  // (1) RelationTable [table_name->Table Object]
+  //     同时检查是否使用数据库中不存在的relation
+  // (2) SelectContext <table_name, Selects Object>符号表
   rc = relations_init(selects);
   if (rc != RC::SUCCESS) {
     session_event->set_response("FAILURE\n");
@@ -860,8 +850,7 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
   }
 
   // 0.2 优先检查元数据
-  RelationTable relations;
-  rc = resolve_select(selects, relations);
+  rc = resolve_select(selects);
   if (rc != RC::SUCCESS) {
     session_event->set_response("FAILURE\n");
     return rc;
@@ -874,7 +863,7 @@ RC ExecuteStage::do_select(Query *sql, SessionEvent *session_event) {
     session_event->set_response("FAILURE\n");
     return rc;
   }
-  tuple_set.print(ss, selects.context->size() > 1);
+  tuple_set.print(ss);
   session_event->set_response(ss.str());
   return rc;
 }
@@ -899,7 +888,7 @@ static RC add_join_table(TableRef *ref, RelationTable relations,
 static RC add_all_relations(const Selects &selects, const TupleSchema &product,
                             std::vector<ProjectionDesc *> &descs) {
   RC rc = RC::SUCCESS;
-  RelationTable &relations = *selects.context;
+  RelationTable &relations = *selects.relations;
   bool multi = relations.size() > 1;
   for (size_t i = 0; i < selects.references->size(); i++) {
     auto ref = selects.references->at(i);
@@ -920,7 +909,7 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
                               const TupleSchema &product,
                               ProjectExeNode &project) {
   RC rc = RC::SUCCESS;
-  RelationTable &relations = *selects.context;
+  RelationTable &relations = *selects.relations;
   bool multi = relations.size() > 1;
   std::vector<ProjectionDesc *> descs;
   for (size_t i = 0; i < selects.exprs->size(); i++) {
@@ -962,6 +951,13 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
 }
 
 /////////////////////////////////////////////////////////////////////////////////
+static void get_one_mini_schema(const RelAttr *attr, RelationTable &relations,
+                                TupleSchema &schema) {
+  const char *table_name = attr->relation_name;
+  const char *field_name = attr->attribute_name;
+  schema_add_field(relations[table_name], field_name, schema);
+}
+
 static void get_one_mini_schema(const ConditionExpr *expr,
                                 RelationTable &relations, TupleSchema &schema) {
   if (expr->has_subexpr == 1) {
@@ -974,11 +970,40 @@ static void get_one_mini_schema(const ConditionExpr *expr,
     return;
   }
   if (expr->is_attr) {
-    const RelAttr *attr = expr->attr;
-    const char *table_name = attr->relation_name;
-    const char *field_name = attr->attribute_name;
-    schema_add_field(relations[table_name], field_name, schema);
+    get_one_mini_schema(expr->attr, relations, schema);
   }
+}
+
+static bool check_condition_usable(const Condition &cond,
+                                   RelationTable &relations,
+                                   TupleSchema &mask) {
+  TupleSchema collector;
+  collector.clear();
+  if (cond.left != nullptr) {
+    get_one_mini_schema(cond.left, relations, collector);
+    if (!mask.contains_all(collector)) {
+      return false;
+    }
+  }
+  if (cond.right != nullptr) {
+    get_one_mini_schema(cond.right, relations, collector);
+    if (!mask.contains_all(collector)) {
+      return false;
+    }
+  }
+  for (size_t i = 0; i < cond.binded_conds->size(); i++) {
+    get_one_mini_schema(cond.binded_conds->at(i)->attr, relations, collector);
+    if (!mask.contains_all(collector)) {
+      return false;
+    }
+  }
+  for (size_t i = 0; i < cond.binded_exprs->size(); i++) {
+    get_one_mini_schema(cond.binded_exprs->at(i)->attr, relations, collector);
+    if (!mask.contains_all(collector)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 RC create_join_executor(Trx *trx, RelationTable &relations,
@@ -991,44 +1016,17 @@ RC create_join_executor(Trx *trx, RelationTable &relations,
   // 使用append即可，因为tl, tr始终不可能有交集
   product_schema.append(tr.get_schema());
 
-  TupleSchema collector;
   for (size_t i = 0; i < conds->size(); i++) {
-    Condition &cond = conds->at(i);
+    Condition &cond = *conds->at(i);
     if (cond.is_used == 1) {
       continue;
     }
-    TupleSet left_subquery;
-    if (cond.left_subquery != nullptr) {
-      rc = do_select(trx, *cond.left_subquery, left_subquery);
-      if (rc != RC::SUCCESS) {
-        return rc;
-      }
-    }
-    TupleSet right_subquery;
-    if (cond.right_subquery != nullptr) {
-      rc = do_select(trx, *cond.right_subquery, right_subquery);
-      if (rc != RC::SUCCESS) {
-        return rc;
-      }
-    }
-    collector.clear();
-    // 只与一个表相关的条件一定已经使用
-    if (cond.left != nullptr) {
-      get_one_mini_schema(cond.left, relations, collector);
-      if (!product_schema.contains_all(collector)) {
-        continue;
-      }
-    }
-    if (cond.right != nullptr) {
-      get_one_mini_schema(cond.right, relations, collector);
-      if (!product_schema.contains_all(collector)) {
-        continue;
-      }
+    if (!check_condition_usable(cond, relations, product_schema)) {
+      continue;
     }
     cond.is_used = 1;
     TupleFilter *filter = new TupleFilter();
-    rc = filter->init(product_schema, cond, std::move(left_subquery),
-                      std::move(right_subquery));
+    rc = filter->init(trx, product_schema, cond);
     if (rc != RC::SUCCESS) {
       delete filter;
       for (TupleFilter *&filter : filters) {
@@ -1048,47 +1046,20 @@ static RC add_filter(Trx *trx, RelationTable &relations, Table *table,
   RC rc = RC::SUCCESS;
   TupleSchema table_schema;
   TupleSchema::from_table(table, table_schema, false);
-  TupleSchema collector;
   for (size_t i = 0; i < conds->size(); i++) {
-    Condition &cond = conds->at(i);
+    Condition &cond = *conds->at(i);
     if (cond.is_used == 1) {
       // 使用过的条件直接跳过
       continue;
     }
-    TupleSet left_subquery;
-    if (cond.left_subquery != nullptr) {
-      rc = do_select(trx, *cond.left_subquery, left_subquery);
-      if (rc != RC::SUCCESS) {
-        return rc;
-      }
-    }
-    TupleSet right_subquery;
-    if (cond.right_subquery != nullptr) {
-      rc = do_select(trx, *cond.right_subquery, right_subquery);
-      if (rc != RC::SUCCESS) {
-        return rc;
-      }
-    }
-    collector.clear();
-    // 只与一个表相关的条件一定已经使用
-    if (cond.left != nullptr) {
-      get_one_mini_schema(cond.left, relations, collector);
-      if (!table_schema.contains_all(collector)) {
-        continue;
-      }
-    }
-    if (cond.right != nullptr) {
-      get_one_mini_schema(cond.right, relations, collector);
-      if (!table_schema.contains_all(collector)) {
-        continue;
-      }
+    if (!check_condition_usable(cond, relations, table_schema)) {
+      continue;
     }
     cond.is_used = 1;
 
     Table &t = *table;
     DefaultConditionFilter *condition_filter = new DefaultConditionFilter(t);
-    rc = condition_filter->init(*table, cond, std::move(left_subquery),
-                                std::move(right_subquery));
+    rc = condition_filter->init(*table, cond, trx);
     if (rc != RC::SUCCESS) {
       delete condition_filter;
       for (DefaultConditionFilter *&filter : cond_filters) {
@@ -1121,7 +1092,7 @@ RC create_selection_executor(Trx *trx, Selects &selects, Table *table,
                              RelAttrTable &mini_schema,
                              SelectExeNode &select_node) {
   RC rc = RC::SUCCESS;
-  RelationTable &relations = *selects.context;
+  RelationTable &relations = *selects.relations;
   const char *table_name = table->name();
   std::vector<DefaultConditionFilter *> cond_filters;
   // 找出仅与此表相关的过滤条件

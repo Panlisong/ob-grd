@@ -108,7 +108,7 @@ public:
   int index_of_field(const char *table_name, const char *field_name) const;
   void clear() { fields_.clear(); }
 
-  void print(std::ostream &os, bool multi) const;
+  void print(std::ostream &os) const;
 
 public:
   static void from_table(const Table *table, TupleSchema &schema,
@@ -142,7 +142,7 @@ public:
   const Tuple &get(int index) const;
   const std::vector<Tuple> &tuples() const;
 
-  void print(std::ostream &os, bool multi) const;
+  void print(std::ostream &os) const;
 
 public:
   const TupleSchema &schema() const { return schema_; }
@@ -287,7 +287,7 @@ public:
   virtual ~TupleConDescSubquery();
   std::shared_ptr<TupleValue> execute(const Tuple &tuple) override;
 
-  RC init(TupleSet &&subquery, CompOp op);
+  RC init(Trx *trx, Selects *select);
 
   bool is_contains(std::shared_ptr<TupleValue> tuple_value);
 
@@ -298,6 +298,8 @@ public:
   std::shared_ptr<TupleValue> get_value_in(int index) { return values_[index]; }
 
 private:
+  Trx *trx_;
+  Selects *select_;
   std::vector<std::shared_ptr<TupleValue>> values_;
 };
 
@@ -305,8 +307,7 @@ class TupleFilter {
 public:
   TupleFilter();
   virtual ~TupleFilter();
-  RC init(TupleSchema &product, const Condition &cond, TupleSet &&left,
-          TupleSet &&right);
+  RC init(Trx *trx, TupleSchema &product, const Condition &cond);
   bool filter(const Tuple &t);
   bool non_subquery_filter(const Tuple &tuple);
   bool subquery_filter(const Tuple &tuple);

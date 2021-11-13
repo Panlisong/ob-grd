@@ -45,7 +45,7 @@
 extern int yydebug;
 #endif
 /* "%code requires" blocks.  */
-#line 35 "yacc_sql.y"
+#line 36 "yacc_sql.y"
 
 #include <deque>
 typedef struct _Selects Selects;
@@ -56,7 +56,7 @@ typedef struct _TableRef TableRef;
 typedef struct _Condition Condition;
 typedef struct _ConditionExpr ConditionExpr;
 typedef struct _OrderCol OrderCol;
-typedef std::deque<Condition> ConditionList;
+typedef std::deque<Condition *> ConditionList;
 typedef std::deque<SelectExpr *> SelectExprList;
 typedef std::deque<TableRef *> TableRefList;
 typedef std::deque<OrderCol *> OrderColList;
@@ -152,7 +152,7 @@ typedef std::deque<RelAttr *> GroupByList;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 120 "yacc_sql.y"
+#line 121 "yacc_sql.y"
 
   Selects *select;		// select
   TableRef *ref;		// Table reference

@@ -197,26 +197,32 @@ void *ConDescValue::execute(const Record &rec) { return value(); }
 
 ConDescValue::~ConDescValue() {}
 
-RC ConDescSubquery::init(TupleSet &&subquery, CompOp op) {
-  const auto schema = subquery.get_schema();
-  if (schema.fields().size() > 1) {
-    // TODO: 子查询列数>1
-    return RC::GENERIC_ERROR;
-  }
-  if (op != MEM_IN && op != MEM_NOT_IN) {
-    if (subquery.size() > 1) {
-      LOG_ERROR("subquery return multi rows");
-      return RC::GENERIC_ERROR;
-    }
-  }
-  set_type(schema.fields().begin()->type());
-  for (auto &tuple : subquery.tuples()) {
-    values_.emplace_back(tuple.get_pointer(0));
-  }
+RC ConDescSubquery::init(Trx *trx, Selects *subquery) {
+  trx_ = trx;
+  select_ = subquery;
   return RC::SUCCESS;
 }
 
-void *ConDescSubquery::execute(const Record &rec) { return nullptr; }
+void *ConDescSubquery::execute(const Record &rec) {
+  TupleSet res;
+  do_select(trx_, *select_, res);
+  const auto schema = res.get_schema();
+  if (schema.fields().size() > 1) {
+    // TODO: 子查询列数>1
+    return nullptr;
+  }
+  // if (op != MEM_IN && op != MEM_NOT_IN) {
+  //   if (subquery.size() > 1) {
+  //     LOG_ERROR("subquery return multi rows");
+  //     return RC::GENERIC_ERROR;
+  //   }
+  // }
+  set_type(schema.fields().begin()->type());
+  for (auto &tuple : res.tuples()) {
+    values_.emplace_back(tuple.get_pointer(0));
+  }
+  return &values_;
+}
 
 std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
   switch (type) {
@@ -306,7 +312,7 @@ RC DefaultConditionFilter::init(ConDescNode *left, ConDescNode *right,
 ConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                    const TableMeta &table_meta) {
   if (expr->has_subexpr == 0) {
-    if (expr->is_attr) {
+    if (!expr->binded && expr->is_attr) {
       auto field = table_meta.field(expr->attr->attribute_name);
       if (field == nullptr) {
         return nullptr;
@@ -330,8 +336,7 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
 }
 
 RC DefaultConditionFilter::init(Table &table, const Condition &condition,
-                                TupleSet &&left_subquey,
-                                TupleSet &&right_subquey) {
+                                Trx *trx) {
   RC rc = RC::SUCCESS;
   const TableMeta &table_meta = table.table_meta();
   ConDescNode *left = nullptr;
@@ -344,7 +349,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   }
   if (condition.left_subquery != nullptr) {
     ConDescSubquery *left_node = new ConDescSubquery();
-    rc = left_node->init(std::move(left_subquey), condition.comp);
+    rc = left_node->init(trx, condition.left_subquery);
     if (rc != RC::SUCCESS) {
       delete left_node;
       return rc;
@@ -353,7 +358,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   }
   if (condition.right_subquery != nullptr) {
     ConDescSubquery *right_node = new ConDescSubquery();
-    rc = right_node->init(std::move(right_subquey), condition.comp);
+    rc = right_node->init(trx, condition.right_subquery);
     if (rc != RC::SUCCESS) {
       delete right_node;
       return rc;
@@ -597,17 +602,8 @@ RC CompositeConditionFilter::init(Trx *trx, Table &table,
   for (int i = 0; i < condition_num; i++) {
     DefaultConditionFilter *default_condition_filter =
         new DefaultConditionFilter(table);
-    const Condition &cond = conditions->at(i);
-    TupleSet left;
-    if (cond.left_subquery != nullptr) {
-      do_select(trx, *cond.left_subquery, left);
-    }
-    TupleSet right;
-    if (cond.right_subquery != nullptr) {
-      do_select(trx, *cond.right_subquery, right);
-    }
-    rc = default_condition_filter->init(table, cond, std::move(left),
-                                        std::move(right));
+    const Condition &cond = *conditions->at(i);
+    rc = default_condition_filter->init(table, cond, trx);
     if (rc != RC::SUCCESS) {
       delete default_condition_filter;
       for (int j = i - 1; j >= 0; j--) {

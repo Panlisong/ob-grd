@@ -19,13 +19,14 @@ See the Mulan PSL v2 for more details. */
 #include "sql/executor/execution_node.h"
 #include "sql/executor/tuple.h"
 #include "sql/parser/parse.h"
+#include "sql/parser/symbol_table.h"
 #include "storage/common/table.h"
-#include <unordered_map>
 
 class SessionEvent;
 typedef std::unordered_map<std::string, TupleSchema> RelAttrTable;
 typedef std::unordered_map<std::string, Table *> RelationTable;
 typedef std::unordered_map<std::string, SelectExeNode *> NodeTable;
+typedef SymbolTable<std::string, Selects> SelectContext;
 
 class ExecuteStage : public common::Stage {
 public:
@@ -49,17 +50,14 @@ protected:
    * 先收集Select语句中出现的所有关系，建立RelationTable
    * 关系名->Table Object
    */
-  RC join_table_relations_init(const TableRef *ref);
-  RC relations_init(const Selects &selects);
+  RC join_table_relations_init(const TableRef *ref, Selects &selects);
+  RC relations_init(Selects &selects);
 
-  RC resolve_select_clause(Selects &selects, RelationTable &outer,
-                           RelationTable &cur, bool multi);
-  RC resolve_join_table(TableRef *ref, RelationTable &outer, RelationTable &cur,
-                        bool multi);
-  RC resolve_condtions(RelationTable &outer, RelationTable &cur,
-                       std::vector<TableRef *> &refs,
-                       const ConditionList *conds, bool multi);
-  RC resolve_select(Selects &selects, RelationTable &relations);
+  RC resolve_select_clause(Selects &selects, bool multi);
+  RC resolve_join_table(TableRef *ref, Selects &selects, bool multi);
+  RC resolve_condtions(const ConditionList *conds, SelectContext &context,
+                       bool multi);
+  RC resolve_select(Selects &selects);
 
   RC do_select(Query *sql, SessionEvent *session_event);
 
@@ -69,6 +67,7 @@ private:
   Stage *mem_storage_stage_ = nullptr;
   std::string cur_db_;
   RelationTable relations_;
+  SelectContext relations_symtab_;
 };
 
 #endif //__OBSERVER_SQL_EXECUTE_STAGE_H__
