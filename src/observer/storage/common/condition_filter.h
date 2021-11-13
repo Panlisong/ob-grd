@@ -70,8 +70,6 @@ public:
   virtual ~ConDescUnary();
 	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
-  void *compute(void *v);
-
 private:
   ArithOp op_;
   ConDescNode *expr_ = nullptr;
