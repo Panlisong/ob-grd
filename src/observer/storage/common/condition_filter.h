@@ -21,13 +21,11 @@ See the Mulan PSL v2 for more details. */
 struct Record;
 class Table;
 
-typedef enum ConvertFlag { NO_CONVERT, INT_TO_FLOATS } ConvertFlag;
-
 class ConDescNode {
 public:
   ConDescNode() = default;
   virtual ~ConDescNode() = 0;
-  virtual void *execute(const Record &rec) = 0;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) = 0;
 
   void set_init_type(AttrType type) { init_type_ = type; }
   AttrType get_init_type() { return init_type_; }
@@ -56,7 +54,7 @@ public:
   ConDescInternal() = default;
   ConDescInternal(ArithOp op, ConDescNode *left, ConDescNode *right);
   virtual ~ConDescInternal();
-  virtual void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
   void *compute(void *lv, void *rv);
 
@@ -70,7 +68,7 @@ class ConDescUnary : public ConDescInternal {
 public:
   ConDescUnary(ArithOp op, ConDescNode *expr);
   virtual ~ConDescUnary();
-  void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
   void *compute(void *v);
 
@@ -87,7 +85,7 @@ public:
     set_type(type);
   }
   virtual ~ConDescAttr();
-  void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
   const int length() const { return length_; }
   const int offset() const { return offset_; }
@@ -108,18 +106,17 @@ public:
     set_value(value);
   }
   virtual ~ConDescValue();
-  void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 };
 
 class ConDescSubquery : public ConDescNode {
 public:
   ConDescSubquery() = default;
   virtual ~ConDescSubquery();
-  void *execute(const Record &rec) override;
+	virtual std::shared_ptr<TupleValue> execute(const Record &rec) override;
 
-  RC init(Trx *trx, Selects *subquery, CompOp op);
+  RC init(Trx *trx, Selects *subquery);
 
-  bool contains(AttrType type, const char *value);
   bool contains(std::shared_ptr<TupleValue> tuple_value);
 
   int subquery_size() { return values_.size(); }

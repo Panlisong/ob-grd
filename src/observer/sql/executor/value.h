@@ -39,6 +39,7 @@ public:
   virtual void compute(TupleValue *rhs, TupleValue *&res, ArithOp op) = 0;
 
   virtual AttrType type() const = 0;
+  bool is_null() { return type() == ATTR_NULL; }
 
 private:
 };
