@@ -16,9 +16,12 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <string>
 
+extern RC do_select(Trx *trx, Selects &selects, TupleSet &res);
+
 TupleConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                         TupleSchema &product);
 
+///////////////////////////////////////////////////////////////
 Tuple::Tuple(const Tuple &other) {
   LOG_PANIC("Copy constructor of tuple is not supported");
   exit(1);
@@ -348,11 +351,28 @@ TupleConDescValue::~TupleConDescValue() {}
 
 RC TupleConDescSubquery::init(Trx *trx, Selects *select) {
   trx_ = trx;
+  if (select->exprs->size() > 1) {
+    LOG_ERROR("subquery return multi columns");
+    return RC::GENERIC_ERROR;
+  }
+
   select_ = select;
   return RC::SUCCESS;
 }
 
 std::shared_ptr<TupleValue> TupleConDescSubquery::execute(const Tuple &tuple) {
+  TupleSet res;
+  for (size_t i = 0; i < select_->conditions->size(); i++) {
+    // 新的子查询，将Condition标志位清空
+    select_->conditions->at(i)->is_used = 0;
+  }
+  do_select(trx_, *select_, res);
+  const auto schema = res.get_schema();
+  set_type(schema.fields().begin()->type());
+  values_.clear();
+  for (auto &tuple : res.tuples()) {
+    values_.emplace_back(tuple.get_pointer(0));
+  }
   return nullptr;
 }
 
