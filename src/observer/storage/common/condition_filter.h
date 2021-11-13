@@ -62,8 +62,8 @@ public:
 
 private:
   ArithOp op_;
-  ConDescNode *left_;
-  ConDescNode *right_;
+  ConDescNode *left_ = nullptr;
+  ConDescNode *right_ = nullptr;
 };
 
 class ConDescUnary : public ConDescInternal {
@@ -76,7 +76,7 @@ public:
 
 private:
   ArithOp op_;
-  ConDescNode *expr_;
+  ConDescNode *expr_ = nullptr;
 };
 
 class ConDescAttr : public ConDescNode {
@@ -167,8 +167,8 @@ public:
   CompOp comp_op() const { return comp_op_; }
 
 private:
-  ConDescNode *left_;
-  ConDescNode *right_;
+  ConDescNode *left_ = nullptr;
+  ConDescNode *right_ = nullptr;
   CompOp comp_op_ = NO_OP;
   Table &table_;
 };

@@ -860,6 +860,7 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
   for (auto &tmp_node : select_nodes) {
     delete tmp_node.second;
   }
+	delete project_node;
 
   return rc;
 }
