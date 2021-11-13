@@ -393,8 +393,8 @@ void attr_info_destroy(AttrInfo *attr_info);
 
 ///////////////////////////////////////////////////////
 void selects_append_conditions(Selects *selects, ConditionList *cond_list);
-void selects_append_group(Selects *selects, RelAttr *);
-void selects_append_order(Selects *selects, OrderCol *ocol);
+void selects_append_group(Selects *selects, GroupByList *groups);
+void selects_append_order(Selects *selects, OrderColList *ocol);
 void selects_destroy(Selects *selects);
 
 void insert_value_append(Inserts *inserts, Value *v);

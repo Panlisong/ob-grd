@@ -276,6 +276,139 @@ ProjectExeNode::~ProjectExeNode() {
   descs_.clear();
 }
 
+
+void OrderExeNode::sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , std::vector<int>ascs){
+  int cur_size = tuple_set.size();
+  // for(size_t i = 0 ; i < tuple_set.tuples().size() ; ++i){
+  //   tmp_tuple.append(tuple_set.tuples()[i]);
+  //   cur_tuples.add(tmp_tuple);
+  // }
+  int compare=0,val1,val2;
+  float f1,f2;
+  std::string s1,s2;
+  time_t t1,t2;
+  Tuple swaptuple;
+  size_t index,id,cur_asc;
+  for(int i = 0 ; i < cur_size - 1 ; ++i){
+    for(int j = i + 1 ; j < cur_size ; ++j){
+      compare=index=0;
+      while(compare==0 && index < indexes.size()){
+        id=indexes[index];
+        cur_asc=ascs[index];
+        AttrType tmp=tuple_set.get_schema().field(id).type();
+        switch(tmp){
+          case INTS:
+          {
+            tuple_set.tuples()[i].get(id).get_value(&val1);
+            tuple_set.tuples()[j].get(id).get_value(&val2);
+            if (val1 - val2 < -1e-6) {
+              compare =-1;
+            } else if (val1- val2 > 1e-6) {
+              compare = 1;
+            } else {
+              compare = 0;
+            }
+            break;
+          }
+          case CHARS:
+          {
+            tuple_set.tuples()[i].get(id).get_value(&s1);
+            tuple_set.tuples()[j].get(id).get_value(&s2);
+            compare = strcmp(s1.c_str(), s2.c_str());
+            break;
+          }
+          case FLOATS:
+          {
+            tuple_set.tuples()[i].get(id).get_value(&f1);
+            tuple_set.tuples()[j].get(id).get_value(&f2);
+            if (f1 - f2 < -1e-6) {
+              compare = -1;
+            } else if (f1- f2 > 1e-6) {
+              compare = 1;
+            } else {
+              compare = 0;
+            }
+            break;
+          }
+          case DATES:
+          {
+            tuple_set.tuples()[i].get(id).get_value(&t1);
+            tuple_set.tuples()[j].get(id).get_value(&t2);
+            long long res = t1 - t2;
+            if(res > 0LL) {
+              compare = 1;
+            } else if (res < 0LL) {
+              compare = -1;
+            }
+            compare = 0;
+            break;
+          }
+          default:
+          {
+            LOG_ERROR("Unsupported sort type.\n");
+            return;
+          }
+        
+        }
+        ++index;
+      }
+      if((compare < 0 && cur_asc == 0) || (compare > 0 && cur_asc == 1)){
+        swaptuple.update(tuple_set.tuples()[i]);
+        tuple_set.update(i,tuple_set.tuples()[j]);
+        tuple_set.update(j,swaptuple);
+      }
+    }
+  }
+  return;
+}
+
+RC OrderExeNode::execute(TupleSet &tuple_set){
+  //TupleSet::TupleSchema::index_of_field
+  //TupleValue::compare
+  // CHARS,
+  // INTS,
+  // FLOATS,
+  // ATTR_NULL,
+  // ATTR_TEXT,
+  // DATES
+  //firstly implement those first 4 in the value.h that have compare()
+  RC rc = RC::SUCCESS;
+  size_t order_num = OrderExeNode::get_order_num();
+  OrderCol* cur_col;
+  OrderColList* cur_list = OrderExeNode::get_orders();
+  int index = -1 ;
+  std::vector<int> flags; //1:升序，0：降序
+  TupleSchema cur_schema=tuple_set.schema();
+  std::vector<TupleField> cur_field;
+  std::vector<int>compare_indexes;
+  for (size_t i = 0; i < order_num ; ++i){
+    index = -1;
+    cur_col = cur_list->at(i);
+    flags.push_back(cur_col->asc);
+    if(cur_col->attr->relation_name==nullptr){
+      //sort by the first paired attr in the tuple schema 
+      cur_field = cur_schema.fields();
+      for(size_t i = 0; i < cur_field.size() ; ++i){
+        if(strcmp(cur_field[i].field_name() , cur_col->attr->attribute_name) == 0){
+          index = i;
+          break;
+        }
+      }
+    } else {
+      index = cur_schema.index_of_field(cur_col->attr->relation_name, 
+                                         cur_col->attr->attribute_name);
+    }
+    if(index != -1){
+      compare_indexes.push_back(index);
+    } else {
+      return RC::SCHEMA_FIELD_NOT_EXIST;
+    }
+  }
+  sort_tuple(tuple_set, compare_indexes, flags); 
+  return rc; 
+}
+
+
 RC ProjectExeNode::init(TupleSet &&in, std::vector<ProjectionDesc *> &&descs) {
   RC rc = RC::SUCCESS;
   in_ = std::move(in);

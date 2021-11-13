@@ -110,8 +110,12 @@ void *ConDescInternal::execute(const Record &rec) {
 }
 
 ConDescInternal::~ConDescInternal() {
-  delete left_;
-  delete right_;
+  if (left_ != nullptr) {
+    delete left_;
+  }
+  if (right_ != nullptr) {
+    delete right_;
+  }
 }
 
 ConDescUnary::ConDescUnary(ArithOp op, ConDescNode *expr)
@@ -152,7 +156,11 @@ void *ConDescUnary::execute(const Record &rec) {
   return res;
 }
 
-ConDescUnary::~ConDescUnary() { delete expr_; }
+ConDescUnary::~ConDescUnary() {
+  if (expr_ != nullptr) {
+    delete expr_;
+  }
+}
 
 void ConDescAttr::get_value_from_data(char *data, void *&value) {
   switch (type()) {

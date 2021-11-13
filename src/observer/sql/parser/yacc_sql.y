@@ -450,8 +450,10 @@ select:
 		selects_append_conditions($$, $wh);
 
 		// 4. append group_list(可选项，可能为空)
+		selects_append_group($$, $gp);
 
 		// 5. append order_list(可选项，可能为空)
+		selects_append_order($$, $od);
 		
 		$$->relations = new RelationTable;
 		$$->context = new SelectContext;

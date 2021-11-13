@@ -44,6 +44,7 @@ public:
   void add();
 
   void append(const Tuple &other);
+  void update(const Tuple &val);
 
   const std::vector<std::shared_ptr<TupleValue>> &values() const {
     return values_;
@@ -138,6 +139,7 @@ public:
   bool is_empty() const;
   int size() const;
   int not_null_size(int column) const;
+  void update(int index , const Tuple& val);
 
   const Tuple &get(int index) const;
   const std::vector<Tuple> &tuples() const;
