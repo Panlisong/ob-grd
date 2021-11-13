@@ -494,7 +494,7 @@ RC Table::scan_record_by_index(Trx *trx, IndexScanner *scanner,
       break;
     }
 
-    if (filter == nullptr || filter->filter(record)) {
+    if (filter == nullptr || filter->filter(record, rc)) {
       rc = record_reader(&record, context);
       if (rc != RC::SUCCESS) {
         LOG_TRACE("Record reader break the table scanning. rc=%d:%s", rc,
