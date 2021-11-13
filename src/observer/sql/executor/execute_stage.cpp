@@ -823,7 +823,7 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
     }
   }
 
-  // 3 根据goup clause对tuple_set进行整理
+  // 3 根据group clause对tuple_set进行整理
   if (selects.group_num != 0) {
     GroupExeNode *group_node = new GroupExeNode;
     rc=create_group_executor(selects , tuple_set, *group_node);
