@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse_defs.h"
 #include "storage/common/table.h"
 #include <cmath>
+#include <cstdlib>
 #include <stddef.h>
 
 using namespace common;
@@ -484,6 +485,21 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
   return cmp_result; // should not go here
 }
 
+static void *malloc_value(AttrType type) {
+  switch (type) {
+  case INTS:
+    return (int *)malloc(sizeof(int));
+  case FLOATS:
+    return (float *)malloc(sizeof(float));
+  case DATES:
+    return (time_t *)malloc(sizeof(time_t));
+  case CHARS:
+    return (char *)malloc(4 * sizeof(char));
+  default:
+    return nullptr;
+  }
+}
+
 bool DefaultConditionFilter::subquery_filter(const Record &rec, RC &ret) const {
   // 分配关联值
   for (size_t i = 0; i < bind_cond_exprs_.size(); i++) {
@@ -494,6 +510,7 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec, RC &ret) const {
     v->type = execution_node->type();
     std::shared_ptr<TupleValue> outer_tuple_value =
         execution_node->execute(rec);
+    v->data = malloc_value(v->type);
     outer_tuple_value->get_value(v->data);
     v->len = execution_node->length();
     if (bind_attr_expr->value != nullptr) {
@@ -510,6 +527,7 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec, RC &ret) const {
     v->type = execution_node->type();
     std::shared_ptr<TupleValue> outer_tuple_value =
         execution_node->execute(rec);
+    v->data = malloc_value(v->type);
     outer_tuple_value->get_value(v->data);
     v->len = execution_node->length();
     if (bind_attr_expr->value != nullptr) {
@@ -541,7 +559,11 @@ bool DefaultConditionFilter::two_subquery_filter(const Record &rec,
   left_cond_desc_subquery->execute(rec);
   right_cond_desc_subquery->execute(rec);
 
-  if (left_cond_desc_subquery->subquery_size() != 1) {
+  if (left_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
+
+  if (left_cond_desc_subquery->subquery_size() > 1) {
     ret = RC::GENERIC_ERROR;
     return false;
   }
@@ -554,7 +576,11 @@ bool DefaultConditionFilter::two_subquery_filter(const Record &rec,
     return comp_op_ == MEM_IN ? contains : !contains;
   }
 
-  if (right_cond_desc_subquery->subquery_size() != 1) {
+  if (right_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
+  if (right_cond_desc_subquery->subquery_size() > 1) {
+    ret = RC::GENERIC_ERROR;
     return false;
   }
 
@@ -592,7 +618,11 @@ bool DefaultConditionFilter::one_subquery_filter(const Record &rec,
     return comp_op_ == MEM_IN ? contains : !contains;
   }
 
-  if (right_cond_desc_subquery->subquery_size() != 1) {
+  if (right_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
+
+  if (right_cond_desc_subquery->subquery_size() > 1) {
     ret = RC::GENERIC_ERROR;
     return false;
   }
