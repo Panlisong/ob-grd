@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse_defs.h"
 #include "storage/common/table.h"
 #include <cmath>
+#include <cstdlib>
 #include <stddef.h>
 
 using namespace common;
@@ -55,12 +56,7 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
 ConDescNode *create_cond_desc_attr(RelAttr *attr, const TableMeta &table_meta);
 
 //////////////////////////////////////////////////////////////////////////////
-ConDescNode::~ConDescNode() {
-  if (value_ != nullptr) {
-    free(value_);
-    value_ = nullptr;
-  }
-}
+ConDescNode::~ConDescNode() {}
 
 ConDescInternal::ConDescInternal(ArithOp op, ConDescNode *left,
                                  ConDescNode *right)
@@ -223,12 +219,13 @@ std::shared_ptr<TupleValue> ConDescAttr::execute(const Record &rec) {
     LOG_PANIC("Unkown attr type: %d", type());
   } break;
   }
+  return nullptr;
 }
 
 ConDescAttr::~ConDescAttr() {}
 
 std::shared_ptr<TupleValue> ConDescValue::execute(const Record &rec) {
-  return get_tuple_value(type(), (char *)value());
+  return value_;
 }
 
 ConDescValue::~ConDescValue() {}
@@ -239,7 +236,13 @@ RC ConDescSubquery::init(Trx *trx, Selects *subquery) {
     LOG_ERROR("subquery return multi columns");
     return RC::GENERIC_ERROR;
   }
-  set_type(FLOATS);
+  auto first_expr = subquery->exprs->at(0);
+  if (first_expr->is_attr == 1 &&
+      0 == strcmp("*", first_expr->attr->attribute_name)) {
+    LOG_ERROR("subquery return multi columns");
+    return RC::GENERIC_ERROR;
+  }
+  set_type(first_expr->type);
   select_ = subquery;
   return RC::SUCCESS;
 }
@@ -257,7 +260,6 @@ std::shared_ptr<TupleValue> ConDescSubquery::execute(const Record &rec) {
   for (auto &tuple : res.tuples()) {
     values_.emplace_back(tuple.get_pointer(0));
   }
-
   return nullptr;
 }
 
@@ -330,7 +332,8 @@ ConDescNode *create_cond_desc_node(ConditionExpr *expr,
     if (!expr->binded && expr->is_attr) {
       return create_cond_desc_attr(expr->attr, table_meta);
     } else {
-      return new ConDescValue(expr->value->type, expr->value->data);
+      auto v = get_tuple_value(expr->value->type, (char *)expr->value->data);
+      return new ConDescValue(expr->value->type, v);
     }
   }
   ConDescNode *right = create_cond_desc_node(expr->right, table_meta);
@@ -460,7 +463,22 @@ bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
   return cmp_result; // should not go here
 }
 
-bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
+static void *malloc_value(AttrType type) {
+  switch (type) {
+  case INTS:
+    return (int *)malloc(sizeof(int));
+  case FLOATS:
+    return (float *)malloc(sizeof(float));
+  case DATES:
+    return (time_t *)malloc(sizeof(time_t));
+  case CHARS:
+    return (char *)malloc(4 * sizeof(char));
+  default:
+    return nullptr;
+  }
+}
+
+bool DefaultConditionFilter::subquery_filter(const Record &rec, RC &ret) const {
   // 分配关联值
   for (size_t i = 0; i < bind_cond_exprs_.size(); i++) {
     auto bind_attr_expr = bind_cond_exprs_.at(i).second;
@@ -470,6 +488,7 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
     v->type = execution_node->type();
     std::shared_ptr<TupleValue> outer_tuple_value =
         execution_node->execute(rec);
+    v->data = malloc_value(v->type);
     outer_tuple_value->get_value(v->data);
     v->len = execution_node->length();
     if (bind_attr_expr->value != nullptr) {
@@ -486,6 +505,7 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
     v->type = execution_node->type();
     std::shared_ptr<TupleValue> outer_tuple_value =
         execution_node->execute(rec);
+    v->data = malloc_value(v->type);
     outer_tuple_value->get_value(v->data);
     v->len = execution_node->length();
     if (bind_attr_expr->value != nullptr) {
@@ -501,13 +521,14 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
 
   if (left_cond_desc_subquery != nullptr &&
       right_cond_desc_subquery != nullptr) {
-    return two_subquery_filter(rec);
+    return two_subquery_filter(rec, ret);
   }
 
-  return one_subquery_filter(rec);
+  return one_subquery_filter(rec, ret);
 }
 
-bool DefaultConditionFilter::two_subquery_filter(const Record &rec) const {
+bool DefaultConditionFilter::two_subquery_filter(const Record &rec,
+                                                 RC &ret) const {
   ConDescSubquery *left_cond_desc_subquery =
       dynamic_cast<ConDescSubquery *>(left_);
   ConDescSubquery *right_cond_desc_subquery =
@@ -516,7 +537,12 @@ bool DefaultConditionFilter::two_subquery_filter(const Record &rec) const {
   left_cond_desc_subquery->execute(rec);
   right_cond_desc_subquery->execute(rec);
 
-  if (left_cond_desc_subquery->subquery_size() != 1) {
+  if (left_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
+
+  if (left_cond_desc_subquery->subquery_size() > 1) {
+    ret = RC::GENERIC_ERROR;
     return false;
   }
 
@@ -528,7 +554,11 @@ bool DefaultConditionFilter::two_subquery_filter(const Record &rec) const {
     return comp_op_ == MEM_IN ? contains : !contains;
   }
 
-  if (right_cond_desc_subquery->subquery_size() != 1) {
+  if (right_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
+  if (right_cond_desc_subquery->subquery_size() > 1) {
+    ret = RC::GENERIC_ERROR;
     return false;
   }
 
@@ -554,7 +584,8 @@ bool DefaultConditionFilter::two_subquery_filter(const Record &rec) const {
   return true;
 }
 
-bool DefaultConditionFilter::one_subquery_filter(const Record &rec) const {
+bool DefaultConditionFilter::one_subquery_filter(const Record &rec,
+                                                 RC &ret) const {
   std::shared_ptr<TupleValue> left_value = left_->execute(rec);
   ConDescSubquery *right_cond_desc_subquery =
       dynamic_cast<ConDescSubquery *>(right_);
@@ -565,7 +596,12 @@ bool DefaultConditionFilter::one_subquery_filter(const Record &rec) const {
     return comp_op_ == MEM_IN ? contains : !contains;
   }
 
-  if (right_cond_desc_subquery->subquery_size() != 1) {
+  if (right_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
+
+  if (right_cond_desc_subquery->subquery_size() > 1) {
+    ret = RC::GENERIC_ERROR;
     return false;
   }
 
@@ -602,11 +638,11 @@ bool DefaultConditionFilter::one_subquery_filter(const Record &rec) const {
   return false;
 }
 
-bool DefaultConditionFilter::filter(const Record &rec) const {
+bool DefaultConditionFilter::filter(const Record &rec, RC &ret) const {
   bool res = false;
   auto is_subquery = dynamic_cast<ConDescSubquery *>(right_);
   if (is_subquery != nullptr) {
-    res = subquery_filter(rec);
+    res = subquery_filter(rec, ret);
   } else {
     res = non_subquery_filter(rec);
   }
@@ -665,9 +701,9 @@ RC CompositeConditionFilter::init(Trx *trx, Table &table,
   return init((const ConditionFilter **)condition_filters, condition_num, true);
 }
 
-bool CompositeConditionFilter::filter(const Record &rec) const {
+bool CompositeConditionFilter::filter(const Record &rec, RC &ret) const {
   for (int i = 0; i < filter_num_; i++) {
-    if (!filters_[i]->filter(rec)) {
+    if (!filters_[i]->filter(rec, ret)) {
       return false;
     }
   }

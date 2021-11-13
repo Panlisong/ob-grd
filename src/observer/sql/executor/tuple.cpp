@@ -355,7 +355,13 @@ RC TupleConDescSubquery::init(Trx *trx, Selects *select) {
     LOG_ERROR("subquery return multi columns");
     return RC::GENERIC_ERROR;
   }
-
+  auto first_expr = select->exprs->at(0);
+  if (first_expr->is_attr == 1 &&
+      0 == strcmp("*", first_expr->attr->attribute_name)) {
+    LOG_ERROR("subquery return multi columns");
+    return RC::GENERIC_ERROR;
+  }
+  set_type(select->exprs->at(0)->type);
   select_ = select;
   return RC::SUCCESS;
 }
@@ -496,26 +502,31 @@ bool TupleFilter::non_subquery_filter(const Tuple &t) {
   return false;
 }
 
-bool TupleFilter::subquery_filter(const Tuple &tuple) {
+bool TupleFilter::subquery_filter(const Tuple &tuple, RC &ret) {
   TupleConDescSubquery *left_cond_desc_subquery =
       dynamic_cast<TupleConDescSubquery *>(left_);
   TupleConDescSubquery *right_cond_desc_subquery =
       dynamic_cast<TupleConDescSubquery *>(right_);
   if (left_cond_desc_subquery != nullptr &&
       right_cond_desc_subquery != nullptr) {
-    return two_subquery_filter(tuple);
+    return two_subquery_filter(tuple, ret);
   }
 
-  return one_subquery_filter(tuple);
+  return one_subquery_filter(tuple, ret);
 }
 
-bool TupleFilter::two_subquery_filter(const Tuple &tuple) {
+bool TupleFilter::two_subquery_filter(const Tuple &tuple, RC &ret) {
   TupleConDescSubquery *left_cond_desc_subquery =
       dynamic_cast<TupleConDescSubquery *>(left_);
   TupleConDescSubquery *right_cond_desc_subquery =
       dynamic_cast<TupleConDescSubquery *>(right_);
 
-  if (left_cond_desc_subquery->subquery_size() != 1) {
+  if (left_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
+
+  if (left_cond_desc_subquery->subquery_size() > 1) {
+    ret = RC::GENERIC_ERROR;
     return false;
   }
 
@@ -527,7 +538,11 @@ bool TupleFilter::two_subquery_filter(const Tuple &tuple) {
     return op_ == MEM_IN ? contains : !contains;
   }
 
-  if (right_cond_desc_subquery->subquery_size() != 1) {
+  if (right_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
+  if (right_cond_desc_subquery->subquery_size() > 1) {
+    ret = RC::GENERIC_ERROR;
     return false;
   }
 
@@ -553,7 +568,7 @@ bool TupleFilter::two_subquery_filter(const Tuple &tuple) {
   return true;
 }
 
-bool TupleFilter::one_subquery_filter(const Tuple &tuple) {
+bool TupleFilter::one_subquery_filter(const Tuple &tuple, RC &ret) {
   auto lv = left_->execute(tuple);
   TupleConDescSubquery *right_cond_desc_subquery =
       dynamic_cast<TupleConDescSubquery *>(right_);
@@ -562,8 +577,12 @@ bool TupleFilter::one_subquery_filter(const Tuple &tuple) {
     bool contains = right_cond_desc_subquery->is_contains(lv);
     return op_ == MEM_IN ? contains : !contains;
   }
+  if (right_cond_desc_subquery->subquery_size() == 0) {
+    return false;
+  }
 
-  if (right_cond_desc_subquery->subquery_size() != 1) {
+  if (right_cond_desc_subquery->subquery_size() > 1) {
+    ret = RC::GENERIC_ERROR;
     return false;
   }
 
@@ -599,11 +618,11 @@ bool TupleFilter::one_subquery_filter(const Tuple &tuple) {
   return false;
 }
 
-bool TupleFilter::filter(const Tuple &t) {
+bool TupleFilter::filter(const Tuple &t, RC &ret) {
   bool res = false;
   auto is_subquery = dynamic_cast<TupleConDescSubquery *>(right_);
   if (is_subquery != nullptr) {
-    res = subquery_filter(t);
+    res = subquery_filter(t, ret);
   } else {
     res = non_subquery_filter(t);
   }
