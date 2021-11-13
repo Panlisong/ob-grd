@@ -289,7 +289,7 @@ void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr) {
   expr->func = func;
   expr->attr = attr;
   expr->is_attr = 1;
-  ///////////////////
+
   expr->has_subexpr = 0;
   expr->has_brace = 0;
   expr->arithOp = NO_ARITH_OP;
@@ -303,7 +303,7 @@ void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr) {
 void select_attr_init(SelectExpr *expr, RelAttr *attr) {
   expr->attr = attr;
   expr->is_attr = 1;
-  ///////////////////
+
   expr->has_subexpr = 0;
   expr->has_brace = 0;
   expr->func = COLUMN;
@@ -317,7 +317,7 @@ void select_attr_init(SelectExpr *expr, RelAttr *attr) {
 
 void select_value_init(SelectExpr *expr, Value *value) {
   expr->value = value;
-  ///////////////////
+
   expr->has_brace = 0;
   expr->is_attr = 0;
   expr->attr = nullptr;
