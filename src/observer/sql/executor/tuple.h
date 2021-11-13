@@ -104,6 +104,10 @@ public:
   const std::vector<TupleField> &fields() const { return fields_; }
 
   const TupleField &field(int index) const { return fields_[index]; }
+  void set_alias(const TupleSchema& t){
+    for(std::vector<TupleField>::size_type i = 0 ; i < t.fields_.size(); ++i)
+      fields_[i].set_alias(t.field(i).alias());
+  }
 
   bool contains_all(const TupleSchema &other) const;
   int index_of_field(const char *table_name, const char *field_name) const;
@@ -131,22 +135,29 @@ public:
   void set_schema(const TupleSchema &schema);
 
   const TupleSchema &get_schema() const;
+  TupleSchema new_get_schema() {return schema_; }
+
+  void set_alias(const TupleSet& t){ schema_.set_alias(t.get_schema()); }
 
   void add(Tuple &&tuple);
 
   void clear();
-
+  void tuple_clear ();
   bool is_empty() const;
   int size() const;
+  int group_size() {return group_tuples_.size();}
   int not_null_size(int column) const;
   void update(int index, const Tuple &val);
 
   const Tuple &get(int index) const;
+  TupleSet &newget(int index);
   const std::vector<Tuple> &tuples() const;
 
 
   void print(std::ostream &os) const;
   bool is_group(){return group_tuples_.size() != 0;}
+  void set_push_back(const Tuple& t);
+  void group_push_back(TupleSet& t);
 
 public:
   const TupleSchema &schema() const { return schema_; }

@@ -884,12 +884,37 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
   }
 
   // 5 根据select clause生成输出schema
-  ProjectExeNode *project_node = new ProjectExeNode;
-  rc = create_projection_executor(selects, tuple_set, tuple_set.get_schema(),
-                                  *project_node);
-  project_node->execute(tuple_set);
-  res = std::move(tuple_set);
-
+  if(selects.group_num != 0){
+    TupleSet tmp_group;
+    ProjectExeNode *project_node1 = new ProjectExeNode;
+    res.set_schema(tuple_set.get_schema());
+    rc = create_projection_executor(selects, tuple_set, tuple_set.get_schema(),
+                                    *project_node1);
+    project_node1->execute(tuple_set);
+    int size=tuple_set.group_size();
+    res.tuple_clear();
+    for(int i=0; i < size; ++i){
+      ProjectExeNode *project_node = new ProjectExeNode;
+      tmp_group.clear();
+      tmp_group=std::move(tuple_set.newget(i));
+      tmp_group.set_schema(res.get_schema());
+      rc = create_projection_executor(selects, tmp_group, tmp_group.get_schema(),
+                                      *project_node);
+      if(rc != RC::SUCCESS){
+        LOG_ERROR("Failed to create projection node under group by case.");
+        return rc;
+      }
+      project_node->execute(tmp_group);
+      res.set_push_back(tmp_group.get(tmp_group.size()-1));
+    }
+    res.set_schema((project_node1->getout()));
+  } else {
+    ProjectExeNode *project_node = new ProjectExeNode;
+    rc = create_projection_executor(selects, tuple_set, tuple_set.get_schema(),
+                                    *project_node);
+    project_node->execute(tuple_set);
+    res = std::move(tuple_set);
+  }
   // 释放资源
   for (auto &tmp_node : select_nodes) {
     delete tmp_node.second;
@@ -1085,6 +1110,8 @@ RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
       const char *table_name = attr->relation_name;
       const char *field_name = attr->attribute_name;
       if (strcmp("*", field_name) == 0) {
+        if(selects.group_num != 0)
+          return RC::SCHEMA_TABLE_NAME_ILLEGAL;
         if (table_name == nullptr) {
           rc = add_all_relations(selects, product, descs);
         } else {

@@ -187,6 +187,10 @@ void TupleSet::clear() {
   schema_.clear();
 }
 
+void TupleSet::tuple_clear (){
+  tuples_.clear();
+}
+
 void TupleSet::print(std::ostream &os) const {
   if (schema_.fields().empty()) {
     LOG_WARN("Got empty schema");
@@ -207,6 +211,18 @@ void TupleSet::print(std::ostream &os) const {
     values.back()->to_string(os);
     os << std::endl;
   }
+}
+
+void TupleSet::set_push_back(const Tuple& t) {
+  Tuple tmp;
+  tmp.update(t);
+  add(std::move(tmp));
+  return;
+}
+
+void TupleSet::group_push_back(TupleSet& t) {
+  group_tuples_.emplace_back(std::move(t));
+  return;
 }
 
 void TupleSet::set_schema(const TupleSchema &schema) { schema_ = schema; }
@@ -235,6 +251,8 @@ void TupleSet::update(int index, const Tuple &val) {
 }
 
 const Tuple &TupleSet::get(int index) const { return tuples_[index]; }
+
+TupleSet &TupleSet::newget(int index) { return group_tuples_[index]; }
 
 const std::vector<Tuple> &TupleSet::tuples() const { return tuples_; }
 

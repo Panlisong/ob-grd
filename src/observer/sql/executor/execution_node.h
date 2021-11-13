@@ -236,6 +236,7 @@ public:
   RC init(TupleSet &&in, std::vector<ProjectionDesc *> &&descs);
 
   RC execute(TupleSet &tuple_set) override;
+  const TupleSchema& getout() {return out_schema_;}
 
 private:
   RC execute_aggregate(TupleSet &tuple_set);

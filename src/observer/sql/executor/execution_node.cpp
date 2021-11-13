@@ -265,13 +265,14 @@ ProjectExeNode::~ProjectExeNode() {
   descs_.clear();
 }
 
-int compare_tuple(TupleSchema& cur_schema , size_t& index , Tuple& tuple1 , Tuple& tuple2 , std::vector<int>& indexes){
+int compare_tuple(TupleSchema& cur_schema , int& index , const Tuple& tuple1 , const Tuple& tuple2 , std::vector<int>& indexes){
   int val1,val2,compare=0;
   float f1,f2;
   std::string s1,s2;
   time_t t1,t2;
   int id;
   AttrType tmp;
+  index=0;
   while(compare==0 && index < indexes.size()){
     id=indexes[index];
     tmp=cur_schema.field(id).type();
@@ -337,7 +338,8 @@ void sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , std::vector<int>
   int cur_size = tuple_set.size();
   int compare=0 ;
   Tuple swaptuple,tuple1,tuple2;
-  size_t index,cur_asc;
+  int index;
+  size_t cur_asc;
   TupleSchema cur_schema = tuple_set.get_schema();
   for(int i = 0 ; i < cur_size - 1 ; ++i){
     for(int j = i + 1 ; j < cur_size ; ++j){
@@ -364,13 +366,13 @@ RC GroupExeNode::execute(TupleSet &tuple_set){
   GroupByList* group_list = GroupExeNode::get_groups();
   RelAttr* cur_attr;
   int index = -1 ;
+  int compare,flag=0;
   TupleSchema cur_schema=tuple_set.schema();
   std::vector<TupleField> cur_field;
   std::vector<int>group_indexes;
-  std::vector<int>flags;
+
   for (size_t i = 0; i < group_num ; ++i){
     index = -1;
-    flags.push_back(0);
     cur_attr = group_list->at(i);
     if(cur_attr->relation_name==nullptr){
       //sort by the first paired attr in the tuple schema 
@@ -391,8 +393,42 @@ RC GroupExeNode::execute(TupleSet &tuple_set){
       return RC::SCHEMA_FIELD_NOT_EXIST;
     }
   }
-  sort_tuple(tuple_set, group_indexes, flags); 
-  //for()
+
+  Tuple tuple1,tuple2;
+  TupleSet standard_tuples;
+  for(int i=0 ; i < tuple_set.size() ; ++i){
+    flag = 0; //no standard tuple 'equals to' it
+    tuple1.update(tuple_set.tuples()[i]);
+    for(int j=0 ; j < standard_tuples.size() ; ++j){
+      tuple2.update(standard_tuples.get(j));
+      compare = compare_tuple(cur_schema , index , tuple1 , tuple2 , group_indexes);
+      if(compare == 0) {
+        flag = 1;
+        break;
+      } else if (compare == -10086){
+        return rc;
+      }
+    }
+    if(flag == 1) {
+      continue;
+    }
+    standard_tuples.set_push_back(tuple1);
+  }
+
+  TupleSet cur_tupleset;
+  for(int i = 0 ; i < standard_tuples.size() ; ++i) {
+    cur_tupleset.clear();
+    tuple1.update(standard_tuples.get(i));
+    for(int j = 0 ; j < tuple_set.size(); ++j) {
+      tuple2.update(tuple_set.get(j));
+      compare=compare_tuple(cur_schema, index, tuple1 , tuple2 , group_indexes);
+      if(compare == 0){
+        cur_tupleset.set_push_back(tuple2);
+      }
+    }
+    tuple_set.group_push_back(cur_tupleset);
+  }
+  
   return rc; 
 }
 
