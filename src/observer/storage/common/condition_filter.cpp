@@ -110,10 +110,10 @@ void *ConDescInternal::execute(const Record &rec) {
 
 ConDescInternal::~ConDescInternal() {
   if (left_ != nullptr) {
-    delete left_;
+    // delete left_;
   }
   if (right_ != nullptr) {
-    delete right_;
+    // delete right_;
   }
 }
 
