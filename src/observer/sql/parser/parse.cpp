@@ -230,6 +230,7 @@ void append_cond_expr(ConditionExpr *expr, ConditionExpr *left,
   expr->attr = nullptr;
   expr->value = nullptr;
   expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void cond_attr_init(ConditionExpr *expr, RelAttr *attr) {
@@ -242,6 +243,7 @@ void cond_attr_init(ConditionExpr *expr, RelAttr *attr) {
   expr->op = NO_ARITH_OP;
   expr->value = nullptr;
   expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void cond_value_init(ConditionExpr *expr, Value *v) {
@@ -254,6 +256,7 @@ void cond_value_init(ConditionExpr *expr, Value *v) {
   expr->is_attr = 0;
   expr->attr = nullptr;
   expr->parent = nullptr;
+  expr->binded = false;
 }
 
 //////////////////////////////// CREATE TABLE ///////////////////////////////
@@ -279,6 +282,7 @@ void append_subexpr(SelectExpr *expr, SelectExpr *left, SelectExpr *right,
   expr->attr = nullptr;
   expr->parent = nullptr;
   expr->value = nullptr;
+  expr->binded = false;
 }
 
 void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr) {
@@ -293,6 +297,7 @@ void aggregate_function_init(SelectExpr *expr, FuncName func, RelAttr *attr) {
   expr->left = nullptr;
   expr->right = nullptr;
   expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void select_attr_init(SelectExpr *expr, RelAttr *attr) {
@@ -307,6 +312,7 @@ void select_attr_init(SelectExpr *expr, RelAttr *attr) {
   expr->left = nullptr;
   expr->right = nullptr;
   expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void select_value_init(SelectExpr *expr, Value *value) {
@@ -321,6 +327,7 @@ void select_value_init(SelectExpr *expr, Value *value) {
   expr->left = nullptr;
   expr->right = nullptr;
   expr->parent = nullptr;
+  expr->binded = false;
 }
 
 void selects_append_conditions(Selects *selects, ConditionList *cond_list) {
