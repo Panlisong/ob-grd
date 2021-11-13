@@ -23,6 +23,33 @@ using namespace common;
 
 extern RC do_select(Trx *trx, Selects &selects, TupleSet &res);
 
+std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
+  switch (type) {
+  case CHARS: {
+    return std::make_shared<StringValue>(value);
+  } break;
+  case INTS: {
+    int int_value = *(int *)value;
+    return std::make_shared<IntValue>(int_value);
+  } break;
+  case FLOATS: {
+    float float_value = *(float *)value;
+    return std::make_shared<FloatValue>(float_value);
+  } break;
+  case DATES: {
+    time_t time_value = *(time_t *)value;
+    return std::make_shared<DateValue>(time_value);
+  } break;
+  case ATTR_NULL: {
+    return std::make_shared<NullValue>();
+  } break;
+  default: {
+    LOG_PANIC("Unkown attr type: %d", type);
+    return nullptr;
+  } break;
+  }
+}
+
 ConDescNode *create_cond_desc_node(ConditionExpr *expr,
                                    const TableMeta &table_meta);
 ConDescNode *create_cond_desc_attr(RelAttr *attr, const TableMeta &table_meta);
@@ -101,12 +128,14 @@ void *ConDescInternal::compute(void *lv, void *rv) {
   return r;
 }
 
-void *ConDescInternal::execute(const Record &rec) {
-  void *left = left_->execute(rec);
-  void *right = right_->execute(rec);
-  void *res = compute(left, right);
-  set_value(res);
-  return res;
+std::shared_ptr<TupleValue> ConDescInternal::execute(const Record &rec) {
+  std::shared_ptr<TupleValue> left = left_->execute(rec);
+  std::shared_ptr<TupleValue> right = right_->execute(rec);
+  TupleValue *res;
+  left->compute(right.get(), res, op_);
+  std::shared_ptr<TupleValue> res_tuple_value;
+  res_tuple_value.reset(res);
+  return res_tuple_value;
 }
 
 ConDescInternal::~ConDescInternal() {
@@ -149,11 +178,14 @@ void *ConDescUnary::compute(void *v) {
   return r;
 }
 
-void *ConDescUnary::execute(const Record &rec) {
-  void *operand = expr_->execute(rec);
-  void *res = compute(operand);
-  set_value(res);
-  return res;
+std::shared_ptr<TupleValue> ConDescUnary::execute(const Record &rec) {
+  std::shared_ptr<TupleValue> operand = expr_->execute(rec);
+  IntValue *zero = new IntValue(0);
+  TupleValue *res;
+  zero->compute(operand.get(), res, SUB);
+  std::shared_ptr<TupleValue> res_tuple_value;
+  res_tuple_value.reset(res);
+  return res_tuple_value;
 }
 
 ConDescUnary::~ConDescUnary() {
@@ -188,63 +220,9 @@ void ConDescAttr::get_value_from_data(char *data, void *&value) {
   }
 }
 
-void *ConDescAttr::execute(const Record &rec) {
-  void *value = nullptr;
-  get_value_from_data(rec.data + offset_, value);
-  set_value(value);
-  if (Table::record_data_is_null(rec, column_)) {
-    set_type(ATTR_NULL);
-  } else {
-    set_type(get_init_type());
-  }
-  return value;
-}
-
-ConDescAttr::~ConDescAttr() {}
-
-void *ConDescValue::execute(const Record &rec) { return value(); }
-
-ConDescValue::~ConDescValue() {}
-
-RC ConDescSubquery::init(Trx *trx, Selects *subquery, CompOp op) {
-  trx_ = trx;
-  if (subquery->exprs->size() > 1) {
-    LOG_ERROR("subquery return multi columns");
-    return RC::GENERIC_ERROR;
-  }
-  // TODO: check type
-  set_type(FLOATS);
-  select_ = subquery;
-  return RC::SUCCESS;
-}
-
-void *ConDescSubquery::execute(const Record &rec) {
-  TupleSet res;
-  for (size_t i = 0; i < select_->conditions->size(); i++) {
-    // 新的子查询，将Condition标志位清空
-    select_->conditions->at(i)->is_used = 0;
-  }
-  do_select(trx_, *select_, res);
-  const auto schema = res.get_schema();
-  // if (op != MEM_IN && op != MEM_NOT_IN) {
-  //   if (res.size() > 1) {
-  //     LOG_ERROR("subquery return multi rows");
-  //     return RC::GENERIC_ERROR;
-  //   }
-  // }
-  set_type(schema.fields().begin()->type());
-  values_.clear();
-  for (auto &tuple : res.tuples()) {
-    values_.emplace_back(tuple.get_pointer(0));
-  }
-  return &values_;
-}
-
-std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
-  switch (type) {
-  case CHARS: {
-    return std::make_shared<StringValue>(value);
-  } break;
+std::shared_ptr<TupleValue> ConDescAttr::execute(const Record &rec) {
+  char *value = rec.data + offset_;
+  switch (type()) {
   case INTS: {
     int int_value = *(int *)value;
     return std::make_shared<IntValue>(int_value);
@@ -257,19 +235,53 @@ std::shared_ptr<TupleValue> get_tuple_value(AttrType type, const char *value) {
     time_t time_value = *(time_t *)value;
     return std::make_shared<DateValue>(time_value);
   } break;
+  case CHARS: {
+    return std::make_shared<StringValue>(value);
+  } break;
   case ATTR_NULL: {
     return std::make_shared<NullValue>();
   } break;
   default: {
-    LOG_PANIC("Unkown attr type: %d", type);
-    return nullptr;
+    LOG_PANIC("Unkown attr type: %d", type());
   } break;
   }
 }
 
-bool ConDescSubquery::contains(AttrType type, const char *value) {
-  std::shared_ptr<TupleValue> tuple_value = get_tuple_value(type, value);
-  return contains(tuple_value);
+ConDescAttr::~ConDescAttr() {}
+
+std::shared_ptr<TupleValue> ConDescValue::execute(const Record &rec) {
+  return get_tuple_value(type(), (char *)value());
+}
+
+ConDescValue::~ConDescValue() {}
+
+RC ConDescSubquery::init(Trx *trx, Selects *subquery) {
+  trx_ = trx;
+  if (subquery->exprs->size() > 1) {
+    LOG_ERROR("subquery return multi columns");
+    return RC::GENERIC_ERROR;
+  }
+  // TODO: check type
+  set_type(FLOATS);
+  select_ = subquery;
+  return RC::SUCCESS;
+}
+
+std::shared_ptr<TupleValue> ConDescSubquery::execute(const Record &rec) {
+  TupleSet res;
+  for (size_t i = 0; i < select_->conditions->size(); i++) {
+    // 新的子查询，将Condition标志位清空
+    select_->conditions->at(i)->is_used = 0;
+  }
+  do_select(trx_, *select_, res);
+  const auto schema = res.get_schema();
+  set_type(schema.fields().begin()->type());
+  values_.clear();
+  for (auto &tuple : res.tuples()) {
+    values_.emplace_back(tuple.get_pointer(0));
+  }
+
+  return nullptr;
 }
 
 bool ConDescSubquery::contains(std::shared_ptr<TupleValue> tuple_value) {
@@ -366,7 +378,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   }
   if (condition.left_subquery != nullptr) {
     ConDescSubquery *left_node = new ConDescSubquery();
-    rc = left_node->init(trx, condition.left_subquery, condition.comp);
+    rc = left_node->init(trx, condition.left_subquery);
     if (rc != RC::SUCCESS) {
       delete left_node;
       return rc;
@@ -375,7 +387,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
   }
   if (condition.right_subquery != nullptr) {
     ConDescSubquery *right_node = new ConDescSubquery();
-    rc = right_node->init(trx, condition.right_subquery, condition.comp);
+    rc = right_node->init(trx, condition.right_subquery);
     if (rc != RC::SUCCESS) {
       delete right_node;
       return rc;
@@ -421,35 +433,25 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition,
 }
 
 bool DefaultConditionFilter::non_subquery_filter(const Record &rec) const {
-  char *lvalue = (char *)left_->execute(rec);
-  char *rvalue = (char *)right_->execute(rec);
+  std::shared_ptr<TupleValue> left_value = left_->execute(rec);
+  std::shared_ptr<TupleValue> right_value = right_->execute(rec);
 
-  LOG_INFO("%d %d", left_->type(), right_->type());
-  if (left_->is_null() && right_->is_null()) {
+  if (left_value->is_null() && right_value->is_null()) {
     // null is/is not null
     return comp_op_ == OP_IS;
   }
 
-  if (left_->is_null() || right_->is_null()) {
+  if (left_value->is_null() || right_value->is_null()) {
     if (comp_op_ != OP_IS && comp_op_ != OP_IS_NOT) {
       // return false unless is/is not.
       return false;
     }
-    if (left_->is_null()) {
+    if (left_value->is_null()) {
       // null is/is not attr.
       return false;
     }
     // attr is/is not null.
-    return comp_op_ == OP_IS ? left_->is_null() : !left_->is_null();
-  }
-
-  std::shared_ptr<TupleValue> left_value =
-      get_tuple_value(left_->type(), lvalue);
-  std::shared_ptr<TupleValue> right_value =
-      get_tuple_value(right_->type(), rvalue);
-
-  if (left_->type() == ATTR_NULL && right_->type() == ATTR_NULL) {
-    return comp_op_ == OP_IS;
+    return comp_op_ == OP_IS ? left_value->is_null() : !left_value->is_null();
   }
 
   if (!left_value->comparable(*right_value)) {
@@ -489,7 +491,9 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
         reinterpret_cast<ConDescAttr *>(bind_cond_exprs_.at(i).first);
     Value *v = (Value *)malloc(sizeof(Value));
     v->type = execution_node->type();
-    v->data = execution_node->execute(rec);
+    std::shared_ptr<TupleValue> outer_tuple_value =
+        execution_node->execute(rec);
+    outer_tuple_value->get_value(v->data);
     v->len = execution_node->length();
     if (bind_attr_expr->value != nullptr) {
       free(bind_attr_expr->value);
@@ -503,7 +507,9 @@ bool DefaultConditionFilter::subquery_filter(const Record &rec) const {
         reinterpret_cast<ConDescAttr *>(bind_cond_exprs_.at(i).first);
     Value *v = (Value *)malloc(sizeof(Value));
     v->type = execution_node->type();
-    v->data = execution_node->execute(rec);
+    std::shared_ptr<TupleValue> outer_tuple_value =
+        execution_node->execute(rec);
+    outer_tuple_value->get_value(v->data);
     v->len = execution_node->length();
     if (bind_attr_expr->value != nullptr) {
       free(bind_attr_expr->value);
@@ -572,13 +578,13 @@ bool DefaultConditionFilter::two_subquery_filter(const Record &rec) const {
 }
 
 bool DefaultConditionFilter::one_subquery_filter(const Record &rec) const {
-  char *lvalue = (char *)left_->execute(rec);
+  std::shared_ptr<TupleValue> left_value = left_->execute(rec);
   ConDescSubquery *right_cond_desc_subquery =
       dynamic_cast<ConDescSubquery *>(right_);
   right_cond_desc_subquery->execute(rec);
 
   if (comp_op_ == MEM_IN || comp_op_ == MEM_NOT_IN) {
-    bool contains = right_cond_desc_subquery->contains(left_->type(), lvalue);
+    bool contains = right_cond_desc_subquery->contains(left_value);
     return comp_op_ == MEM_IN ? contains : !contains;
   }
 
@@ -586,14 +592,12 @@ bool DefaultConditionFilter::one_subquery_filter(const Record &rec) const {
     return false;
   }
 
-  if (left_->is_null()) {
+  if (left_value->is_null()) {
     // null arithop something.
     return false;
   }
 
   // right_value is null.
-  std::shared_ptr<TupleValue> left_value =
-      get_tuple_value(left_->type(), lvalue);
   std::shared_ptr<TupleValue> right_value =
       right_cond_desc_subquery->get_value_in(0);
   if (left_value->comparable(*right_value) == false) {
