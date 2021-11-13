@@ -24,7 +24,7 @@ SelectExeNode::SelectExeNode() : table_(nullptr) {}
 
 SelectExeNode::~SelectExeNode() {
   for (DefaultConditionFilter *&filter : condition_filters_) {
-    delete filter;
+    // delete filter;
   }
   condition_filters_.clear();
 }
