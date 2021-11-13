@@ -145,12 +145,14 @@ public:
   const std::vector<Tuple> &tuples() const;
 
   void print(std::ostream &os, bool multi) const;
+  bool is_group(){return group_tuples_.size() != 0;}
 
 public:
   const TupleSchema &schema() const { return schema_; }
 
 private:
   std::vector<Tuple> tuples_;
+  std::vector<TupleSet> group_tuples_;
   TupleSchema schema_;
 };
 

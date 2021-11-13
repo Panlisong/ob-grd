@@ -39,6 +39,8 @@ RC create_selection_executor(Trx *trx, Selects &selects, Table *table,
 RC create_join_executor(Trx *trx, RelationTable &relations,
                         ConditionList *conds, TupleSet &tl, TupleSet &tr,
                         JoinExeNode &join_node);
+RC create_group_executor(const Selects &selects, TupleSet &tuple_set,
+                         GroupExeNode &order);
 RC create_order_executor(const Selects &selects, TupleSet &tuple_set,
                          OrderExeNode &order);
 RC create_projection_executor(const Selects &selects, TupleSet &tuple_set,
@@ -832,7 +834,23 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
       delete join_node;
     }
   }
-  // 3 根据order clause对tuple_set进行排序
+
+  // 3 根据goup clause对tuple_set进行整理
+  if (selects.group_num != 0) {
+    GroupExeNode *group_node = new GroupExeNode;
+    rc=create_group_executor(selects , tuple_set, *group_node);
+    if(rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to create group-by executor node.");
+      return rc;
+    }
+    rc = group_node->execute(tuple_set);
+    if(rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to execute group-by executor node.");
+      return rc;
+    }
+  }
+
+  // 4 根据order clause对tuple_set进行排序
   //   在projection之前进行，防止projection之后对应的attribute缺失
   if (selects.order_num != 0) {
     OrderExeNode *order_node = new OrderExeNode;
@@ -848,7 +866,7 @@ RC do_select(Trx *trx, Selects &selects, TupleSet &res) {
     }
   }
 
-  // 4 根据select clause生成输出schema
+  // 5 根据select clause生成输出schema
   ProjectExeNode *project_node = new ProjectExeNode;
   rc = create_projection_executor(selects, tuple_set, tuple_set.get_schema(),
                                   *project_node);
@@ -931,6 +949,54 @@ static RC add_all_relations(const Selects &selects, const TupleSchema &product,
       return rc;
     }
   }
+  return rc;
+}
+
+RC create_group_executor(const Selects &selects, TupleSet &tuple_set,
+                         GroupExeNode &group) {
+  RC rc = RC::SUCCESS;
+  GroupByList *groups = selects.groups;
+  RelAttr *cur_attr;
+  std::string table_name;
+  Table *cur_table;
+  int flag = 0;
+  for (size_t i = 0; i < groups->size(); ++i) {
+    cur_attr = groups->at(i);
+    if (cur_attr->attribute_name == nullptr) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+    if (cur_attr->relation_name == nullptr) {
+      table_name.clear();
+    } else {
+      table_name = groups->at(i)->relation_name;
+    }
+    if (!table_name.empty()) {
+      cur_table = (*selects.context)[table_name];
+      if (cur_table->table_meta().field(cur_attr->attribute_name) == nullptr) {
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+    } else {
+      flag = 0;
+      // find if there exists a table in the context that has this attr
+      // first paired first group
+      for (std::unordered_map<std::string, Table *>::iterator i =
+               selects.context->begin();
+           i != selects.context->end(); ++i) {
+        cur_table = (*i).second;
+        if (cur_table->table_meta().field(cur_attr->attribute_name) !=
+            nullptr) {
+          flag = 1;
+          break;
+        }
+      }
+      if (flag == 0) {
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+    }
+  }
+  group.set_group_num(selects.group_num);
+  group.set_groups(selects.groups);
+
   return rc;
 }
 

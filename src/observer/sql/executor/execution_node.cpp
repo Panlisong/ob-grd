@@ -277,7 +277,7 @@ ProjectExeNode::~ProjectExeNode() {
 }
 
 
-void OrderExeNode::sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , std::vector<int>ascs){
+void sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , std::vector<int>ascs){
   int cur_size = tuple_set.size();
   // for(size_t i = 0 ; i < tuple_set.tuples().size() ; ++i){
   //   tmp_tuple.append(tuple_set.tuples()[i]);
@@ -360,6 +360,43 @@ void OrderExeNode::sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , st
     }
   }
   return;
+}
+
+RC GroupExeNode::execute(TupleSet &tuple_set){
+  RC rc = RC::SUCCESS;
+  size_t group_num = GroupExeNode::get_group_num();
+  GroupByList* group_list = GroupExeNode::get_groups();
+  RelAttr* cur_attr;
+  int index = -1 ;
+  TupleSchema cur_schema=tuple_set.schema();
+  std::vector<TupleField> cur_field;
+  std::vector<int>group_indexes;
+  std::vector<int>flags;
+  for (size_t i = 0; i < group_num ; ++i){
+    index = -1;
+    flags.push_back(0);
+    cur_attr = group_list->at(i);
+    if(cur_attr->relation_name==nullptr){
+      //sort by the first paired attr in the tuple schema 
+      cur_field = cur_schema.fields();
+      for(size_t i = 0; i < cur_field.size() ; ++i){
+        if(strcmp(cur_field[i].field_name() , cur_attr->attribute_name) == 0){
+          index = i;
+          break;
+        }
+      }
+    } else {
+      index = cur_schema.index_of_field(cur_attr->relation_name, 
+                                         cur_attr->attribute_name);
+    }
+    if(index != -1){
+      group_indexes.push_back(index);
+    } else {
+      return RC::SCHEMA_FIELD_NOT_EXIST;
+    }
+  }
+  sort_tuple(tuple_set, group_indexes, flags); 
+  return rc; 
 }
 
 RC OrderExeNode::execute(TupleSet &tuple_set){

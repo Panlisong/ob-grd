@@ -193,6 +193,24 @@ public:
   }
 };
 
+class GroupExeNode : public ExecutionNode {
+public:
+  GroupExeNode(){};
+  ~GroupExeNode(){};
+
+  RC execute(TupleSet &tuple_set) override;
+  size_t get_group_num() {return group_num;}
+  GroupByList* get_groups() {return groups;}
+
+
+  void set_group_num(size_t v) {group_num = v;}
+  void set_groups(GroupByList* g) {groups = g;}
+
+private:
+  size_t group_num;          // Length of group restrictions
+  GroupByList *groups;
+};
+
 class OrderExeNode : public ExecutionNode {
 public:
   OrderExeNode(){};
@@ -204,7 +222,6 @@ public:
   
   void set_order_num(size_t v) {OrderExeNode::order_num = v;}
   void set_orders(OrderColList* l) {OrderExeNode::orders = l;}
-  void sort_tuple(TupleSet &tuple_set , std::vector<int>indexes , std::vector<int> ascs);
 
 private:
   size_t order_num;          // Length of orders
