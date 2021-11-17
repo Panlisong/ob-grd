@@ -30,6 +30,32 @@ DiskBufferPool *theGlobalDiskBufferPool() {
   return instance;
 }
 
+Frame *BPManager::alloc(){
+  //not consider dirty and pin count
+  //optimized for size 2
+  for(int i = 0 ; i < size ; ++i){
+    if(allocated[i] == false){
+      last_used = i; 
+      allocated[i] = true;
+      return frame + i;
+    }
+  }
+  return frame + (last_used ^= 1);
+}
+
+Frame *BPManager::get(int file_desc, PageNum page_num){
+  //not consider dirty and pin count
+  Frame* res = nullptr;
+  for(int i = 0 ; i < size ; ++ i){
+    if(allocated[i] == true &&
+       frame[i].file_desc == file_desc && frame[i].page.page_num == page_num) {
+      last_used = i;
+      return (res=frame + i);
+    }
+  }
+  return res;
+}
+
 RC DiskBufferPool::create_file(const char *file_name) {
   int fd = open(file_name, O_RDWR | O_CREAT | O_EXCL, S_IREAD | S_IWRITE);
   if (fd < 0) {

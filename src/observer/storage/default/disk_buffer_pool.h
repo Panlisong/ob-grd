@@ -93,13 +93,15 @@ public:
     allocated = nullptr;
   }
 
-  Frame *alloc() {
-    return nullptr; // TODO for test
-  }
+  Frame *alloc(); 
+  // {
+  //   return nullptr; // TODO for test
+  // }
 
-  Frame *get(int file_desc, PageNum page_num) {
-    return nullptr; // TODO for test
-  }
+  Frame *get(int file_desc, PageNum page_num);
+  // {
+  //   return nullptr; // TODO for test
+  // }
 
   Frame *getFrame() { return frame; }
 
@@ -107,6 +109,7 @@ public:
 
 public:
   int size;
+  int last_used = 1;
   Frame *frame = nullptr;
   bool *allocated = nullptr;
 };
