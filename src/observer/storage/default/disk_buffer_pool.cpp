@@ -232,9 +232,9 @@ RC DiskBufferPool::get_this_page(int file_id, PageNum page_num,
       page_handle->frame = bp_manager_.frame + i;
       page_handle->frame->pin_count++;
       //page_handle->frame->acc_time = current_time();
-      bp_manager_.lru_list.erase(page_handle->frame->it);
-      bp_manager_.lru_list.push_front(page_handle->frame-bp_manager_.frame);
-      page_handle->frame->it=bp_manager_.lru_list.begin();
+      bp_manager_.lru_list.erase(bp_manager_.frame[i].it);
+      bp_manager_.lru_list.push_front(i);
+      bp_manager_.frame[i].it=bp_manager_.lru_list.begin();
       page_handle->open = true;
       return RC::SUCCESS;
     }
@@ -379,6 +379,7 @@ RC DiskBufferPool::dispose_page(int file_id, PageNum page_num) {
       if (bp_manager_.frame[i].pin_count != 0)
         return RC::BUFFERPOOL_PAGE_PINNED;
       bp_manager_.allocated[i] = false;
+      bp_manager_.lru_list.erase(bp_manager_.frame[i].it);
     }
   }
 
@@ -512,7 +513,7 @@ RC DiskBufferPool::allocate_block(Frame **buffer) {
 
   int min = 0;
   bool flag = false;
-  std::deque<int>::iterator it = bp_manager_.lru_list.end()-1;
+  std::list<int>::reverse_iterator it = bp_manager_.lru_list.rbegin();
   do{
     if (bp_manager_.frame[*it].pin_count != 0){
       continue;
@@ -520,7 +521,7 @@ RC DiskBufferPool::allocate_block(Frame **buffer) {
     flag = true;
     min=*it;
     break;
-  } while(it-- != bp_manager_.lru_list.begin());
+  } while(++it != bp_manager_.lru_list.rend());
 // unsigned long mintime = 0;
 // for (int i = 0; i < BP_BUFFER_SIZE; i++) {
 //   if (bp_manager_.frame[i].pin_count != 0)

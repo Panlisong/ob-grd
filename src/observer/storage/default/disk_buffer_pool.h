@@ -22,7 +22,7 @@ See the Mulan PSL v2 for more details. */
 #include <time.h>
 
 #include <vector>
-#include <deque>
+#include <list>
 
 #include "rc.h"
 
@@ -52,8 +52,8 @@ typedef struct {
   unsigned int pin_count;
   //unsigned long acc_time;
   int file_desc;
+  std::list<int>::iterator it;
   Page page;
-  std::deque<int>::iterator it;
 } Frame;
 
 typedef struct {
@@ -114,7 +114,7 @@ public:
   int last_used = 1;
   Frame *frame = nullptr;
   bool *allocated = nullptr;
-  std::deque<int>lru_list;
+  std::list<int>lru_list;
 };
 
 class DiskBufferPool {
