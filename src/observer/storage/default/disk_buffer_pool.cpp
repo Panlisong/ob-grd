@@ -154,7 +154,8 @@ RC DiskBufferPool::open_file(const char *file_name, int *file_id) {
     return tmp;
   }
   file_handle->hdr_frame->dirty = false;
-  file_handle->hdr_frame->acc_time = current_time();
+  //update lru in allcate_block
+  //file_handle->hdr_frame->acc_time = current_time();
   file_handle->hdr_frame->file_desc = fd;
   file_handle->hdr_frame->pin_count = 1;
   if ((tmp = load_page(0, file_handle, file_handle->hdr_frame)) !=
@@ -230,7 +231,10 @@ RC DiskBufferPool::get_this_page(int file_id, PageNum page_num,
 		if ((bp_manager_.frame[i].page.page_num & 0x7FFFFFFF) == page_num) {
       page_handle->frame = bp_manager_.frame + i;
       page_handle->frame->pin_count++;
-      page_handle->frame->acc_time = current_time();
+      //page_handle->frame->acc_time = current_time();
+      bp_manager_.lru_list.erase(page_handle->frame->it);
+      bp_manager_.lru_list.push_front(page_handle->frame-bp_manager_.frame);
+      page_handle->frame->it=bp_manager_.lru_list.begin();
       page_handle->open = true;
       return RC::SUCCESS;
     }
@@ -245,7 +249,8 @@ RC DiskBufferPool::get_this_page(int file_id, PageNum page_num,
   page_handle->frame->dirty = false;
   page_handle->frame->file_desc = file_handle->file_desc;
   page_handle->frame->pin_count = 1;
-  page_handle->frame->acc_time = current_time();
+  //update lru in allocate_block
+  //page_handle->frame->acc_time = current_time();
   if ((tmp = load_page(page_num, file_handle, page_handle->frame)) !=
       RC::SUCCESS) {
     LOG_ERROR("Failed to load page %s:%d", file_handle->file_name, page_num);
@@ -300,7 +305,8 @@ RC DiskBufferPool::allocate_page(int file_id, BPPageHandle *page_handle) {
   page_handle->frame->dirty = false;
   page_handle->frame->file_desc = file_handle->file_desc;
   page_handle->frame->pin_count = 1;
-  page_handle->frame->acc_time = current_time();
+  //update lru in allocate_block
+  //page_handle->frame->acc_time = current_time();
   memset(&(page_handle->frame->page), 0, sizeof(Page));
   page_handle->frame->page.page_num =
       file_handle->file_sub_header->page_count - 1;
@@ -428,6 +434,7 @@ RC DiskBufferPool::force_page(BPFileHandle *file_handle, PageNum page_num) {
       }
     }
     bp_manager_.allocated[i] = false;
+    bp_manager_.lru_list.erase(bp_manager_.frame[i].it);
     return RC::SUCCESS;
   }
   return RC::SUCCESS;
@@ -461,6 +468,7 @@ RC DiskBufferPool::force_all_pages(BPFileHandle *file_handle) {
       }
     }
     bp_manager_.allocated[i] = false;
+    bp_manager_.lru_list.erase(bp_manager_.frame[i].it);
   }
   return RC::SUCCESS;
 }
@@ -495,27 +503,38 @@ RC DiskBufferPool::allocate_block(Frame **buffer) {
     if (!bp_manager_.allocated[i]) {
       bp_manager_.allocated[i] = true;
       *buffer = bp_manager_.frame + i;
+      bp_manager_.lru_list.push_front(i);
+      bp_manager_.frame[i].it=bp_manager_.lru_list.begin();
       LOG_DEBUG("Allocate block frame=%p", bp_manager_.frame + i);
       return RC::SUCCESS;
     }
   }
 
   int min = 0;
-  unsigned long mintime = 0;
   bool flag = false;
-  for (int i = 0; i < BP_BUFFER_SIZE; i++) {
-    if (bp_manager_.frame[i].pin_count != 0)
+  std::deque<int>::iterator it = bp_manager_.lru_list.end()-1;
+  do{
+    if (bp_manager_.frame[*it].pin_count != 0){
       continue;
-    if (!flag) {
-      flag = true;
-      min = i;
-      mintime = bp_manager_.frame[i].acc_time;
     }
-    if (bp_manager_.frame[i].acc_time < mintime) {
-      min = i;
-      mintime = bp_manager_.frame[i].acc_time;
-    }
-  }
+    flag = true;
+    min=*it;
+    break;
+  } while(it-- != bp_manager_.lru_list.begin());
+// unsigned long mintime = 0;
+// for (int i = 0; i < BP_BUFFER_SIZE; i++) {
+//   if (bp_manager_.frame[i].pin_count != 0)
+//     continue;
+//   if (!flag) {
+//     flag = true;
+//     min = i;
+//     mintime = bp_manager_.frame[i].acc_time;
+//   }
+//   if (bp_manager_.frame[i].acc_time < mintime) {
+//     min = i;
+//     mintime = bp_manager_.frame[i].acc_time;
+//   }
+// }
   if (!flag) {
     LOG_ERROR("All pages have been used and pinned.");
     return RC::NOMEM;
@@ -530,6 +549,9 @@ RC DiskBufferPool::allocate_block(Frame **buffer) {
     }
   }
   *buffer = bp_manager_.frame + min;
+  bp_manager_.lru_list.erase(bp_manager_.frame[min].it);
+  bp_manager_.lru_list.push_front(min);
+  bp_manager_.frame[min].it = bp_manager_.lru_list.begin();
   return RC::SUCCESS;
 }
 
@@ -549,6 +571,9 @@ RC DiskBufferPool::dispose_block(Frame *buf) {
   }
   buf->dirty = false;
   int pos = buf - bp_manager_.frame;
+  if(bp_manager_.allocated[pos]){
+    bp_manager_.lru_list.erase(bp_manager_.frame[pos].it);
+  }
   bp_manager_.allocated[pos] = false;
   LOG_DEBUG("dispost block frame =%p", buf);
   return RC::SUCCESS;
